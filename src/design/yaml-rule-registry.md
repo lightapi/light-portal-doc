@@ -1,0 +1,1 @@
+# YAML Rule Registry
