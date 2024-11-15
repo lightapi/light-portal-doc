@@ -1,8 +1,8 @@
 # Authentication & Authorization
 
-Light-Portal is an single page application and it uses both OAuth 2.0 Authorization Code and Client Credentials flows. 
+Light-Portal is a single-page application (SPA) that utilizes both the OAuth 2.0 Authorization Code and Client Credentials flows.
 
-The below pattern depicts the end-to-end flow recommended by the Light Platform when SPA calls downstream APIs.
+The following pattern illustrates the end-to-end process recommended by the Light Platform for an SPA interacting with downstream APIs.
 
 ### Sequence Diagram
 
@@ -13,78 +13,91 @@ participant "Login View" as LoginView
 participant "Light Gateway" as Gateway
 participant "OAuth-Kafka" as OAuthKafka
 participant "Auth Service" as AuthService
+participant "Proxy Sidecar" as ProxySidecar
 participant "Backend API" as BackendAPI
 
 PortalView -> LoginView: 1. Signin redirect
 LoginView -> OAuthKafka: 2. Authenticate user
-OAuthKafka -> AuthService: 3. Authenticate User\n(Active Directory\nfor Employees)\n(CIF System\nfor Customers)
+OAuthKafka -> AuthService: 3. Authenticate User\n (Active Directory\n for Employees)\n (CIF System\n for Customers)
 AuthService -> OAuthKafka: 4. Authenticated
 OAuthKafka -> OAuthKafka: 5. Generate auth code
 OAuthKafka -> PortalView: 6. Redirect with code
-PortalView -> Gateway: 7. Authorization URL \nwith code param
-Gateway -> OAuthKafka: 8. Create JWT access \ntoken with code
-OAuthKafka -> OAuthKafka: 9. Generate JWT \naccess token \nwith user claims
-OAuthKafka -> Gateway: 10. Token returns \nto Gateway
-Gateway -> PortalView: 11. Token returns \nto Portal View \nin Secure Cookie
+PortalView -> Gateway: 7. Authorization URL \n with code param
+Gateway -> OAuthKafka: 8. Create JWT access \n token with code
+OAuthKafka -> OAuthKafka: 9. Generate JWT \n access token \n with user claims
+OAuthKafka -> Gateway: 10. Token returns \n to Gateway
+Gateway -> PortalView: 11. Token returns \n to Portal View \n in Secure Cookie
 PortalView -> Gateway: 12. Call Backend API
 Gateway -> Gateway: 13. Verify the token
-Gateway -> OAuthKafka: 14. Create Client \nCredentials token
-OAuthKafka -> OAuthKafka: 15. Generate Token \nwith Scopes
-OAuthKafka -> Gateway: 16. Return the \scope token
-Gateway -> Gateway: 17. Add scope \ntoken to \nX-Scope-Token \nHeader
-Gateway -> BackendAPI: 18. Invoke API
-BackendAPI -> BackendAPI: 19. Verify \nAuthorization \ntoken
-BackendAPI -> BackendAPI: 20. Verify \nX-Scope-Token
-BackendAPI -> Gateway: 21. Return response
-Gateway -> PortalView: 22. Return response
+Gateway -> OAuthKafka: 14. Create Client \n Credentials token
+OAuthKafka -> OAuthKafka: 15. Generate Token \n with Scopes
+OAuthKafka -> Gateway: 16. Return the \n scope token
+Gateway -> Gateway: 17. Add scope \n token to \n X-Scope-Token \nHeader
+Gateway -> ProxySidecar: 18. Invoke API
+ProxySidecar -> ProxySidecar: 19. Verify \n Authorization \ntoken
+ProxySidecar -> ProxySidecar: 20. Verify \n X-Scope-Token
+ProxySidecar -> ProxySidecar: 21. Fine-Grained \n Authorization
+ProxySidecar -> BackendAPI: 22. Invoke \n business API
+BackendAPI -> ProxySidecar: 23. Business API \n response
+ProxySidecar -> ProxySidecar: 24. Fine-Grained \n response filter
+ProxySidecar -> Gateway: 25. Return response
+Gateway -> PortalView: 26. Return response
 
 @enduml
 ```
 
 ![Sequence Diagram](authentication-sequence.png)
 
-1. When a user hit the website to access the single page application, the Light Gateway will serve the single page application on users browser. By default, the user is not logged in and he/she can only access limited features on the site. If the user want to access more features, he/she can click the user button on the header and click sign in menu. This will allow the browser to redirect from the Portal View to Login View which is served by the same instance of Light Gateway. 
 
-2. On the Login View site, he/she can input the username/password or choose Google/Facebook for authentication. Once the Signin form is submitted, the request goes to the Light Gateway with user credentials. The Light Gateway will route the request to the OAuth Kafka service.
+1. When a user visits the website to access the single-page application (SPA), the Light Gateway serves the SPA to the user's browser. By default, the user is not logged in and can only access limited site features. To unlock additional features, the user can click the **User** button in the header and select the **Sign In** menu. This action redirects the browser from the Portal View to the Login View, both served by the same Light Gateway instance.
 
-3. OAuth Kafka has many Authenticator implementations that can be used to authenticate the user credential. For example, use the Light Portal user database to authenticate, use Active Directory to authenticate employees or use CIF service to authenticate customers. 
+2. On the Login View page, the user can either input a username and password or choose Google/Facebook for authentication. When the login form is submitted, the request is sent to the Light Gateway with the user's credentials. The Gateway forwards this request to the OAuth Kafka service.
 
-4. Once authentication is completed successfully, it will response to the OAuth Kafka with the authentication result. 
+3. OAuth Kafka supports multiple authenticator implementations to verify user credentials. Examples include authenticating via the Light Portal user database, Active Directory for employees, or CIF service for customers.
 
-5. Upon successful authentication, OAuth Kafka will generate an authorization code which is a UUID associated to the user profile. 
+4. Once authentication is successfully completed, the OAuth Kafka responds with the authentication result.
 
-6. OAuth Kafka redirect the authorization code to the Portal View browser through Gateway. 
+5. Upon successful authentication, OAuth Kafka generates an authorization code (a UUID associated with the user's profile).
 
-7. The Portal View single page application doesn't have this redirct route, so that request will be sent to the Gateway with the code as a query parameter. 
+6. OAuth Kafka redirects the authorization code back to the browser at the Portal View via the Gateway.
 
-8. The StatelessAuthHandler on the Gateway will handle the request and send a token request to the OAuth Kafka to get a JWT access token. 
+7. Since the Portal View SPA lacks a dedicated redirect route for the authorization code, the browser sends the code as a query parameter in a request to the Gateway.
 
-9. OAuth Kafka will generate an access token with user claims in the JWT custom claims and drop the code as it is used only once.
+8. The `StatelessAuthHandler` in the Gateway processes this request, initiating a token request to OAuth Kafka to obtain a JWT access token.
 
-10. The authorization code token is returned to the Gateway. 
+9. OAuth Kafka generates an access token containing user claims in its custom JWT claims. The authorization code is then invalidated, as it is single-use.
 
-11. The StatelessAuthHandler on the Gateway will put the token into a secure cookie and send to the Portal View.
+10. The access token is returned to the Gateway.
 
-12. When Portal View access one of the Backend APIs, it sends the API request to the Gateway with the cookies. 
+11. The `StatelessAuthHandler` in the Gateway stores the access token in a secure cookie and sends it back to the Portal View.
 
-13. The StatelessAuthHandler on the Gateway will verify the token in the secure cookie and put it into the Authorization header of the request.
+12. When the Portal View SPA makes requests to backend APIs, it includes the secure cookie in the API request sent to the Gateway.
 
-14. Once the token is verified successfully, the TokenHandler on the Gateway will issue a token request to get a client credentials token to the OAuth Kafka based on the path prefix of the API endpoint. 
+13. The `StatelessAuthHandler` in the Gateway validates the token in the secure cookie and places it in the `Authorization` header of the outgoing request.
 
-15. OAuth Kafka generate a client credentials token with the scope that can access the downstream service. 
+14. If the token is successfully validated, the `TokenHandler` in the Gateway makes a request to OAuth Kafka for a client credentials token, using the path prefix of the API endpoint.
 
-16. The client credentials token is returned to the Gateway. 
+15. OAuth Kafka generates a client credentials token with the appropriate scope for accessing the downstream service.
 
-17. The TokenHandler on the Gateway will put this token into X-Scope-Token header of the original request. 
+16. The client credentials token is returned to the Gateway.
 
-18. The Gateway router the original request to the downstream Backend API. 
+17. The `TokenHandler` in the Gateway inserts this token into the `X-Scope-Token` header of the original request.
 
-19. The Backend API will verify the Authorization token for the signature and expiration etc. 
+18. The Gateway routes the original request, now containing both tokens, to the downstream `proxy sidecar`of the backend API.
 
-20. The Backend API will verify the X-Scope-Token for signature, expiration and scope etc. 
+19. The proxy sidecar validates the `Authorization` token, verifying its signature, expiration, and other attributes.  
 
-21. The Backend API retuns the response once both tokens are verified. 
+20. The proxy sidecar also validates the `X-Scope-Token`, ensuring its signature, expiration, and scope are correct.  
 
-22. The response returns to the Portal View to render the page. 
+21. Once both tokens are successfully validated, the proxy sidecar enforces fine-grained authorization rules based on the user's custom security profile contained in the `Authorization` token.  
 
- 
+22. If the fine-grained authorization checks are passed, the proxy sidecar forwards the request to the backend API.  
+
+23. The backend API processes the request and sends the full response back to the `proxy sidecar`.  
+
+24. The proxy sidecar applies fine-grained filters to the response, reducing the number of rows and/or columns based on the user's security profile or other policies.  
+
+25. The proxy sidecar returns the filtered response to the Gateway.  
+
+26. The Gateway forwards the response to the Portal View, allowing the SPA to render the page.  
+
