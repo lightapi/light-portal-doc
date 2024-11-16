@@ -79,7 +79,7 @@ There are several standard models for implementing FGA:
 
 Each of these models offers different strengths and may be more suitable for different scenarios. FGA allows for fine grained control over access, enabling organizations to enforce highly specific access policies tailored to their requirements. 
 
-### Streamlining FGA by Implementing Rule-Based Access Control:
+## Streamlining FGA by Implementing Rule-Based Access Control:
 
 ABAC (Attribute-Based Access Control) focuses on data attributes, PBAC (Policy-Based Access Control) centers on logic, and ReBAC (Relationship-Based Access Control) emphasizes relationships between users and resources. But what if we combined all three to leverage the strengths of each? This is the idea behind **Rule-Based Access Control (RBAC)**.
 
@@ -90,4 +90,5 @@ By embedding a lightweight rule engine, we can integrate multiple rules and acti
 - **Flexible Policy Enforcement**: Using a rule engine makes access policies more dynamic and simpler to manage.  
 
 - **Infer Relationships**: Automatically deduce relationships between entities. For instance, the rule engine could grant a user access to a file if they already have permission for the containing folder.  
+
 

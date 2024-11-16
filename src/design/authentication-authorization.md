@@ -6,49 +6,44 @@ The following pattern illustrates the end-to-end process recommended by the Ligh
 
 ### Sequence Diagram
 
-The following is the raw data that can be used to render the diagram in http://www.plantuml.com
+```mermaid
+sequenceDiagram
+    participant PortalView as Portal View
+    participant LoginView as Login View
+    participant Gateway as Light Gateway
+    participant OAuthKafka as OAuth-Kafka
+    participant AuthService as Auth Service
+    participant ProxySidecar as Proxy Sidecar
+    participant BackendAPI as Backend API
 
-```plantuml
-@startuml
-participant "Portal View" as PortalView
-participant "Login View" as LoginView
-participant "Light Gateway" as Gateway
-participant "OAuth-Kafka" as OAuthKafka
-participant "Auth Service" as AuthService
-participant "Proxy Sidecar" as ProxySidecar
-participant "Backend API" as BackendAPI
+    PortalView ->> LoginView: 1. Signin redirect
+    LoginView ->> OAuthKafka: 2. Authenticate user
+    OAuthKafka ->> AuthService: 3. Authenticate User<br/>(Active Directory<br/>for Employees)<br/>(CIF System<br/>for Customers)
+    AuthService ->> OAuthKafka: 4. Authenticated
+    OAuthKafka ->> OAuthKafka: 5. Generate auth code
+    OAuthKafka ->> PortalView: 6. Redirect with code
+    PortalView ->> Gateway: 7. Authorization URL<br/>with code param
+    Gateway ->> OAuthKafka: 8. Create JWT access<br/>token with code
+    OAuthKafka ->> OAuthKafka: 9. Generate JWT<br/>access token<br/>with user claims
+    OAuthKafka ->> Gateway: 10. Token returns<br/>to Gateway
+    Gateway ->> PortalView: 11. Token returns<br/>to Portal View<br/>in Secure Cookie
+    PortalView ->> Gateway: 12. Call Backend API
+    Gateway ->> Gateway: 13. Verify the token
+    Gateway ->> OAuthKafka: 14. Create Client<br/>Credentials token
+    OAuthKafka ->> OAuthKafka: 15. Generate Token<br/>with Scopes
+    OAuthKafka ->> Gateway: 16. Return the<br/>scope token
+    Gateway ->> Gateway: 17. Add scope<br/>token to<br/>X-Scope-Token<br/>Header
+    Gateway ->> ProxySidecar: 18. Invoke API
+    ProxySidecar ->> ProxySidecar: 19. Verify<br/>Authorization<br/>token
+    ProxySidecar ->> ProxySidecar: 20. Verify<br/>X-Scope-Token
+    ProxySidecar ->> ProxySidecar: 21. Fine-Grained<br/>Authorization
+    ProxySidecar ->> BackendAPI: 22. Invoke<br/>business API
+    BackendAPI ->> ProxySidecar: 23. Business API<br/>response
+    ProxySidecar ->> ProxySidecar: 24. Fine-Grained<br/>response filter
+    ProxySidecar ->> Gateway: 25. Return response
+    Gateway ->> PortalView: 26. Return response
 
-PortalView -> LoginView: 1. Signin redirect
-LoginView -> OAuthKafka: 2. Authenticate user
-OAuthKafka -> AuthService: 3. Authenticate User\n (Active Directory\n for Employees)\n (CIF System\n for Customers)
-AuthService -> OAuthKafka: 4. Authenticated
-OAuthKafka -> OAuthKafka: 5. Generate auth code
-OAuthKafka -> PortalView: 6. Redirect with code
-PortalView -> Gateway: 7. Authorization URL \n with code param
-Gateway -> OAuthKafka: 8. Create JWT access \n token with code
-OAuthKafka -> OAuthKafka: 9. Generate JWT \n access token \n with user claims
-OAuthKafka -> Gateway: 10. Token returns \n to Gateway
-Gateway -> PortalView: 11. Token returns \n to Portal View \n in Secure Cookie
-PortalView -> Gateway: 12. Call Backend API
-Gateway -> Gateway: 13. Verify the token
-Gateway -> OAuthKafka: 14. Create Client \n Credentials token
-OAuthKafka -> OAuthKafka: 15. Generate Token \n with Scopes
-OAuthKafka -> Gateway: 16. Return the \n scope token
-Gateway -> Gateway: 17. Add scope \n token to \n X-Scope-Token \nHeader
-Gateway -> ProxySidecar: 18. Invoke API
-ProxySidecar -> ProxySidecar: 19. Verify \n Authorization \ntoken
-ProxySidecar -> ProxySidecar: 20. Verify \n X-Scope-Token
-ProxySidecar -> ProxySidecar: 21. Fine-Grained \n Authorization
-ProxySidecar -> BackendAPI: 22. Invoke \n business API
-BackendAPI -> ProxySidecar: 23. Business API \n response
-ProxySidecar -> ProxySidecar: 24. Fine-Grained \n response filter
-ProxySidecar -> Gateway: 25. Return response
-Gateway -> PortalView: 26. Return response
-
-@enduml
 ```
-
-![Sequence Diagram](authentication-sequence.png)
 
 
 1. When a user visits the website to access the single-page application (SPA), the Light Gateway serves the SPA to the user's browser. Each single page application will have a dedicated Light Gateway instance acts as a BFF. By default, the user is not logged in and can only access limited site features. To unlock additional features, the user can click the `User` button in the header and select the `Sign In` menu. This action redirects the browser from the Portal View to the Login View, both served by the same Light Gateway instance.
