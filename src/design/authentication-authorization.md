@@ -6,7 +6,9 @@ The following pattern illustrates the end-to-end process recommended by the Ligh
 
 ### Sequence Diagram
 
-```
+The following is the raw data that can be used to render the diagram in http://www.plantuml.com
+
+```plantuml
 @startuml
 participant "Portal View" as PortalView
 participant "Login View" as LoginView
@@ -49,7 +51,7 @@ Gateway -> PortalView: 26. Return response
 ![Sequence Diagram](authentication-sequence.png)
 
 
-1. When a user visits the website to access the single-page application (SPA), the Light Gateway serves the SPA to the user's browser. By default, the user is not logged in and can only access limited site features. To unlock additional features, the user can click the **User** button in the header and select the **Sign In** menu. This action redirects the browser from the Portal View to the Login View, both served by the same Light Gateway instance.
+1. When a user visits the website to access the single-page application (SPA), the Light Gateway serves the SPA to the user's browser. Each single page application will have a dedicated Light Gateway instance acts as a BFF. By default, the user is not logged in and can only access limited site features. To unlock additional features, the user can click the `User` button in the header and select the `Sign In` menu. This action redirects the browser from the Portal View to the Login View, both served by the same Light Gateway instance.
 
 2. On the Login View page, the user can either input a username and password or choose Google/Facebook for authentication. When the login form is submitted, the request is sent to the Light Gateway with the user's credentials. The Gateway forwards this request to the OAuth Kafka service.
 
