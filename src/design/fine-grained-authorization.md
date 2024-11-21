@@ -81,7 +81,7 @@ Each of these models offers different strengths and may be more suitable for dif
 
 ## Streamlining FGA by Implementing Rule-Based Access Control:
 
-ABAC (Attribute-Based Access Control) focuses on data attributes, PBAC (Policy-Based Access Control) centers on logic, and ReBAC (Relationship-Based Access Control) emphasizes relationships between users and resources. But what if we combined all three to leverage the strengths of each? This is the idea behind **Rule-Based Access Control (RBAC)**.
+ABAC (Attribute-Based Access Control) focuses on data attributes, PBAC (Policy-Based Access Control) centers on logic, and ReBAC (Relationship-Based Access Control) emphasizes relationships between users and resources. But what if we combined all three to leverage the strengths of each? This is the idea behind **Rule-Based Access Control (RuBAC)**.
 
 By embedding a lightweight rule engine, we can integrate multiple rules and actions to achieve the following:  
 
@@ -90,5 +90,65 @@ By embedding a lightweight rule engine, we can integrate multiple rules and acti
 - **Flexible Policy Enforcement**: Using a rule engine makes access policies more dynamic and simpler to manage.  
 
 - **Infer Relationships**: Automatically deduce relationships between entities. For instance, the rule engine could grant a user access to a file if they already have permission for the containing folder.  
+
+
+## Principle of Least Privilege
+
+The [principle of least privilege access control](https://www.cyberark.com/what-is/least-privilege/) widely referred to as least privilege, and PoLP is the security concept in which user(s) (employee(s)) are granted the minimum level of access/permissions to the app, data, or system that is required to perform his/her job functions.
+
+To ensure PoLP is effectively enforced, we've compiled a list of best practices:
+
+* **Conduct a thorough privilege audit**: As we know, visibility is critical in an access environment, so conducting regular or periodic access audits of all privileged accounts can help your team gain complete visibility. This audit includes reviewing privileged accounts and credentials held by employees, contractors, and third-party vendors, whether on-premises, accessible remotely, or in the cloud. However, your team must also focus on default and hard-coded credentials, which IT teams often overlook.
+
+* **Establish the least privilege as the default**: Start by granting new accounts the minimum privileges required for their tasks and eliminate or reconfigure default permissions on new systems or applications. Further, use role-based access control to help your team determine the necessary privileges for a new account by providing general guidelines based on roles and responsibilities. Also, your team needs to update and adjust access level permissions when the user's role changes; this will help prevent privilege creep.
+    
+* **Enforce separation of privileges**: Your team can prevent over-provisioning by limiting administrator privileges. Firstly, segregate administrative accounts from standard accounts, even if they belong to the same user, and isolate privileged user sessions. Then, grant administrative privileges (such as read, write, and execute permissions) only to the extent necessary for the user to perform their specific administrative tasks. This will help your team prevent granting users unnecessary or excessive control over critical systems, which could lead to security vulnerabilities or misconfigurations.
+
+* **Provide just-in-time, limited access**: To maintain least-privilege access without hindering employee workflows, combine role-based access control with time-limited privileges. Further, replace hard-coded credentials with dynamic secrets or use one-time-use/temporary credentials. This will help your team grant temporary elevated access permissions when users need it, for instance, to complete specific tasks or short-term projects.
+
+* **Keep track and evaluate privileged access**: Continuously monitor authentications and authorizations across your API platform and ensure all the individual actions are traceable. Additionally, record all authentication and authorizaiton sessions comprehensively, and use automated tools to swiftly identify any unusual activity or potential issues. These best practices are designed to enhance the security of your privileged accounts, data, and assets while ensuring compliance adherence and improving operational security without disrupting user workflows. 
+
+## OpenAPI Specification Extensions
+
+OpenAPI uses the term security scheme for authentication and authorization schemes. OpenAPI 3.0 lets you describe APIs protected using the following [security schemes](https://swagger.io/docs/specification/v3_0/authentication/). The fine-grained authorization is just another layer of security and it is natural to define the fine-grained authorization in the same specification. It is can be done with OpenAPI specification extensions. 
+
+Extensions (also referred to as specification extensions or vendor extensions) are custom properties that start with x-, such as x-logo. They can be used to describe extra functionality that is not covered by the standard OpenAPI Specification. Many API-related products that support OpenAPI make use of extensions to document their own attributes, such as Amazon API Gateway, ReDoc, APIMatic and others. 
+
+As OpenAPI specification openapi.yaml is loaded during the light-4j startup, the extensions will be available at runtime in cache for each endpoint just like the scopes definition. The API owner can define the following two extensions for each endpoint: 
+
+* **x-request-access**: This section allows designer to specify one or more **rules** as well as one or more security **attributes** for the input of the rules. For example, roles, location etc. The rule result will decide if the user has access to the endpoint based on the security attributes from the JWT token in the request chain. 
+
+* **x-response-filter**: This section is similar to the above; however, it works on the response chain. The rule result will decide which row or column of the response JSON will return to the user based on the security profile from the JWT token. 
+
+Example of OpenAPI specification with fine-grained authorization. 
+
+```
+paths:
+  /accounts:
+    get:
+      summary: "List all accounts"
+      operationId: "listAccounts"
+      x-request-access:
+        rule: "account-cc-group-role-auth"
+        roles: "manager teller customer"
+      x-response-filter:
+        rule: "account-row-filter"
+        teller: 
+          status: open
+        customer:
+          status: open
+          owner: @user_id          
+        rule: "account-col-filter"
+          teller: ["num","owner","type","firstName","lastName","status"]
+          customer: ["num","owner","type","firstName","lastName"]
+      security:
+      - account_auth:
+        - "account.r"
+
+```
+
+
+
+
 
 
