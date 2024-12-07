@@ -8,5 +8,9 @@
   - [JSON Schema Registry](./design/json-schema-registry.md)
   - [Light Controller](./design/light-controller.md)
   - [YAML Rule Registry](./design/yaml-rule-registry.md)
-
+  - [React Schema Form](./design/react-schema-form.md)
+  - [User Management](./design/user-management.md)
+- [Configuration](./configuration.md)
+  - [light-gateway](./config/light-gateway.md)
+  - [light-reference](./config/light-reference.md)
 - [Chapter 1](./chapter_1.md)
