@@ -467,7 +467,7 @@ How it Works:
 
 1. Define Attributes: Define all relevant attributes in attribute_t. Think about all the properties of your users, resources, and environment that might be used in access control decisions.
 
-2. Assign Attributes to Users: Populate user_attribute_t to associate attribute values with users.
+2. Assign Attributes to Users: Populate attribute_user_t to associate attribute values with users.
 
 3. Assign Attributes to Endpoints: Populate attribute_permission_t to associate attribute values with API endpoints.
 
@@ -484,7 +484,6 @@ How it Works:
 * Based on the policy evaluation result, access is either granted or denied.
 
 
-
 Key Advantages of ABAC:
 
 * Fine-Grained Control: Express very specific access rules.
@@ -495,12 +494,66 @@ Key Advantages of ABAC:
 
 * Auditing and Compliance: Easier to audit and demonstrate compliance.
 
+
+Format of attributes in JWT token:
+
+Unlike roles, groups and positions that can be concatanated as a string, an attribut is a key/value pair. We need to format multiple attributes into a string and put it into a token. 
+
+Challenges
+
+* Spaces: The primary issue is that simple key-value pairs like key1:value1 key2:value2 will not work when value contain spaces.
+
+* Escaping: We need a way to escape characters that may confuse the parser, for example if the value also contains a :.
+
+* Readability: The format should be reasonably readable for debugging and human consumption.
+
+* Parsing: The format should be easy to parse on the application side.
+
+Options
+
+1. Comma-Separated Key-Value Pairs with Escaping:
+
+  * Format: key1=value1,key2=value2_with_spaces,key3=value3\,with\,commas
+
+  * Escaping: Use backslash \ to escape commas and backslashes within the values. You can also escape spaces to make it more clear \
+
+  * Pros: Simple to implement, relatively easy to parse using splitting by comma and then by =.
+
+  * Cons: Can become hard to read with complex values, requires proper escaping, will become unreadable if \ need to be escaped.
+
+2. Custom Delimiter and Escaping:
+
+  * Format: key1^=^value1~key2^=^value2 with spaces~key3^=^value3~
+
+  * Delimiter: Use ^=^ as delimiter for key and value and use ~ for different attributes.
+
+  * Pros: You can avoid many escaping issues and keep spaces, easier to read than comma separated values.
+
+  * Cons: Need to choose delimiter carefully to make sure it is unique.
+
+3. URL-Encoded Key-Value Pairs:
+
+  * Format: key1=value1&key2=value+with+spaces&key3=value3%2Cwith%2Ccommas
+
+  * Pros: Well-established standard, handles spaces and special characters well.
+
+  * Cons: Requires URL encoding and decoding, slightly more overhead, can be less readable.
+
+  * Recommended Approach: Custom Delimiter with Simple Escaping
+
+We recommend the Custom Delimiter with Simple Escaping approach for your use case. It's a good balance between simplicity, readability, and the ability to handle spaces within values. It avoids the need to rely on complex URL encoding and also avoids the unreadability issue of using comma with backslash escaping.
+
+
 ## JWT Security Claims
 
 Using the tables defined above, follow these steps to create an authorization code token with user security claims:
 
 1. **`uid`**  
-   Assign the `user_id` to the `uid` claim in the JWT.
+   The `entity_id` (e.g., `employee_id` for employees and `customer_id` for customers) should be assigned to the `uid` claim in the JWT. This `uid` will be used by the response transformer to filter the response for the user and must represent a business identifier. 
+
+    Examples:
+    - **Employee**: Use the ACF2 ID as the `uid`.
+    - **Customer**: Use the CIF ID as the `uid` (e.g., in a banking context).
 
 2. **`role`**  
    Include a list of roles associated with the user.
@@ -512,68 +565,98 @@ Using the tables defined above, follow these steps to create an authorization co
    Include a list of key-value pairs representing user attributes.
 
 
-## Group Management and Dynamic Membership
+## Group and Position Management
 
-#### 1. Define Groups Related to the Organizational Structure
+#### Define Groups Related to User Category
 
-You can create groups that align with teams, departments, or other organizational units. These groups are relatively static and reflect the overall organizational structure. Use a separate table, `group_t`, as described above to store these groups.
+You can create groups that align with teams, departments, or other organizational units. These groups are relatively static and reflect the overall organizational structure. Use a separate table, `group_t`, as described earlier, to store these groups. Groups can be applied to all users regardless of their user type.
 
-#### 2. Use the Reporting Structure to Derive Dynamic Group Memberships
+#### Use the Employee Reporting Structure to Manage Positions
 
-Instead of directly assigning all users to groups, you can:
+Positions are similar to groups in managing user permissions, but they leverage the organizational reporting structure to propagate permissions between team members and their direct manager.
 
-- Assign base group memberships to individual users (e.g., only non-managers initially).
-- Use the reporting relationships stored in the `report_relationship_t` table to infer additional group memberships based on the organizational hierarchy.
+* Position Flags
 
-#### 3. Retrieval Logic
+  Each position in the `position_t` table has two flags:
+- **`inherit_to_ancestor`**: Determines if the position is inherited by a subordinate.
+- **`inherit_to_sibling`**: Determines if the position is inherited by team members (siblings) under the same manager.
 
-1. **Get User's Direct Groups**:  
-   Retrieve the groups a user is explicitly assigned to from the `user_group_t` table.
+* Responsibilities
 
-2. **Traverse Up the Reporting Hierarchy**:  
-   Use the `report_relationship_t` table to find all the user's ancestors (managers) in the reporting structure.
+  The application is responsible for propagating positions:
+- **Between Siblings**: Assigning inherited positions to team members under the same manager.
+- **To the Manager**: Assigning inherited positions to the direct manager.
 
-3. **Inherit Subordinate Group Memberships**:  
-   For each ancestor (manager), retrieve the direct reports' group memberships. Add these groups to the manager's effective group memberships. You can control the depth of inheritance (e.g., only inherit from direct reports or up to a certain level in the hierarchy).
+* User Interface for Position Management
 
-4. **Combine and Deduplicate**:  
-   Combine the user's direct group memberships with the inherited memberships, removing any duplicates.
+  A user interface (UI) can be implemented to simplify position management:
 
-#### Example
+- **Feature**: List all potential inherited positions for selection when adding a new user or changing a manager.
+- **Functionality**: Allow administrators to choose specific positions to inherit for users and managers dynamically.
 
-Let's say:
+#### Use Both Groups and Positions
 
-* Alice is a manager and belongs to the "Management" group.
+You can choose to use both groups and positions for your organization. However, you need to ensure that groups and positions categorize users across different dimensions. In general, groups should be used for customers, while positions should be used for employees.
 
-* Bob reports to Alice and belongs to the "Engineering" group.
+#### User Login Query
 
-* Charlie reports to Bob and belongs to the "Engineering" and "Testing" groups.
+Here is the query to run against the database tables upon a user login request:
 
-When Bob's request comes in:
+```sql
+SELECT
+    u.user_id,
+    u.user_type,
+    CASE
+        WHEN u.user_type = 'E' THEN e.employee_id
+        WHEN u.user_type = 'C' THEN c.customer_id
+        ELSE NULL
+    END AS entity_id,
+    CASE WHEN u.user_type = 'E' THEN string_agg(DISTINCT p.position_name, ' ' ORDER BY p.position_name) ELSE NULL END AS positions,
+    string_agg(DISTINCT r.role_name, ' ' ORDER BY r.role_name) AS roles,
+    string_agg(DISTINCT g.group_name, ' ' ORDER BY g.group_name) AS groups,
+     CASE
+        WHEN COUNT(DISTINCT at.attribute_name || '^=^' || aut.attribute_value) > 0 THEN string_agg(DISTINCT at.attribute_name || '^=^' || aut.attribute_value, '~' ORDER BY at.attribute_name || '^=^' || aut.attribute_value)
+        ELSE NULL
+    END AS attributes
+FROM
+    user_t AS u
+LEFT JOIN
+    user_host_t AS uh ON u.user_id = uh.user_id
+LEFT JOIN
+    role_user_t AS ru ON u.user_id = ru.user_id
+LEFT JOIN
+    role_t AS r ON ru.host_id = r.host_id AND ru.role_id = r.role_id
+LEFT JOIN
+    attribute_user_t AS aut ON u.user_id = aut.user_id
+LEFT JOIN
+    attribute_t AS at ON aut.host_id = at.host_id AND aut.attribute_id = at.attribute_id
+LEFT JOIN
+    group_user_t AS gu ON u.user_id = gu.user_id
+LEFT JOIN
+    group_t AS g ON gu.host_id = g.host_id AND gu.group_id = g.group_id
+LEFT JOIN
+    employee_t AS e ON uh.host_id = e.host_id AND u.user_id = e.user_id
+LEFT JOIN
+    customer_t AS c ON uh.host_id = c.host_id AND u.user_id = c.user_id
+LEFT JOIN
+    employee_position_t AS ep ON e.host_id = ep.host_id AND e.employee_id = ep.employee_id
+LEFT JOIN
+    position_t AS p ON ep.host_id = p.host_id AND ep.position_id = p.position_id
+WHERE
+    u.email = 'steve.hu@lightapi.net'
+GROUP BY
+    u.user_id, u.user_type, e.employee_id, c.customer_id;
+```
 
-* Query result contains Bob's direct group: "Engineering".
+And here is an example result from the test database:
 
-* Check reporting structure: Bob reports to Alice.
+```
+utgdG50vRVOX3mL1Kf83aA  E   sh35    APIPlatformDelivery admin user  delete insert select update country^=^CAN~peranent employee^=^true~security_clearance_level^=^2
+```
 
-* Get group memberships of Bob's direct reports: "Engineering", "Testing". (These are inherited since Bob is Charlie's manager)
+#### Parse Attribute String
 
-* Bob's effective groups are now "Engineering", "Testing".
+The query above returns attributes in a customized format. These attributes can be parsed using the `Util.parseAttributes` method available in the **light-4j utility module**
 
-When Alice's request comes in:
 
-* Query result contains Alice's direct group: "Management".
-
-* Check reporting structure: Bob and Charlie report to Alice.
-
-* Get group memberships of Alice's direct reports: "Engineering", "Testing" (inherited from Bob and Charlie).
-
-* Alice's effective groups are now "Management", "Engineering", "Testing".
-
-Advantages:
-
-* Reduced Administrative Overhead: You don't have to manually manage group memberships for managers as their teams change.
-
-* Dynamic Access Control: Permissions adapt automatically as the reporting structure evolves.
-
-* Centralized Logic: The inheritance logic is encapsulated in the logic, making it easier to maintain and update.
 
