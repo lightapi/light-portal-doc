@@ -564,6 +564,48 @@ Using the tables defined above, follow these steps to create an authorization co
 4. **`att`**  
    Include a list of key-value pairs representing user attributes.
 
+5. **`pos`**
+   Include a list of positions for the user.
+
+6. **`host`**
+   The host of the user.
+
+#### Example Token   
+
+```
+eyJraWQiOiJUal9sX3RJQlRnaW5PdFFiTDBQdjV3IiwiYWxnIjoiUlMyNTYifQ.eyJpc3MiOiJ1cm46Y29tOm5ldHdvcmtudDpvYXV0aDI6djEiLCJhdWQiOiJ1cm46Y29tLm5ldHdvcmtudCIsImV4cCI6MTczNDA2NDU5NSwianRpIjoicEs4WEtDZkU1aVFSdWdlQThJWXBwZyIsImlhdCI6MTczNDA2Mzk5NSwibmJmIjoxNzM0MDYzODc1LCJ2ZXIiOiIxLjAiLCJ1aWQiOiJzaDM1IiwidXR5IjoiRSIsImNpZCI6ImY3ZDQyMzQ4LWM2NDctNGVmYi1hNTJkLTRjNTc4NzQyMWU3MiIsImNzcmYiOiItTUN4OGhZRlF1bVZ3NFZkRDVHbEd3Iiwic2NwIjpbInBvcnRhbC5yIiwicG9ydGFsLnciLCJyZWYuciIsInJlZi53Il0sInJvbGUiOiJhZG1pbiB1c2VyIiwiYzEiOiIzNjEiLCJjMiI6IjY3IiwiZ3JwIjoiZGVsZXRlIGluc2VydCBzZWxlY3QgdXBkYXRlIiwiYXR0IjoiY291bnRyeV49XkNBTn5wZXJhbmVudCBlbXBsb3llZV49XnRydWV-c2VjdXJpdHlfY2xlYXJhbmNlX2xldmVsXj1eMiIsInBvcyI6IkFQSVBsYXRmb3JtRGVsaXZlcnkiLCJob3N0IjoiTjJDTXcwSEdRWGVMdkMxd0JmbG4yQSJ9.Gky_rR9hreP04GZm-0H_HBBAeDIPhQ9tsNuZclUzTdkMrYay40kcNk4jWkPdMcxfIfIbGj2eqSQgNhkBuym2yc6HsRF0nukZhYSGklVNXFe3R-0DdKwxxWyqvXyWDvrQtme0ttT2tYGTRRCZXnHDRMUFeDSz7kVjjIj3WymjFyxWBnWnBOjYqDL34652Fb8c7hWME0nSxbWO0ZvPRDhRM-l0nDGNm2ojq-3sjaU_pRywYahXP-wtnNSLwvctFgONPWSM9Ie6FqwRmYBFVo8OE0VdTRvUfnO4mL1O2UbTfxzbNJFv4HP1mSZG_SSB5j3t_RuZLfUMIajFi105ze2PUg
+```
+
+And the payload: 
+
+```
+{
+  "iss": "urn:com:networknt:oauth2:v1",
+  "aud": "urn:com.networknt",
+  "exp": 1734064595,
+  "jti": "pK8XKCfE5iQRugeA8IYppg",
+  "iat": 1734063995,
+  "nbf": 1734063875,
+  "ver": "1.0",
+  "uid": "sh35",
+  "uty": "E",
+  "cid": "f7d42348-c647-4efb-a52d-4c5787421e72",
+  "csrf": "-MCx8hYFQumVw4VdD5GlGw",
+  "scp": [
+    "portal.r",
+    "portal.w",
+    "ref.r",
+    "ref.w"
+  ],
+  "role": "admin user",
+  "c1": "361",
+  "c2": "67",
+  "grp": "delete insert select update",
+  "att": "country^=^CAN~peranent employee^=^true~security_clearance_level^=^2",
+  "pos": "APIPlatformDelivery",
+  "host": "N2CMw0HGQXeLvC1wBfln2A"
+}
+```
 
 ## Group and Position Management
 
@@ -659,4 +701,28 @@ utgdG50vRVOX3mL1Kf83aA  E   sh35    APIPlatformDelivery admin user  delete inser
 The query above returns attributes in a customized format. These attributes can be parsed using the `Util.parseAttributes` method available in the **light-4j utility module**
 
 
+## Portal View and Default Role
+
+Given the flexibility of fine-grained authorization approaches, users can choose one or more methods to suit their business requirements. However, in scenarios where **RBAC (Role-Based Access Control)** is not utilized, the `role` claim may not exist in the custom claims of the JWT token.
+
+#### Handling Missing `role` in JWT
+For the **portal-view** application, at least one role is required to filter menu items. To address cases where no roles are present in the JWT:
+
+1. **Default Role Assignment**:  
+   If the `role` claim is absent in the JWT, the system will:
+   - Assign a default role, `"user"`, to ensure compatibility.
+   - Include this role in a `roles` field in the browser cookie.
+
+2. **Cookie Roles Field**:  
+   - The `roles` field in the cookie will contain a single role: `"user"`.
+   - This ensures the **portal-view** can still function as expected by displaying the appropriate menu items for users.
+
+#### Example Workflow
+1. A user authenticates, and their JWT is generated without a `role` claim.  
+2. During authentication handling:
+   - The StatelessAuthHandler checks for the presence of the `role` claim.
+   - If no roles are found, the `"user"` role is added to the `roles` field in the cookie.  
+3. The **portal-view** reads the `roles` field from the cookie to filter menu items appropriately. 
+
+This approach provides a seamless experience while maintaining compatibility with applications requiring roles for authorization or UI customization.
 
