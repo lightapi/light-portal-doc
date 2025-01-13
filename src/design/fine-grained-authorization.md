@@ -72,24 +72,24 @@ Whether to use fine grained or coarse-grained controls depends on the specific p
 There are several standard models for implementing FGA:
 
 * `Attribute-Based Access Control (ABAC)`: In [ABAC](https://en.wikipedia.org/wiki/Attribute-based_access_control), access control decisions are made by evaluating attributes such as user roles, resource attributes (e.g., type, size, status), requested action, current date and time, and any other relevant contextual information. ABAC allows for very granular control over access based on a wide range of attributes.
-    
+
 * `Policy-Based Access Control (PBAC)`: [PBAC](https://www.nextlabs.com/what-is-policy-based-access-control/) is similar to ABAC but focuses more on defining policies than directly evaluating attributes. Policies in PBAC typically consist of rules or logic that dictate access control decisions based on various contextual factors. While ABAC relies heavily on data (attributes), PBAC emphasizes using logic to determine access.
 
 * Relationship-Based Access Control (ReBAC): [ReBAC](https://en.wikipedia.org/wiki/Relationship-based_access_control) emphasizes the relationships between users and resources, as well as relationships between different resources. By considering these relationships, ReBAC provides a powerful and expressive model for describing complex authorization contexts. This can involve the attributes of users and resources and their interactions and dependencies.
 
-Each of these models offers different strengths and may be more suitable for different scenarios. FGA allows for fine grained control over access, enabling organizations to enforce highly specific access policies tailored to their requirements. 
+Each of these models offers different strengths and may be more suitable for different scenarios. FGA allows for fine grained control over access, enabling organizations to enforce highly specific access policies tailored to their requirements.
 
 ## Streamlining FGA by Implementing Rule-Based Access Control:
 
 ABAC (Attribute-Based Access Control) focuses on data attributes, PBAC (Policy-Based Access Control) centers on logic, and ReBAC (Relationship-Based Access Control) emphasizes relationships between users and resources. But what if we combined all three to leverage the strengths of each? This is the idea behind **Rule-Based Access Control (RuBAC)**.
 
-By embedding a lightweight rule engine, we can integrate multiple rules and actions to achieve the following:  
+By embedding a lightweight rule engine, we can integrate multiple rules and actions to achieve the following:
 
-- **Optimize ABAC**: Reduce the number of required attributes since not all rules depend on them. For example, a standard rule like *"Customer data can only be accessed during working hours"* can be shared across policies.  
+- **Optimize ABAC**: Reduce the number of required attributes since not all rules depend on them. For example, a standard rule like *"Customer data can only be accessed during working hours"* can be shared across policies.
 
-- **Flexible Policy Enforcement**: Using a rule engine makes access policies more dynamic and simpler to manage.  
+- **Flexible Policy Enforcement**: Using a rule engine makes access policies more dynamic and simpler to manage.
 
-- **Infer Relationships**: Automatically deduce relationships between entities. For instance, the rule engine could grant a user access to a file if they already have permission for the containing folder.  
+- **Infer Relationships**: Automatically deduce relationships between entities. For instance, the rule engine could grant a user access to a file if they already have permission for the containing folder.
 
 
 ## Principle of Least Privilege
@@ -101,26 +101,26 @@ To ensure PoLP is effectively enforced, we've compiled a list of best practices:
 * **Conduct a thorough privilege audit**: As we know, visibility is critical in an access environment, so conducting regular or periodic access audits of all privileged accounts can help your team gain complete visibility. This audit includes reviewing privileged accounts and credentials held by employees, contractors, and third-party vendors, whether on-premises, accessible remotely, or in the cloud. However, your team must also focus on default and hard-coded credentials, which IT teams often overlook.
 
 * **Establish the least privilege as the default**: Start by granting new accounts the minimum privileges required for their tasks and eliminate or reconfigure default permissions on new systems or applications. Further, use role-based access control to help your team determine the necessary privileges for a new account by providing general guidelines based on roles and responsibilities. Also, your team needs to update and adjust access level permissions when the user's role changes; this will help prevent privilege creep.
-    
+
 * **Enforce separation of privileges**: Your team can prevent over-provisioning by limiting administrator privileges. Firstly, segregate administrative accounts from standard accounts, even if they belong to the same user, and isolate privileged user sessions. Then, grant administrative privileges (such as read, write, and execute permissions) only to the extent necessary for the user to perform their specific administrative tasks. This will help your team prevent granting users unnecessary or excessive control over critical systems, which could lead to security vulnerabilities or misconfigurations.
 
 * **Provide just-in-time, limited access**: To maintain least-privilege access without hindering employee workflows, combine role-based access control with time-limited privileges. Further, replace hard-coded credentials with dynamic secrets or use one-time-use/temporary credentials. This will help your team grant temporary elevated access permissions when users need it, for instance, to complete specific tasks or short-term projects.
 
-* **Keep track and evaluate privileged access**: Continuously monitor authentications and authorizations across your API platform and ensure all the individual actions are traceable. Additionally, record all authentication and authorizaiton sessions comprehensively, and use automated tools to swiftly identify any unusual activity or potential issues. These best practices are designed to enhance the security of your privileged accounts, data, and assets while ensuring compliance adherence and improving operational security without disrupting user workflows. 
+* **Keep track and evaluate privileged access**: Continuously monitor authentications and authorizations across your API platform and ensure all the individual actions are traceable. Additionally, record all authentication and authorizaiton sessions comprehensively, and use automated tools to swiftly identify any unusual activity or potential issues. These best practices are designed to enhance the security of your privileged accounts, data, and assets while ensuring compliance adherence and improving operational security without disrupting user workflows.
 
 ## OpenAPI Specification Extensions
 
-OpenAPI uses the term security scheme for authentication and authorization schemes. OpenAPI 3.0 lets you describe APIs protected using the following [security schemes](https://swagger.io/docs/specification/v3_0/authentication/). The fine-grained authorization is just another layer of security and it is natural to define the fine-grained authorization in the same specification. It is can be done with OpenAPI specification extensions. 
+OpenAPI uses the term security scheme for authentication and authorization schemes. OpenAPI 3.0 lets you describe APIs protected using the following [security schemes](https://swagger.io/docs/specification/v3_0/authentication/). The fine-grained authorization is just another layer of security and it is natural to define the fine-grained authorization in the same specification. It can be done with OpenAPI specification extensions.
 
-Extensions (also referred to as specification extensions or vendor extensions) are custom properties that start with x-, such as x-logo. They can be used to describe extra functionality that is not covered by the standard OpenAPI Specification. Many API-related products that support OpenAPI make use of extensions to document their own attributes, such as Amazon API Gateway, ReDoc, APIMatic and others. 
+Extensions (also referred to as specification extensions or vendor extensions) are custom properties that start with x-, such as x-logo. They can be used to describe extra functionality that is not covered by the standard OpenAPI Specification. Many API-related products that support OpenAPI make use of extensions to document their own attributes, such as Amazon API Gateway, ReDoc, APIMatic and others.
 
-As OpenAPI specification openapi.yaml is loaded during the light-4j startup, the extensions will be available at runtime in cache for each endpoint just like the scopes definition. The API owner can define the following two extensions for each endpoint: 
+As OpenAPI specification openapi.yaml is loaded during the light-4j startup, the extensions will be available at runtime in cache for each endpoint just like the scopes definition. The API owner can define the following two extensions for each endpoint:
 
-* **x-request-access**: This section allows designer to specify one or more **rules** as well as one or more security **attributes** for the input of the rules. For example, roles, location etc. The rule result will decide if the user has access to the endpoint based on the security attributes from the JWT token in the request chain. 
+* **x-request-access**: This section allows designer to specify one or more **rules** as well as one or more security **attributes** for the input of the rules. For example, roles, location etc. The rule result will decide if the user has access to the endpoint based on the security attributes from the JWT token in the request chain.
 
-* **x-response-filter**: This section is similar to the above; however, it works on the response chain. The rule result will decide which row or column of the response JSON will return to the user based on the security profile from the JWT token. 
+* **x-response-filter**: This section is similar to the above; however, it works on the response chain. The rule result will decide which row or column of the response JSON will return to the user based on the security profile from the JWT token.
 
-Example of OpenAPI specification with fine-grained authorization. 
+Example of OpenAPI specification with fine-grained authorization.
 
 ```
 paths:
@@ -133,11 +133,11 @@ paths:
         roles: "manager teller customer"
       x-response-filter:
         rule: "account-row-filter"
-        teller: 
+        teller:
           status: open
         customer:
           status: open
-          owner: @user_id          
+          owner: @user_id
         rule: "account-col-filter"
           teller: ["num","owner","type","firstName","lastName","status"]
           customer: ["num","owner","type","firstName","lastName"]
@@ -150,7 +150,7 @@ paths:
 
 ## FGA Rules for AccessControlHandler
 
-With the above specification loaded during the runtime, the rules will be loaded during the server startup for the service as well. In the Rule Registry on the light-portal, we have a set of built-in rules that can be picked as fine-grained policies for each API. Here is an example of rule for the above specification in the x-request-access. 
+With the above specification loaded during the runtime, the rules will be loaded during the server startup for the service as well. In the Rule Registry on the light-portal, we have a set of built-in rules that can be picked as fine-grained policies for each API. Here is an example of rule for the above specification in the x-request-access.
 
 ```
 account-cc-group-role-auth:
@@ -197,9 +197,30 @@ account-cc-group-role-auth:
 
 ```
 
-All rules are managed by the light-portal and shared by all the services. In addition, developers can create their customized rules for their own services. 
+All rules are managed by the light-portal and shared by all the services. In addition, developers can create their customized rules for their own services.
+
+## Response Filter
+
+There are two type of filters. Row and Column. 
 
 
+#### Row
 
+For row filter, we need to check the condition defined for some of the properties in order to make the filter decision. In database, for each endpoint, we have colName, operator and colValue defined for the condition. 
+
+The operator supports the following enum: ["=","!=","<",">","<=",">=","in","not in", "range"]
+
+For the colValue, we do support variables from the jwt token with @. For example, @eid will be replaced with the eid claim from the jwt token. 
+
+
+#### Col
+
+For column filter, we need to include a list of columns or exclude a list of columns in json format.
+
+["accountNo","firstName","lastName"]
+
+or 
+
+!["status"]
 
 

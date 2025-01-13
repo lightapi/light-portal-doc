@@ -4,6 +4,7 @@
 - [Architecture](./architecture.md)
 - [Design](./design.md)
   - [Multi-Tenant](./design/multi-tenant.md)
+  - [Portal Event](./design/portal-event.md)
   - [Reference Table](./design/reference_table.md)
   - [Authentication Authorization](./design/authentication-authorization.md)
   - [Fine-Grained Authorization](./design/fine-grained-authorization.md)
