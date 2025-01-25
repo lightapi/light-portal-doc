@@ -79,3 +79,17 @@ The key will be the hostId
 
 The key will be the userId
 
+
+## Promotion or Replay
+
+#### Promotion approaches
+
+1. When promote from dev to sit, we can export all event from dev and update the event json file and then replay to the sit. 
+2. We can import the original event json from dev to sit and then update some on the sit host.
+
+#### Promotable Event Type
+
+There are two type of events: configurable event vs transactional event. We should only promote the configurable events from dev to sit. Not the deployment logs from dev to sit. We need a table to define the promotable event types. 
+
+
+
