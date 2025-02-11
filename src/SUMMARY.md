@@ -13,6 +13,7 @@
   - [YAML Rule Registry](./design/yaml-rule-registry.md)
   - [React Schema Form](./design/react-schema-form.md)
   - [User Management](./design/user-management.md)
+  - [Config Server](./design/config-server.md)
 - [Implementation](./implementation.md)
   - [Sign In](./implementation/signin.md)
 - [Configuration](./configuration.md)
