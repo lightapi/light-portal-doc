@@ -17,6 +17,7 @@
   - [Deployment](./design/deployment.md)
 - [Implementation](./implementation.md)
   - [Sign In](./implementation/signin.md)
+  - [Services](./implementation/services.md)
 - [Configuration](./configuration.md)
   - [light-gateway](./config/light-gateway.md)
   - [light-reference](./config/light-reference.md)
