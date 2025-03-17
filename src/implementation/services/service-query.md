@@ -3,7 +3,7 @@
 
 ## 1. GetApiLabel Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `apiId` from the input map.
 2. **Database Query**: Queries the database to retrieve the label for the given `apiId`.
 3. **Response Construction**: Constructs a response with the retrieved label.
@@ -20,7 +20,7 @@
 
 ## 2. GetApiVersionLabel Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `apiId` and `version` from the input map.
 2. **Database Query**: Queries the database to retrieve the label for the given `apiId` and `version`.
 3. **Response Construction**: Constructs a response with the retrieved label.
@@ -38,7 +38,7 @@
 
 ## 3. GetEndpointLabel Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `endpointId` from the input map.
 2. **Database Query**: Queries the database to retrieve the label for the given `endpointId`.
 3. **Response Construction**: Constructs a response with the retrieved label.
@@ -55,7 +55,7 @@
 
 ## 4. GetEndpointRule Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `endpointId` from the input map.
 2. **Database Query**: Queries the database to retrieve the rule for the given `endpointId`.
 3. **Response Construction**: Constructs a response with the retrieved rule.
@@ -72,7 +72,7 @@
 
 ## 5. GetEndpointScope Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `endpointId` from the input map.
 2. **Database Query**: Queries the database to retrieve the scope for the given `endpointId`.
 3. **Response Construction**: Constructs a response with the retrieved scope.
@@ -89,7 +89,7 @@
 
 ## 6. GetService Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `serviceId` from the input map.
 2. **Database Query**: Queries the database to retrieve the service details for the given `serviceId`.
 3. **Response Construction**: Constructs a response with the retrieved service details.
@@ -106,7 +106,7 @@
 
 ## 7. GetServiceById Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `serviceId` from the input map.
 2. **Database Query**: Queries the database to retrieve the service details for the given `serviceId`.
 3. **Response Construction**: Constructs a response with the retrieved service details.
@@ -123,7 +123,7 @@
 
 ## 8. GetServiceEndpoint Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `serviceId` and `endpointId` from the input map.
 2. **Database Query**: Queries the database to retrieve the endpoint details for the given `serviceId` and `endpointId`.
 3. **Response Construction**: Constructs a response with the retrieved endpoint details.
@@ -141,7 +141,7 @@
 
 ## 9. GetServiceIdLabel Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `serviceId` from the input map.
 2. **Database Query**: Queries the database to retrieve the label for the given `serviceId`.
 3. **Response Construction**: Constructs a response with the retrieved label.
@@ -158,7 +158,7 @@
 
 ## 10. GetServicePermission Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `serviceId` from the input map.
 2. **Database Query**: Queries the database to retrieve the permissions for the given `serviceId`.
 3. **Response Construction**: Constructs a response with the retrieved permissions.
@@ -175,7 +175,7 @@
 
 ## 11. GetServiceRoleById Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `roleId` from the input map.
 2. **Database Query**: Queries the database to retrieve the role details for the given `roleId`.
 3. **Response Construction**: Constructs a response with the retrieved role details.
@@ -192,7 +192,7 @@
 
 ## 12. GetServiceRule Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `serviceId` from the input map.
 2. **Database Query**: Queries the database to retrieve the rule for the given `serviceId`.
 3. **Response Construction**: Constructs a response with the retrieved rule.
@@ -209,7 +209,7 @@
 
 ## 13. GetServiceVersion Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `serviceId` from the input map.
 2. **Database Query**: Queries the database to retrieve the version for the given `serviceId`.
 3. **Response Construction**: Constructs a response with the retrieved version.

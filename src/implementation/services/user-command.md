@@ -3,7 +3,7 @@
 
 ## 1. CancelOrder Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `email`, `merchantUserId`, `orderId`, and `hostId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -26,7 +26,7 @@
 
 ## 2. ChangePassword Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId`, `oldPassword`, `newPassword`, and `passwordConfirm` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Password Hashing**: Hashes the new and old passwords.
@@ -50,7 +50,7 @@
 
 ## 3. ConfirmUser Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId`, `email`, and `token` from the input map.
 2. **Event Creation**: Constructs an `EventId` and `UserConfirmedEvent` with the extracted data.
 3. **Serialization**: Serializes the event using `AvroSerializer`.
@@ -70,7 +70,7 @@
 
 ## 4. CreateOrder Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId`, `merchantUserId`, and `order` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -92,7 +92,7 @@
 
 ## 5. CreateSocialUser Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `email`, `userId`, `hostId`, `firstName`, `lastName`, and `language` from the input map.
 2. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
 3. **Event Creation**: Constructs an `EventId` and `SocialUserCreatedEvent` with the extracted data.
@@ -116,7 +116,7 @@
 
 ## 6. CreateUser Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId`, `email`, `entityId`, `userType`, `password`, and `passwordConfirm` from the input map.
 2. **User Verification**: Ensures the email and user ID do not already exist.
 3. **Password Hashing**: Hashes the password.
@@ -142,7 +142,7 @@
 
 ## 7. DeletePayment Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `email` and `hostId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -163,7 +163,7 @@
 
 ## 8. DeleteUserById Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `userId` and `hostId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -184,7 +184,7 @@
 
 ## 9. DeliverOrder Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `email`, `hostId`, `orderId`, and `customerUserId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -207,7 +207,7 @@
 
 ## 10. ForgetPassword Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId` and `email` from the input map.
 2. **User Verification**: Ensures the email exists in the system.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -229,7 +229,7 @@
 
 ## 11. LockUser Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `userId` and `hostId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -250,7 +250,7 @@
 
 ## 12. UnlockUser Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `userId` and `hostId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -271,7 +271,7 @@
 
 ## 13. UpdatePayment Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `email`, `hostId`, and `payments` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -293,7 +293,7 @@
 
 ## 14. UpdateRoles Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `email`, `hostId`, and `roles` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -315,7 +315,7 @@
 
 ## 15. UpdateUserById Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `userId`, `hostId`, and `userDetails` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -337,7 +337,7 @@
 
 ## 16. VerifyUser Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `userId` and `hostId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -358,7 +358,7 @@
 
 ## 17. PaymentNonce Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `userId` and `hostId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -379,7 +379,7 @@
 
 ## 18. ResetPassword Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `email`, `hostId`, `token`, `newPassword`, and `passwordConfirm` from the input map.
 2. **User Verification**: Ensures the email exists in the system.
 3. **Password Hashing**: Hashes the new password.
@@ -404,7 +404,7 @@
 
 ## 19. SendMessage Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `userId`, `subject`, `content`, and `hostId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.

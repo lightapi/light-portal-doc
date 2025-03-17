@@ -3,7 +3,7 @@
 
 ## 1. GetHost Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `offset`, `limit`, `hostId`, `domain`, `subDomain`, `hostDesc`, and `hostOwner` from the input map.
 2. **Logging Parameters**: Logs the extracted parameters for traceability.
 3. **Database Query**: Queries the `host_t` table using the extracted parameters.
@@ -27,7 +27,7 @@
 
 ## 2. GetHostByDomain Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `domain`, `subDomain`, and `hostDesc` from the input map.
 2. **Logging Parameters**: Logs the extracted parameters for traceability.
 3. **Database Query**: Queries the `host_t` table using the extracted parameters.
@@ -47,7 +47,7 @@
 
 ## 3. GetHostById Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Token Validation**: Ensures the token type is correct.
@@ -66,7 +66,7 @@
 
 ## 4. GetHostDomainById Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Token Validation**: Ensures the token type is correct.
@@ -85,7 +85,7 @@
 
 ## 5. GetHostLabel Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Database Query**: Queries the `host_t` table to get host labels.
 2. **Result Handling**: Checks if the query result is successful.
 3. **Response Handling**: Returns the query result or an error status if the query fails.
@@ -101,7 +101,7 @@
 
 ## 6. GetOrg Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `offset`, `limit`, `domain`, `orgName`, `orgDesc`, and `orgOwner` from the input map.
 2. **Database Query**: Queries the `org_t` table using the extracted parameters.
 3. **Result Handling**: Checks if the query result is successful.

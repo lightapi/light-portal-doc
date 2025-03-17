@@ -3,7 +3,7 @@
 
 ## 1. CreateRule Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId`, `ruleId`, `ruleName`, `ruleVersion`, `ruleType`, `ruleGroup`, `ruleDesc`, `ruleOwner`, `common`, and `conditions` from the input map.
 2. **Domain Retrieval**: Fetches the domain associated with the `hostId`.
 3. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.

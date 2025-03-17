@@ -3,7 +3,7 @@
 
 ## 1. GetInstance Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts various fields such as `offset`, `limit`, `hostId`, `instanceId`, `instanceName`, `productId`, `productVersion`, `serviceId`, `apiId`, `apiVersion`, `environment`, `pipelineId`, `serviceDesc`, `instanceDesc`, and `tagId` from the input map.
 2. **Database Query**: Uses the `dbProvider` to query the database for instances matching the extracted criteria.
 3. **Response Handling**: Checks if the query result is successful. If not, returns an error status. Otherwise, returns the query result.
@@ -33,7 +33,7 @@
 
 ## 2. GetInstanceApi Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts various fields such as `offset`, `limit`, `hostId`, `instanceId`, `apiId`, `apiVersion`, and `active` from the input map.
 2. **Database Query**: Uses the `dbProvider` to query the database for instance APIs matching the extracted criteria.
 3. **Response Handling**: Checks if the query result is successful. If not, returns an error status. Otherwise, returns the query result.
@@ -55,7 +55,7 @@
 
 ## 3. GetInstanceApp Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts various fields such as `offset`, `limit`, `hostId`, `instanceId`, `appId`, `appVersion`, and `active` from the input map.
 2. **Database Query**: Uses the `dbProvider` to query the database for instance apps matching the extracted criteria.
 3. **Response Handling**: Checks if the query result is successful. If not, returns an error status. Otherwise, returns the query result.
@@ -77,7 +77,7 @@
 
 ## 4. GetInstanceLabel Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts the `hostId` from the input map.
 2. **Database Query**: Uses the `dbProvider` to query the database for instance labels matching the extracted `hostId`.
 3. **Response Handling**: Checks if the query result is successful. If not, returns an error status. Otherwise, returns the query result.

@@ -3,7 +3,7 @@
 
 ## 1. CreateDeployment Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `deploymentId`, `pipelineId`, and `platformId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -26,7 +26,7 @@
 
 ## 2. CreatePipeline Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `pipelineId`, `name`, and `description` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -49,7 +49,7 @@
 
 ## 3. CreatePlatform Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `platformId`, `name`, and `description` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -72,7 +72,7 @@
 
 ## 4. DeleteDeployment Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `deploymentId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -92,7 +92,7 @@
 
 ## 5. DeletePipeline Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `pipelineId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -112,7 +112,7 @@
 
 ## 6. DeletePlatform Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `platformId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -132,7 +132,7 @@
 
 ## 7. UpdateDeployment Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `deploymentId`, `pipelineId`, and `platformId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -155,7 +155,7 @@
 
 ## 8. UpdateDeploymentJobId Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `deploymentId` and `jobId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -176,7 +176,7 @@
 
 ## 9. UpdatePipeline Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `pipelineId`, `name`, and `description` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -199,7 +199,7 @@
 
 ## 10. UpdatePlatform Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `platformId`, `name`, and `description` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.

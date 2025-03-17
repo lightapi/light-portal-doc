@@ -3,7 +3,7 @@
 
 ## 1. GetProductVersion Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts various fields such as `offset`, `limit`, `hostId`, `productId`, `productVersion`, `light4jVersion`, `breakCode`, `breakConfig`, `releaseNote`, `versionDesc`, `releaseType`, `current`, and `versionStatus` from the input map.
 2. **Field Validation**: Validates the extracted fields to ensure they are not blank.
 3. **Logging Details**: Logs detailed information about the extracted fields if trace logging is enabled.
@@ -34,7 +34,7 @@
 
 ## 2. GetProductIdLabel Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId` from the input map.
 2. **Logging Details**: Logs detailed information about the extracted `hostId` if trace logging is enabled.
 3. **Database Query**: Uses the `dbProvider` to query the product ID and label from the database.
@@ -52,7 +52,7 @@
 
 ## 3. GetProductVersionLabel Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId` and `productId` from the input map.
 2. **Logging Details**: Logs detailed information about the extracted `hostId` and `productId` if trace logging is enabled.
 3. **Database Query**: Uses the `dbProvider` to query the product version label from the database.

@@ -3,7 +3,7 @@
 
 ## 1. GetDeployment Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `offset`, `limit`, `hostId`, `deploymentId`, `instanceId`, `deploymentStatus`, `deploymentType`, and `platformJobId` from the input map.
 2. **Null Check**: Checks if any of the extracted values are blank and sets them to null if they are.
 3. **Database Query**: Calls `dbProvider.getDeployment` with the extracted values to retrieve deployment data.
@@ -27,7 +27,7 @@
 
 ## 2. GetPipeline Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `offset`, `limit`, `hostId`, `pipelineId`, `platformId`, `endpoint`, `requestSchema`, and `responseSchema` from the input map.
 2. **Null Check**: Checks if any of the extracted values are blank and sets them to null if they are.
 3. **Database Query**: Calls `dbProvider.getPipeline` with the extracted values to retrieve pipeline data.
@@ -51,7 +51,7 @@
 
 ## 3. GetPipelineLabel Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId` from the input map.
 2. **Database Query**: Calls `dbProvider.getPipelineLabel` with the extracted `hostId` to retrieve pipeline label data.
 3. **Response Handling**: Checks if the result is a failure and returns an error status if it is. Otherwise, returns the result.
@@ -67,7 +67,7 @@
 
 ## 4. GetPlatform Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `offset`, `limit`, `hostId`, `platformId`, `platformName`, `platformVersion`, `clientType`, `clientUrl`, `credentials`, `proxyUrl`, `proxyPort`, `environment`, `systemEnv`, `runtimeEnv`, `zone`, `region`, and `lob` from the input map.
 2. **Null Check**: Checks if any of the extracted values are blank and sets them to null if they are.
 3. **Database Query**: Calls `dbProvider.getPlatform` with the extracted values to retrieve platform data.
@@ -100,7 +100,7 @@
 
 ## 5. GetPlatformLabel Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId` from the input map.
 2. **Database Query**: Calls `dbProvider.getPlatformLabel` with the extracted `hostId` to retrieve platform label data.
 3. **Response Handling**: Checks if the result is a failure and returns an error status if it is. Otherwise, returns the result.

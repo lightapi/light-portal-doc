@@ -3,7 +3,7 @@
 
 ## 1. GetGroup Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `offset`, `limit`, `hostId`, `groupId`, and `groupDesc` from the input map.
 2. **Handling Empty Fields**: Checks if `groupId` and `groupDesc` are empty and sets them to null if they are.
 3. **Logging Extracted Data**: Logs the extracted data.
@@ -26,7 +26,7 @@
 
 ## 2. GetGroupLabel Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId` from the input map.
 2. **Logging Extracted Data**: Logs the extracted data.
 3. **Database Query**: Queries the database for group labels using the extracted data.
@@ -44,7 +44,7 @@
 
 ## 3. QueryGroupColFilter Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `offset`, `limit`, `hostId`, `groupId`, `apiId`, `apiVersion`, and `endpoint` from the input map.
 2. **Handling Empty Fields**: Checks if `groupId`, `apiId`, `apiVersion`, and `endpoint` are empty and sets them to null if they are.
 3. **Database Query**: Queries the database for group column filters using the extracted data.
@@ -68,7 +68,7 @@
 
 ## 4. QueryGroupPermission Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `offset`, `limit`, `hostId`, `groupId`, `apiId`, `apiVersion`, and `endpoint` from the input map.
 2. **Handling Empty Fields**: Checks if `groupId`, `apiId`, `apiVersion`, and `endpoint` are empty and sets them to null if they are.
 3. **Database Query**: Queries the database for group permissions using the extracted data.
@@ -92,7 +92,7 @@
 
 ## 5. QueryGroupRowFilter Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `offset`, `limit`, `hostId`, `groupId`, `apiId`, `apiVersion`, and `endpoint` from the input map.
 2. **Handling Empty Fields**: Checks if `groupId`, `apiId`, `apiVersion`, and `endpoint` are empty and sets them to null if they are.
 3. **Database Query**: Queries the database for group row filters using the extracted data.
@@ -116,7 +116,7 @@
 
 ## 6. QueryGroupUser Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `offset`, `limit`, `hostId`, `groupId`, `userId`, `entityId`, `email`, `firstName`, `lastName`, and `userType` from the input map.
 2. **Handling Empty Fields**: Checks if `groupId`, `userId`, `entityId`, `email`, `firstName`, `lastName`, and `userType` are empty and sets them to null if they are.
 3. **Database Query**: Queries the database for group users using the extracted data.

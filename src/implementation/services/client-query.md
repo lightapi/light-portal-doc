@@ -3,7 +3,7 @@
 
 ## 1. GetApp Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId`, `offset`, `limit`, `appId`, `appName`, `appDesc`, `isKafkaApp`, `operationOwner`, and `deliveryOwner` from the input map.
 2. **Database Query**: Uses the `PortalDbProvider` to query the database for apps based on the extracted parameters.
 3. **Result Handling**: Checks if the query result is successful.
@@ -28,7 +28,7 @@
 
 ## 2. GetAppIdLabel Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId` from the input map.
 2. **Database Query**: Uses the `PortalDbProvider` to query the database for app ID labels based on the `hostId`.
 3. **Result Handling**: Checks if the query result is successful.

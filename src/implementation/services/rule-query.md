@@ -3,7 +3,7 @@
 
 ## 1. GetRule Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts various fields such as `offset`, `limit`, `hostId`, `ruleId`, `ruleName`, `ruleVersion`, `ruleType`, `ruleGroup`, `ruleDesc`, `ruleBody`, `ruleOwner`, and `common` from the input map.
 2. **Database Query**: Queries the database for rules based on the extracted fields.
 3. **Response Handling**: If the query is successful, the rules are returned as a JSON string. If the query fails, an error status is returned.
@@ -30,7 +30,7 @@
 
 ## 2. GetRuleByApiId Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId`, `apiId`, and `apiVersion` from the input map.
 2. **Database Query**: Queries the database for rules associated with the given API ID.
 3. **Response Handling**: If the query is successful, the rules are returned as a JSON string. If the query fails, an error status is returned.
@@ -48,7 +48,7 @@
 
 ## 3. GetRuleByGroup Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `host` and `groupId` from the input map.
 2. **Database Query**: Queries the database for rules associated with the given group ID.
 3. **Response Handling**: If the query is successful, the rules are returned as a JSON string. If the query fails, an error status is returned.
@@ -65,7 +65,7 @@
 
 ## 4. GetRuleById Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `ruleId` from the input map.
 2. **Database Query**: Queries the database for the rule associated with the given rule ID.
 3. **Response Handling**: If the query is successful, the rule is returned as a JSON string. If the query fails, an error status is returned.
@@ -81,7 +81,7 @@
 
 ## 5. GetRuleByType Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId` and `ruleType` from the input map.
 2. **Database Query**: Queries the database for rules associated with the given rule type.
 3. **Response Handling**: If the query is successful, the rules are returned as a JSON string. If the query fails, an error status is returned.

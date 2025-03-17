@@ -3,7 +3,7 @@
 
 ## 1. CreateHost Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `domain`, `subDomain`, `hostDesc`, and `hostOwner` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -26,7 +26,7 @@
 
 ## 2. CreateOrg Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `domain`, `orgName`, `orgDesc`, `subDomain`, `hostDesc`, and `hostOwner` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Email Verification**: Ensures the email contains the domain.
@@ -52,7 +52,7 @@
 
 ## 3. DeleteHost Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -72,7 +72,7 @@
 
 ## 4. DeleteOrg Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `domain` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -92,7 +92,7 @@
 
 ## 5. SwitchHost Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -112,7 +112,7 @@
 
 ## 6. UpdateHost Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId`, `domain`, `subDomain`, `hostDesc`, and `hostOwner` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Email Verification**: Ensures the email contains the domain.
@@ -137,7 +137,7 @@
 
 ## 7. UpdateOrg Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `domain`, `orgName`, `orgDesc`, and `orgOwner` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.

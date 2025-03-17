@@ -3,7 +3,7 @@
 
 ## 1. CreateApp Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId`, `appId`, and `appName` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -26,7 +26,7 @@
 
 ## 2. DeleteApp Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId` and `appId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -47,7 +47,7 @@
 
 ## 3. UpdateApp Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId`, `appId`, and `appName` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.

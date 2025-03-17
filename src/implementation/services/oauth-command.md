@@ -3,7 +3,7 @@
 
 ## 1. CreateAuthCode Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `clientId`, `userId`, and `scope` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -25,7 +25,7 @@
 
 ## 2. CreateClient Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `clientId`, `clientSecret`, and `redirectUri` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -47,7 +47,7 @@
 
 ## 3. CreateProvider Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `providerId`, `providerName`, and `providerUrl` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -69,7 +69,7 @@
 
 ## 4. CreateRefreshToken Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `clientId`, `userId`, and `scope` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -91,7 +91,7 @@
 
 ## 5. CreateRefToken Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `clientId`, `userId`, and `scope` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -113,7 +113,7 @@
 
 ## 6. DeleteAuthCode Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `authCodeId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -133,7 +133,7 @@
 
 ## 7. DeleteClient Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `clientId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -153,7 +153,7 @@
 
 ## 8. DeleteProvider Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `providerId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -173,7 +173,7 @@
 
 ## 9. DeleteRefreshToken Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `refreshTokenId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -193,7 +193,7 @@
 
 ## 10. DeleteRefToken Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `refTokenId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -213,7 +213,7 @@
 
 ## 11. RotateProvider Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `providerId` and `newProviderUrl` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -234,7 +234,7 @@
 
 ## 12. UpdateClient Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `clientId`, `clientSecret`, and `redirectUri` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -256,7 +256,7 @@
 
 ## 13. UpdateProvider Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `providerId`, `providerName`, and `providerUrl` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.

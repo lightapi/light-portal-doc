@@ -3,7 +3,7 @@
 
 ## 1. GetClientToken Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `clientId` and `clientSecret` from the input map.
 2. **User Authentication**: Verifies the client credentials.
 3. **Token Generation**: Generates a token for the client.
@@ -21,7 +21,7 @@
 
 ## 2. GetCustomerOrder Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `customerId` and `orderId` from the input map.
 2. **Order Retrieval**: Fetches the order details for the given customer and order ID.
 3. **Response Handling**: Returns the order details.
@@ -38,7 +38,7 @@
 
 ## 3. GetMerchantOrder Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `merchantId` and `orderId` from the input map.
 2. **Order Retrieval**: Fetches the order details for the given merchant and order ID.
 3. **Response Handling**: Returns the order details.
@@ -55,7 +55,7 @@
 
 ## 4. GetNonceByUserId Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `userId` from the input map.
 2. **Nonce Retrieval**: Fetches a nonce for the given user ID.
 3. **Response Handling**: Returns the nonce.
@@ -71,7 +71,7 @@
 
 ## 5. GetNotification Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `notificationId` from the input map.
 2. **Notification Retrieval**: Fetches the notification details for the given notification ID.
 3. **Response Handling**: Returns the notification details.
@@ -87,7 +87,7 @@
 
 ## 6. GetPayment Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `paymentId` from the input map.
 2. **Payment Retrieval**: Fetches the payment details for the given payment ID.
 3. **Response Handling**: Returns the payment details.
@@ -103,7 +103,7 @@
 
 ## 7. GetPaymentById Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `paymentId` from the input map.
 2. **Payment Retrieval**: Fetches the payment details for the given payment ID.
 3. **Response Handling**: Returns the payment details.
@@ -119,7 +119,7 @@
 
 ## 8. GetPrivateMessage Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `messageId` from the input map.
 2. **Message Retrieval**: Fetches the private message details for the given message ID.
 3. **Response Handling**: Returns the message details.
@@ -135,7 +135,7 @@
 
 ## 9. GetReference Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `referenceId` from the input map.
 2. **Reference Retrieval**: Fetches the reference details for the given reference ID.
 3. **Response Handling**: Returns the reference details.
@@ -151,7 +151,7 @@
 
 ## 10. GetRolesByEmail Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `email` from the input map.
 2. **Roles Retrieval**: Fetches the roles associated with the given email.
 3. **Response Handling**: Returns the roles.
@@ -167,7 +167,7 @@
 
 ## 11. GetUserLabel Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `userId` from the input map.
 2. **Label Retrieval**: Fetches the label associated with the given user ID.
 3. **Response Handling**: Returns the label.
@@ -183,7 +183,7 @@
 
 ## 12. ListUserByHostId Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId` from the input map.
 2. **User List Retrieval**: Fetches the list of users associated with the given host ID.
 3. **Response Handling**: Returns the list of users.
@@ -199,7 +199,7 @@
 
 ## 13. LoginUser Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `username` and `password` from the input map.
 2. **User Authentication**: Verifies the user credentials.
 3. **Token Generation**: Generates a token for the user.
@@ -217,7 +217,7 @@
 
 ## 14. QueryUserByEmail Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `email` from the input map.
 2. **User Retrieval**: Fetches the user details associated with the given email.
 3. **Response Handling**: Returns the user details.
@@ -233,7 +233,7 @@
 
 ## 15. QueryUserById Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `userId` from the input map.
 2. **User Retrieval**: Fetches the user details associated with the given user ID.
 3. **Response Handling**: Returns the user details.
@@ -249,7 +249,7 @@
 
 ## 16. QueryUserByTypeEntityId Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `type` and `entityId` from the input map.
 2. **User Retrieval**: Fetches the user details associated with the given type and entity ID.
 3. **Response Handling**: Returns the user details.
@@ -266,7 +266,7 @@
 
 ## 17. QueryUserByWallet Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `walletId` from the input map.
 2. **User Retrieval**: Fetches the user details associated with the given wallet ID.
 3. **Response Handling**: Returns the user details.

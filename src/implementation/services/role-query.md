@@ -3,7 +3,7 @@
 
 ## 1. GetRole Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `offset`, `limit`, `hostId`, `roleId`, and `roleDesc` from the input map.
 2. **Database Query**: Uses `dbProvider` to query roles based on the extracted data.
 3. **Response Handling**: Checks if the query result is successful. If not, returns an error status.
@@ -25,7 +25,7 @@
 
 ## 2. GetRoleLabel Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId` from the input map.
 2. **Database Query**: Uses `dbProvider` to query role labels based on the `hostId`.
 3. **Response Handling**: Checks if the query result is successful. If not, returns an error status.
@@ -43,7 +43,7 @@
 
 ## 3. QueryRolePermission Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `offset`, `limit`, `hostId`, `roleId`, `apiId`, `apiVersion`, and `endpoint` from the input map.
 2. **Database Query**: Uses `dbProvider` to query role permissions based on the extracted data.
 3. **Response Handling**: Checks if the query result is successful. If not, returns an error status.
@@ -67,7 +67,7 @@
 
 ## 4. QueryRoleColFilter Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `offset`, `limit`, `hostId`, `roleId`, `apiId`, `apiVersion`, and `endpoint` from the input map.
 2. **Database Query**: Uses `dbProvider` to query role column filters based on the extracted data.
 3. **Response Handling**: Checks if the query result is successful. If not, returns an error status.
@@ -91,7 +91,7 @@
 
 ## 5. QueryRoleRowFilter Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `offset`, `limit`, `hostId`, `roleId`, `apiId`, `apiVersion`, and `endpoint` from the input map.
 2. **Database Query**: Uses `dbProvider` to query role row filters based on the extracted data.
 3. **Response Handling**: Checks if the query result is successful. If not, returns an error status.
@@ -115,7 +115,7 @@
 
 ## 6. QueryRoleUser Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `offset`, `limit`, `hostId`, `roleId`, `userId`, `entityId`, `email`, `firstName`, `lastName`, and `userType` from the input map.
 2. **Database Query**: Uses `dbProvider` to query role users based on the extracted data.
 3. **Response Handling**: Checks if the query result is successful. If not, returns an error status.

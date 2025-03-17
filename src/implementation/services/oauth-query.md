@@ -3,7 +3,7 @@
 
 ## 1. GetAuthCode Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `authCode` from the input map.
 2. **Database Query**: Queries the database for the authorization code details.
 3. **Response Handling**: Constructs the response with the authorization code details and returns it.
@@ -19,7 +19,7 @@
 
 ## 2. GetAuthCodeDetail Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `authCode` from the input map.
 2. **Database Query**: Queries the database for detailed information about the authorization code.
 3. **Response Handling**: Constructs the response with the detailed authorization code information and returns it.
@@ -35,7 +35,7 @@
 
 ## 3. GetClient Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `clientId` from the input map.
 2. **Database Query**: Queries the database for the client details.
 3. **Response Handling**: Constructs the response with the client details and returns it.
@@ -51,7 +51,7 @@
 
 ## 4. GetClientById Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `clientId` from the input map.
 2. **Database Query**: Queries the database for the client details by ID.
 3. **Response Handling**: Constructs the response with the client details and returns it.
@@ -67,7 +67,7 @@
 
 ## 5. GetClientByProviderClientId Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `providerClientId` from the input map.
 2. **Database Query**: Queries the database for the client details by provider client ID.
 3. **Response Handling**: Constructs the response with the client details and returns it.
@@ -83,7 +83,7 @@
 
 ## 6. GetProvider Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `providerId` from the input map.
 2. **Database Query**: Queries the database for the provider details.
 3. **Response Handling**: Constructs the response with the provider details and returns it.
@@ -99,7 +99,7 @@
 
 ## 7. GetProviderDetail Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `providerId` from the input map.
 2. **Database Query**: Queries the database for detailed information about the provider.
 3. **Response Handling**: Constructs the response with the detailed provider information and returns it.
@@ -115,7 +115,7 @@
 
 ## 8. GetProviderKey Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `providerId` from the input map.
 2. **Database Query**: Queries the database for the provider key.
 3. **Response Handling**: Constructs the response with the provider key and returns it.
@@ -131,7 +131,7 @@
 
 ## 9. GetRefreshToken Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `refreshToken` from the input map.
 2. **Database Query**: Queries the database for the refresh token details.
 3. **Response Handling**: Constructs the response with the refresh token details and returns it.
@@ -147,7 +147,7 @@
 
 ## 10. GetRefreshTokenDetail Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `refreshToken` from the input map.
 2. **Database Query**: Queries the database for detailed information about the refresh token.
 3. **Response Handling**: Constructs the response with the detailed refresh token information and returns it.
@@ -163,7 +163,7 @@
 
 ## 11. GetRefToken Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `refToken` from the input map.
 2. **Database Query**: Queries the database for the reference token details.
 3. **Response Handling**: Constructs the response with the reference token details and returns it.
@@ -179,7 +179,7 @@
 
 ## 12. GetRefTokenDetail Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `refToken` from the input map.
 2. **Database Query**: Queries the database for detailed information about the reference token.
 3. **Response Handling**: Constructs the response with the detailed reference token information and returns it.

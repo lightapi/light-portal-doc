@@ -3,7 +3,7 @@
 
 ## 1. CreateInstance Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `instanceName`, `productId`, `productVersion`, `serviceId`, and `pipelineId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -27,7 +27,7 @@
 
 ## 2. DeleteInstance Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `instanceId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -47,7 +47,7 @@
 
 ## 3. UpdateInstance Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `instanceId`, `instanceName`, `productId`, `productVersion`, `serviceId`, and `pipelineId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -72,7 +72,7 @@
 
 ## 4. CreateInstanceApp Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `instanceId`, `appId`, and `appVersion` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -94,7 +94,7 @@
 
 ## 5. DeleteInstanceApp Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `instanceId`, `appId`, and `appVersion` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -116,7 +116,7 @@
 
 ## 6. UpdateInstanceApp Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `instanceId`, `appId`, and `appVersion` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -138,7 +138,7 @@
 
 ## 7. CreateInstanceApi Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `instanceId`, `apiId`, and `apiVersion` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -160,7 +160,7 @@
 
 ## 8. DeleteInstanceApi Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `instanceId`, `apiId`, and `apiVersion` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -182,7 +182,7 @@
 
 ## 9. UpdateInstanceApi Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `instanceId`, `apiId`, and `apiVersion` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.

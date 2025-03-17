@@ -3,7 +3,7 @@
 
 ## 1. GetPosition Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `offset`, `limit`, `hostId`, `positionId`, `positionDesc`, `inheritToAncestor`, and `inheritToSibling` from the input map.
 2. **Database Query**: Uses the extracted data to query the database for positions.
 3. **Result Handling**: Checks if the query was successful and handles the result accordingly.
@@ -26,7 +26,7 @@
 
 ## 2. GetPositionLabel Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId` from the input map.
 2. **Database Query**: Uses the extracted data to query the database for position labels.
 3. **Result Handling**: Checks if the query was successful and handles the result accordingly.
@@ -43,7 +43,7 @@
 
 ## 3. QueryPositionColFilter Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `offset`, `limit`, `hostId`, `positionId`, `apiId`, `apiVersion`, and `endpoint` from the input map.
 2. **Database Query**: Uses the extracted data to query the database for position column filters.
 3. **Result Handling**: Checks if the query was successful and handles the result accordingly.
@@ -66,7 +66,7 @@
 
 ## 4. QueryPositionRowFilter Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `offset`, `limit`, `hostId`, `positionId`, `apiId`, `apiVersion`, and `endpoint` from the input map.
 2. **Database Query**: Uses the extracted data to query the database for position row filters.
 3. **Result Handling**: Checks if the query was successful and handles the result accordingly.
@@ -89,7 +89,7 @@
 
 ## 5. QueryPositionPermission Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `offset`, `limit`, `hostId`, `positionId`, `inheritToAncestor`, `inheritToSibling`, `apiId`, `apiVersion`, and `endpoint` from the input map.
 2. **Database Query**: Uses the extracted data to query the database for position permissions.
 3. **Result Handling**: Checks if the query was successful and handles the result accordingly.
@@ -114,7 +114,7 @@
 
 ## 6. QueryPositionUser Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `offset`, `limit`, `hostId`, `positionId`, `positionType`, `inheritToAncestor`, `inheritToSibling`, `userId`, `entityId`, `email`, `firstName`, `lastName`, and `userType` from the input map.
 2. **Database Query**: Uses the extracted data to query the database for position users.
 3. **Result Handling**: Checks if the query was successful and handles the result accordingly.

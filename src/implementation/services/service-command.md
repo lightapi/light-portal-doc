@@ -3,7 +3,7 @@
 
 ## 1. CreateEndpointRule Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `serviceId`, `ruleId`, and `ruleDefinition` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -25,7 +25,7 @@
 
 ## 2. CreateService Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `serviceId`, `serviceName`, and `serviceDescription` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -47,7 +47,7 @@
 
 ## 3. CreateServiceVersion Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `serviceId`, `versionId`, and `versionDetails` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -69,7 +69,7 @@
 
 ## 4. DeleteEndpointRule Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `serviceId` and `ruleId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -90,7 +90,7 @@
 
 ## 5. DeleteService Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `serviceId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -110,7 +110,7 @@
 
 ## 6. DeleteServiceVersion Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `serviceId` and `versionId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -131,7 +131,7 @@
 
 ## 7. UpdateService Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `serviceId`, `serviceName`, and `serviceDescription` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -153,7 +153,7 @@
 
 ## 8. UpdateServiceSpec Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `serviceId`, `specId`, and `specDetails` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -175,7 +175,7 @@
 
 ## 9. UpdateServiceVersion Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `serviceId`, `versionId`, and `versionDetails` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.

@@ -3,7 +3,7 @@
 
 ## 1. CreateAttribute Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId`, `attributeId`, `attributeType`, and `attributeDesc` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -26,7 +26,7 @@
 
 ## 2. DeleteAttribute Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId` and `attributeId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -47,7 +47,7 @@
 
 ## 3. UpdateAttribute Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId`, `attributeId`, `attributeType`, and `attributeDesc` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -70,7 +70,7 @@
 
 ## 4. CreateAttributePermission Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId`, `attributeId`, `attributeValue`, `apiId`, `apiVersion`, and `endpoint` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -95,7 +95,7 @@
 
 ## 5. DeleteAttributePermission Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId`, `attributeId`, `apiId`, `apiVersion`, and `endpoint` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -119,7 +119,7 @@
 
 ## 6. CreateAttributeUser Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId`, `attributeId`, `attributeValue`, `userId`, `startTs`, and `endTs` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -144,7 +144,7 @@
 
 ## 7. DeleteAttributeUser Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId`, `attributeId`, and `userId` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -166,7 +166,7 @@
 
 ## 8. CreateAttributeColFilter Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId`, `attributeId`, `attributeValue`, `apiId`, `apiVersion`, `endpoint`, and `columns` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -192,7 +192,7 @@
 
 ## 9. DeleteAttributeColFilter Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId`, `attributeId`, `apiId`, `apiVersion`, and `endpoint` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -216,7 +216,7 @@
 
 ## 10. CreateAttributeRowFilter Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId`, `attributeId`, `attributeValue`, `apiId`, `apiVersion`, `endpoint`, `colName`, `colValue`, and `operator` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -244,7 +244,7 @@
 
 ## 11. DeleteAttributeRowFilter Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId`, `attributeId`, `apiId`, `apiVersion`, `endpoint`, and `colName` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -269,7 +269,7 @@
 
 ## 12. UpdateAttributeColFilter Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId`, `attributeId`, `attributeValue`, `apiId`, `apiVersion`, `endpoint`, and `columns` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -295,7 +295,7 @@
 
 ## 13. UpdateAttributeRowFilter Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId`, `attributeId`, `attributeValue`, `apiId`, `apiVersion`, `endpoint`, `colName`, `colValue`, and `operator` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.

@@ -3,7 +3,7 @@
 
 ## 1. CreateProductVersion Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `productId`, `productVersion`, `light4jVersion`, `versionStatus`, `releaseType`, and `current` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -29,7 +29,7 @@
 
 ## 2. UpdateProductVersion Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `productId`, `productVersion`, `light4jVersion`, `versionStatus`, `releaseType`, and `current` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.
@@ -55,7 +55,7 @@
 
 ## 3. DeleteProductVersion Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `productId` and `productVersion` from the input map.
 2. **User Authentication**: Retrieves audit information from the exchange and verifies the user ID.
 3. **Nonce Generation**: Fetches a nonce for the transaction using the user ID.

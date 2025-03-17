@@ -3,7 +3,7 @@
 
 ## 1. GetAttribute Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `offset`, `limit`, `hostId`, `attributeId`, `attributeType`, and `attributeDesc` from the input map.
 2. **Null Checks**: Checks if `attributeId`, `attributeType`, and `attributeDesc` are empty and sets them to null if they are.
 3. **Logging Parameters**: Logs the extracted parameters.
@@ -28,7 +28,7 @@
 
 ## 2. GetAttributeLabel Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `hostId` from the input map.
 2. **Logging Parameters**: Logs the extracted parameters.
 3. **Database Query**: Queries the database for attribute labels using the extracted parameters.
@@ -47,7 +47,7 @@
 
 ## 3. QueryAttributeColFilter Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `offset`, `limit`, `hostId`, `attributeId`, `attributeValue`, `apiId`, `apiVersion`, and `endpoint` from the input map.
 2. **Null Checks**: Checks if `attributeId`, `attributeValue`, `apiId`, `apiVersion`, and `endpoint` are empty and sets them to null if they are.
 3. **Database Query**: Queries the database for attribute column filters using the extracted parameters.
@@ -72,7 +72,7 @@
 
 ## 4. QueryAttributePermission Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `offset`, `limit`, `hostId`, `attributeId`, `attributeType`, `attributeValue`, `apiId`, `apiVersion`, and `endpoint` from the input map.
 2. **Null Checks**: Checks if `attributeId`, `attributeType`, `attributeValue`, `apiId`, `apiVersion`, and `endpoint` are empty and sets them to null if they are.
 3. **Database Query**: Queries the database for attribute permissions using the extracted parameters.
@@ -99,7 +99,7 @@
 
 ## 5. QueryAttributeRowFilter Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `offset`, `limit`, `hostId`, `attributeId`, `attributeValue`, `apiId`, `apiVersion`, and `endpoint` from the input map.
 2. **Null Checks**: Checks if `attributeId`, `attributeValue`, `apiId`, `apiVersion`, and `endpoint` are empty and sets them to null if they are.
 3. **Database Query**: Queries the database for attribute row filters using the extracted parameters.
@@ -124,7 +124,7 @@
 
 ## 6. QueryAttributeUser Handler
 
-### How it Works with Key Steps
+### Key Steps
 1. **Extracting Data**: Extracts `offset`, `limit`, `hostId`, `attributeId`, `attributeType`, `attributeValue`, `userId`, `entityId`, `email`, `firstName`, `lastName`, and `userType` from the input map.
 2. **Null Checks**: Checks if `attributeId`, `attributeType`, `attributeValue`, `userId`, `entityId`, `email`, `firstName`, `lastName`, and `userType` are empty and sets them to null if they are.
 3. **Database Query**: Queries the database for attribute-user relationships using the extracted parameters.
