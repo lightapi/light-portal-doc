@@ -203,8 +203,58 @@ As the portal is based on the event sorucing, all events will be responsible for
 
 In an application there are some data that is shared by all tenants. For example, the dropdown options on the UI and business validation. We call them reference data and have defined several tables to manage them centrally. For each reference data type, there is a logical table defined in the ref_table_t and marked as common or not. Common means the table can be shared with other tenants. Otherwise, it is only private for the owner tenant. 
 
-Some other entities are very similar but they cannot be fit into the reference tables. For example, rule_t table contains all the YAML rule definitions. They also has a mark to differentiate common or not to control the visibility in a multi-tenant environment. 
+Some other entities are very similar but they cannot be fit into the reference tables. For example, category_t table contains all the category definitions for different entities. These tables are designed with an optional host_id. Here is an exmaple. 
 
+```
+CREATE TABLE category_t (
+    category_id          VARCHAR(22) NOT NULL,   -- unique id to identify the category
+    host_id              VARCHAR(22),            -- null mean global category
+    entity_type          VARCHAR(50) NOT NULL,   -- the version of the schema
+    category_name        VARCHAR(126) NOT NULL,  -- category name, must be url friendly.
+    category_desc        VARCHAR(1024) NOT NULL, -- decription
+    parent_category_id   VARCHAR(22) REFERENCES category_t(category_id) ON DELETE SET NULL, -- parent category id, null if there is no parent.
+    sort_order           INT DEFAULT 0,          -- sort order on the UI
+    update_user          VARCHAR (255) DEFAULT SESSION_USER NOT NULL,
+    update_ts            TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    PRIMARY KEY (category_id)
+);
+
+-- 1. Unique index for GLOBAL categories (where host_id IS NULL)
+-- Ensures uniqueness of (entity_type, category_name, parent_category_id) ONLY when host_id is NULL
+CREATE UNIQUE INDEX idx_category_unique_global
+ON category_t (entity_type, category_name, parent_category_id)
+NULLS NOT DISTINCT -- Handles NULLs in parent_category_id correctly
+WHERE host_id IS NULL;
+
+-- 2. Unique index for TENANT-SPECIFIC categories (where host_id IS NOT NULL)
+-- Ensures uniqueness of (host_id, entity_type, category_name, parent_category_id)
+-- for rows that belong to a specific host.
+CREATE UNIQUE INDEX idx_category_unique_tenant
+ON category_t (host_id, entity_type, category_name, parent_category_id)
+NULLS NOT DISTINCT -- Handles NULLs in parent_category_id correctly
+WHERE host_id IS NOT NULL;
+
+
+CREATE INDEX idx_category_entity_type ON category_t (entity_type);
+CREATE INDEX idx_category_parent ON category_t (parent_category_id);
+CREATE INDEX idx_category_name ON category_t (category_name);
+CREATE INDEX idx_category_host_id ON category_t (host_id);
+
+```
+
+On the UI, the host_id will be auto populated according to the associated host_id by the user in readonly mode. There is a checkbox "Is Global Category" in the form. If checked, the backend service will have an FGA rule to ensure that the user is admin and the host_id will be removed in the event. This works for both create and update. 
+
+When viewing categories, the super admin might see all categories by default, possibly with a column or indicator showing the host_id (or "Global"). Filters should allow viewing global only, or a specific tenant's categories.
+
+Tenant Admin / Host Owner:
+
+When a tenant admin accesses the category management UI, their context is fixed to their own host_id.
+
+They should only be able to create/edit categories associated with their specific host_id.
+
+The UI should not offer them the option to create/edit global categories or categories for other hosts. The host_id is implicitly set or displayed as read-only based on their logged-in context.
+
+When viewing categories, they should see their own tenant-specific categories plus all applicable global categories. The UI should clearly differentiate between these (e.g., using grouping, labels, icons).
 
 
 
