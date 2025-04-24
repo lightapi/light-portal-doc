@@ -97,6 +97,44 @@ Additional Considerations:
 * Security: Implement robust security measures to prevent data leakage between tenants, regardless of the chosen approach.
 
 The hybrid approach usually provides the best balance between performance, data isolation, and development complexity in real-world multi-tenant applications. You have more direct control where strict isolation is required and can maintain the simplicity of UUIDs where it's beneficial. Using tenant_resources_t for application logic enforcement offers flexibility and a central point of management for tenant resource association. This approach also prepares the application for potential future expansion and different multi-tenancy demands as the application grows.
+## Should host_id part of the PK
+
+This is a classic multi-tenancy design question. Both approaches have implications. Let's analyze them:
+
+**Option 1: Current Approach - PK (`host_id`, `instance_id`)**
+
+*   **Pros:**
+    *   **Excellent for Tenant-Specific Queries:** This is the biggest advantage. Queries like `SELECT ... FROM instance_t WHERE host_id = ? AND ...` or `SELECT ... FROM instance_t WHERE host_id = ? ORDER BY instance_id` can directly and efficiently use the primary key index. The index is naturally ordered by tenant first, then by instance within that tenant. This improves data locality for a specific tenant's data.
+    *   **Clear Logical Grouping:** The primary key explicitly represents the concept that an instance *belongs to* a specific host (tenant).
+    *   **Enforces Uniqueness Per Tenant:** Guarantees that `instance_id` is unique *within* a given `host_id`. (Although UUIDv7 makes global collisions highly unlikely anyway).
+*   **Cons:**
+    *   **Wider Primary Key:** The PK is 32 bytes (16+16).
+    *   **Wider Foreign Keys:** Any table referencing `instance_t` would need *both* `host_id` and `instance_id` as its foreign key columns.
+    *   **Slightly Larger Secondary Indexes:** Other indexes on `instance_t` will implicitly include both PK columns, making them slightly larger than if the PK was just 16 bytes.
+
+**Option 2: Alternative - PK (`instance_id`)**
+
+*   **Pre-requisite:** This *only* works if your application guarantees that `instance_id` is **globally unique** across all hosts/tenants. Given you're using UUIDv7, this is a safe assumption in practice, but the schema wouldn't *enforce* uniqueness *per host* explicitly via the PK itself.
+*   **Pros:**
+    *   **Narrower Primary Key:** The PK is only 16 bytes.
+    *   **Simpler Foreign Keys:** Tables referencing `instance_t` only need a single `instance_id` column for the foreign key.
+    *   **Slightly Smaller Secondary Indexes:** Other indexes on the table will be marginally smaller.
+*   **Cons:**
+    *   **Requires Separate Index for Tenant Queries:** You would *absolutely need* a separate index on `(host_id, instance_id)` (or at least `(host_id)`) for efficient tenant-specific queries (`WHERE host_id = ?`). Without it, querying for a specific tenant's data would require less efficient scans. This index would likely be a `UNIQUE` index anyway to enforce the logical relationship: `CREATE UNIQUE INDEX instance_t_host_instance_idx ON instance_t (host_id, instance_id);`
+    *   **Potential Reduced Locality:** While the separate index helps, the primary key index itself (based only on `instance_id`) might interleave data from different tenants physically, potentially slightly reducing cache efficiency for queries scanning many instances for a single tenant compared to the composite PK approach.
+
+**Recommendation:**
+
+**Stick with the composite primary key: `PRIMARY KEY(host_id, instance_id)`**.
+
+**Reasoning:**
+
+1.  **Performance for Core Use Case:** In multi-tenant systems, filtering by the tenant identifier (`host_id`) is almost always the primary access pattern. Having `host_id` as the leading column in the PK index directly optimizes this critical path.
+2.  **Index Necessity:** Even if you chose `instance_id` as the sole PK, you would still need to create an index on `(host_id, instance_id)` for performance. Making this essential index the *primary key* index is often the most straightforward and efficient approach.
+3.  **Clarity:** The composite key clearly reflects the logical relationship and ownership.
+4.  **Cost:** The "cost" of a 32-byte PK vs. a 16-byte PK is often negligible compared to the performance gains achieved by aligning the PK index with the dominant query patterns in a multi-tenant architecture. The impact on FKs and secondary indexes is real but usually acceptable.
+
+Using just `instance_id` as the PK prioritizes global uniqueness and FK simplicity over optimizing tenant-specific queries directly via the PK index. In most multi-tenant scenarios, optimizing tenant queries is more important.
 
 ## Citus PostgreSQL Extension
 
