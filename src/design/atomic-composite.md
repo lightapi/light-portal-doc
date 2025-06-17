@@ -726,3 +726,616 @@ This approach involves two stages of atomicity: first, the producer guarantees d
 I strongly recommend implementing the **Transactional Outbox pattern (Option 1)** for populating your `events_store_t` table. This pattern has become an industry best practice for achieving reliable event publishing from a database-backed service. It is more complex initially but provides superior durability and resilience compared to directly publishing to Kafka from your domain service.
 
 And regardless of the publishing mechanism, your `events_store_t` should be a complete, immutable log of all domain events, untainted by processing outcomes.
+
+## Change Data Capture
+
+Using **Change Data Capture (CDC)** (like Debezium) for the **Transactional Outbox** is the gold standard for reliably publishing events from a database-backed service to Kafka.
+
+Here's a detailed design and a conceptual Java implementation for the producer side, along with the Debezium configuration.
+
+---
+
+### Overall Architecture
+
+1.  **Producer Service (Your Java Application):**
+    *   Receives commands (e.g., `UpdateCustomerProfileCommand`).
+    *   Interacts with the `Customer` Aggregate.
+    *   Generates a list of **atomic domain events** (e.g., `CustomerNameChanged`, `CustomerAddressChanged`).
+    *   **Crucially:** Persists these events to two database tables **within a single local database transaction**:
+        *   `events_store_t`: Your immutable, authoritative Event Store (long-term historical log).
+        *   `outbox_messages`: A temporary table used by CDC to pick up events for Kafka.
+
+2.  **Transactional Outbox Table (`outbox_messages`):**
+    *   A simple database table that acts as a queue for events to be published.
+    *   Rows are inserted into this table in the same transaction as any other domain state changes.
+
+3.  **CDC Tool (Debezium):**
+    *   Monitors the `outbox_messages` table (and potentially `events_store_t` if you want a separate stream for the full event store, though typically you'd monitor the outbox).
+    *   Detects new rows (inserts).
+    *   Captures the `after` image of the inserted row.
+    *   Transforms this data into a Kafka message.
+    *   Publishes the Kafka message to the configured topic.
+
+4.  **Kafka Topic(s):**
+    *   Events are published here. You can configure Debezium to route events to different topics based on the `aggregate_type` or `event_type` from your `outbox_messages` table.
+
+5.  **Kafka Consumers:**
+    *   Your downstream services (stream processors, materialized view builders, notification services) consume from these Kafka topics.
+    *   They process the events, update their read models, and commit their offsets.
+
+---
+
+### Design of the Database Tables
+
+#### 1. `events_store_t` (Your Primary Event Store)
+
+This table holds the immutable, ordered sequence of all domain events.
+
+```sql
+CREATE TABLE events_store_t (
+    id UUID PRIMARY KEY,                   -- Unique ID for the event itself
+    aggregate_id VARCHAR(255) NOT NULL,    -- The ID of the aggregate (e.g., customer-123)
+    aggregate_type VARCHAR(255) NOT NULL,  -- The type of aggregate (e.g., 'Customer')
+    event_type VARCHAR(255) NOT NULL,      -- The specific type of event (e.g., 'CustomerNameChanged')
+    sequence_number BIGINT NOT NULL,       -- Monotonically increasing sequence number per aggregate
+    timestamp TIMESTAMP WITH TIME ZONE NOT NULL, -- When the event occurred
+    payload JSONB NOT NULL,                -- The full event payload (JSON)
+    metadata JSONB,                        -- Optional: correlation IDs, causation IDs, user ID, etc.
+    -- Constraints for event order and uniqueness per aggregate
+    UNIQUE (aggregate_id, sequence_number)
+);
+
+-- Index for efficient lookup by aggregate
+CREATE INDEX idx_events_store_aggregate ON events_store_t (aggregate_id);
+```
+
+#### 2. `outbox_messages` (For CDC Publishing)
+
+This table serves as the bridge to Kafka.
+
+```sql
+CREATE TABLE outbox_messages (
+    id UUID PRIMARY KEY,                   -- Unique ID for this outbox message
+    aggregate_id VARCHAR(255) NOT NULL,    -- The ID of the aggregate (for Kafka key)
+    aggregate_type VARCHAR(255) NOT NULL,  -- The type of aggregate (for Kafka topic routing)
+    event_type VARCHAR(255) NOT NULL,      -- The specific type of event
+    timestamp TIMESTAMP WITH TIME ZONE NOT NULL, -- When the event was created
+    payload JSONB NOT NULL,                -- The full event payload (JSON)
+    metadata JSONB,                        -- Optional: correlation IDs, causation IDs, user ID, etc.
+    -- Note: No sequence_number here, as the Event Store manages that.
+    -- Debezium will process these by insertion order.
+);
+-- An index on timestamp can be useful for manual cleanup or if not using CDC
+-- CREATE INDEX idx_outbox_timestamp ON outbox_messages (timestamp);
+```
+
+---
+
+### Java Implementation (Producer Service)
+
+We'll use Spring Boot for simplicity, Spring Data JPA for database interaction, and Jackson for JSON serialization.
+
+**Dependencies (build.gradle):**
+
+```gradle
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.postgresql:postgresql' // Or your chosen DB driver
+    runtimeOnly 'com.h2database:h2' // For in-memory testing convenience
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+    implementation 'com.fasterxml.jackson.core:jackson-databind' // For JSON
+    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310' // For Java 8 Date/Time
+}
+```
+
+#### 1. Domain Events
+
+```java
+// domain/events/DomainEvent.java
+package com.example.eventoutbox.domain.events;
+
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+
+import java.time.Instant;
+import java.util.UUID;
+
+// Use JsonTypeInfo for polymorphic deserialization (if you need to deserialize events later)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "eventType")
+@JsonSubTypes({
+    @JsonSubTypes.Type(value = CustomerNameChanged.class, name = "CustomerNameChanged"),
+    @JsonSubTypes.Type(value = CustomerAddressChanged.class, name = "CustomerAddressChanged")
+})
+public abstract class DomainEvent {
+    private final UUID eventId;
+    private final Instant timestamp;
+    private final String aggregateId;
+    private final String aggregateType;
+    private final long sequenceNumber; // Important for Event Sourcing
+
+    public DomainEvent(UUID eventId, Instant timestamp, String aggregateId, String aggregateType, long sequenceNumber) {
+        this.eventId = eventId;
+        this.timestamp = timestamp;
+        this.aggregateId = aggregateId;
+        this.aggregateType = aggregateType;
+        this.sequenceNumber = sequenceNumber;
+    }
+
+    public UUID getEventId() { return eventId; }
+    public Instant getTimestamp() { return timestamp; }
+    public String getAggregateId() { return aggregateId; }
+    public String getAggregateType() { return aggregateType; }
+    public long getSequenceNumber() { return sequenceNumber; }
+
+    public abstract String getEventType();
+}
+
+// domain/events/CustomerNameChanged.java
+package com.example.eventoutbox.domain.events;
+
+import java.time.Instant;
+import java.util.UUID;
+
+public class CustomerNameChanged extends DomainEvent {
+    private final String newName;
+
+    public CustomerNameChanged(UUID eventId, Instant timestamp, String customerId, long sequenceNumber, String newName) {
+        super(eventId, timestamp, customerId, "Customer", sequenceNumber);
+        this.newName = newName;
+    }
+
+    public String getNewName() { return newName; }
+
+    @Override
+    public String getEventType() { return "CustomerNameChanged"; }
+}
+
+// domain/events/CustomerAddressChanged.java
+package com.example.eventoutbox.domain.events;
+
+import java.time.Instant;
+import java.util.UUID;
+
+public class CustomerAddressChanged extends DomainEvent {
+    private final String newAddress; // Simple string for address example
+
+    public CustomerAddressChanged(UUID eventId, Instant timestamp, String customerId, long sequenceNumber, String newAddress) {
+        super(eventId, timestamp, customerId, "Customer", sequenceNumber);
+        this.newAddress = newAddress;
+    }
+
+    public String getNewAddress() { return newAddress; }
+
+    @Override
+    public String getEventType() { return "CustomerAddressChanged"; }
+}
+```
+
+#### 2. Aggregate
+
+```java
+// domain/Customer.java
+package com.example.eventoutbox.domain;
+
+import com.example.eventoutbox.domain.events.CustomerAddressChanged;
+import com.example.eventoutbox.domain.events.CustomerNameChanged;
+import com.example.eventoutbox.domain.events.DomainEvent;
+import lombok.Getter;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+// This is a simplified Aggregate. In a real ES system, you'd load state from events.
+// For this example, we're just focusing on event generation.
+@Getter
+public class Customer {
+    private final String customerId;
+    private String name;
+    private String address;
+    private long currentSequenceNumber; // Tracks the next sequence number for new events
+
+    private final List<DomainEvent> uncommittedEvents = new ArrayList<>();
+
+    public Customer(String customerId, long currentSequenceNumber) {
+        this.customerId = customerId;
+        this.currentSequenceNumber = currentSequenceNumber;
+    }
+
+    public static Customer create(String customerId) {
+        return new Customer(customerId, 0L); // Start with seq 0 for a new aggregate
+    }
+
+    public void changeName(String newName) {
+        if (!newName.equals(this.name)) { // Only emit event if something actually changed
+            this.name = newName;
+            this.currentSequenceNumber++;
+            uncommittedEvents.add(new CustomerNameChanged(UUID.randomUUID(), Instant.now(), customerId, currentSequenceNumber, newName));
+        }
+    }
+
+    public void changeAddress(String newAddress) {
+        if (!newAddress.equals(this.address)) {
+            this.address = newAddress;
+            this.currentSequenceNumber++;
+            uncommittedEvents.add(new CustomerAddressChanged(UUID.randomUUID(), Instant.now(), customerId, currentSequenceNumber, newAddress));
+        }
+    }
+
+    // After events are stored, clear them
+    public void markEventsCommitted() {
+        this.uncommittedEvents.clear();
+    }
+}
+```
+
+#### 3. Persistence Layer (Entities and Repositories)
+
+```java
+// infrastructure/persistence/outbox/OutboxMessage.java
+package com.example.eventoutbox.infrastructure.persistence.outbox;
+
+import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+import java.time.Instant;
+import java.util.UUID;
+
+@Entity
+@Table(name = "outbox_messages")
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class OutboxMessage {
+    @Id
+    private UUID id; // Event ID
+
+    private String aggregateId;
+    private String aggregateType;
+    private String eventType;
+    private Instant timestamp;
+
+    @JdbcTypeCode(SqlTypes.JSON) // For PostgreSQL JSONB type
+    @Column(columnDefinition = "jsonb")
+    private String payload; // Store payload as JSON string
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private String metadata; // Optional metadata as JSON string
+}
+
+// infrastructure/persistence/outbox/OutboxMessageRepository.java
+package com.example.eventoutbox.infrastructure.persistence.outbox;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.UUID;
+
+public interface OutboxMessageRepository extends JpaRepository<OutboxMessage, UUID> {}
+
+// infrastructure/persistence/eventstore/EventStoreEvent.java
+package com.example.eventoutbox.infrastructure.persistence.eventstore;
+
+import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+import java.time.Instant;
+import java.util.UUID;
+
+@Entity
+@Table(name = "events_store_t")
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class EventStoreEvent {
+    @Id
+    private UUID id; // Event ID
+
+    private String aggregateId;
+    private String aggregateType;
+    private String eventType;
+    private Instant timestamp;
+    private long sequenceNumber;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private String payload; // Store payload as JSON string
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private String metadata; // Optional metadata as JSON string
+}
+
+// infrastructure/persistence/eventstore/EventStoreEventRepository.java
+package com.example.eventoutbox.infrastructure.persistence.eventstore;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.UUID;
+
+public interface EventStoreEventRepository extends JpaRepository<EventStoreEvent, UUID> {}
+```
+
+#### 4. Application Service (Handles Commands and Persistence)
+
+This is where the magic of the single transaction happens.
+
+```java
+// application/CustomerApplicationService.java
+package com.example.eventoutbox.application;
+
+import com.example.eventoutbox.domain.Customer;
+import com.example.eventoutbox.domain.events.DomainEvent;
+import com.example.eventoutbox.infrastructure.persistence.eventstore.EventStoreEvent;
+import com.example.eventoutbox.infrastructure.persistence.eventstore.EventStoreEventRepository;
+import com.example.eventoutbox.infrastructure.persistence.outbox.OutboxMessage;
+import com.example.eventoutbox.infrastructure.persistence.outbox.OutboxMessageRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.io.IOException;
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+public class CustomerApplicationService {
+
+    private final OutboxMessageRepository outboxMessageRepository;
+    private final EventStoreEventRepository eventStoreEventRepository;
+    private final ObjectMapper objectMapper; // For JSON serialization
+
+    // Represents an incoming command from e.g., a REST endpoint
+    public record UpdateCustomerProfileCommand(String customerId, String newName, String newAddress) {}
+
+    // @Transactional ensures that all database operations within this method
+    // (saving to outbox_messages and events_store_t) are part of a single DB transaction.
+    @Transactional
+    public void updateCustomerProfile(UpdateCustomerProfileCommand command) {
+        // --- 1. Load/Create Aggregate (Simplified for this example) ---
+        // In a real Event Sourcing system, you would load the Customer's state
+        // by replaying events from eventStoreEventRepository for command.customerId.
+        // For simplicity, we'll assume a new customer or just focus on event generation.
+        Customer customer = Customer.create(command.customerId);
+        // customer.loadFromEvents(eventStoreEventRepository.findByAggregateIdOrderBySequenceNumberAsc(command.customerId));
+        
+        // --- 2. Apply Business Logic & Generate Events ---
+        if (command.newName() != null) {
+            customer.changeName(command.newName());
+        }
+        if (command.newAddress() != null) {
+            customer.changeAddress(command.newAddress());
+        }
+
+        // --- 3. Persist Events to Event Store & Outbox (Atomically) ---
+        List<DomainEvent> eventsToStore = customer.getUncommittedEvents();
+        if (eventsToStore.isEmpty()) {
+            return; // No changes, no events to publish
+        }
+
+        List<EventStoreEvent> eventStoreEntities = eventsToStore.stream()
+            .map(this::mapToEventStoreEvent)
+            .collect(Collectors.toList());
+        eventStoreEventRepository.saveAll(eventStoreEntities); // Save to the authoritative Event Store
+
+        List<OutboxMessage> outboxMessages = eventsToStore.stream()
+            .map(this::mapToOutboxMessage)
+            .collect(Collectors.toList());
+        outboxMessageRepository.saveAll(outboxMessages); // Save to the Outbox for CDC
+
+        customer.markEventsCommitted(); // Clear uncommitted events after successful persistence
+    }
+
+    private OutboxMessage mapToOutboxMessage(DomainEvent event) {
+        try {
+            return OutboxMessage.builder()
+                .id(event.getEventId())
+                .aggregateId(event.getAggregateId())
+                .aggregateType(event.getAggregateType())
+                .eventType(event.getEventType())
+                .timestamp(event.getTimestamp())
+                .payload(objectMapper.writeValueAsString(event)) // Serialize event to JSON
+                .metadata(null) // Add actual metadata if needed
+                .build();
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to serialize event to JSON: " + event.getEventId(), e);
+        }
+    }
+
+    private EventStoreEvent mapToEventStoreEvent(DomainEvent event) {
+        try {
+            return EventStoreEvent.builder()
+                .id(event.getEventId())
+                .aggregateId(event.getAggregateId())
+                .aggregateType(event.getAggregateType())
+                .eventType(event.getEventType())
+                .timestamp(event.getTimestamp())
+                .sequenceNumber(event.getSequenceNumber())
+                .payload(objectMapper.writeValueAsString(event)) // Serialize event to JSON
+                .metadata(null) // Add actual metadata if needed
+                .build();
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to serialize event to JSON: " + event.getEventId(), e);
+        }
+    }
+}
+```
+
+#### 5. REST Controller (Entry Point)
+
+```java
+// application/CustomerController.java
+package com.example.eventoutbox.application;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/customers")
+@RequiredArgsConstructor
+public class CustomerController {
+
+    private final CustomerApplicationService customerApplicationService;
+
+    @PostMapping("/profile")
+    public ResponseEntity<String> updateCustomerProfile(@RequestBody CustomerApplicationService.UpdateCustomerProfileCommand command) {
+        customerApplicationService.updateCustomerProfile(command);
+        return ResponseEntity.ok("Customer profile update command received and processed.");
+    }
+}
+```
+
+#### 6. Spring Boot Application (and `application.properties`)
+
+```java
+// EventOutboxApplication.java
+package com.example.eventoutbox;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class EventOutboxApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(EventOutboxApplication.class, args);
+    }
+}
+```
+
+```properties
+# application.properties (for H2 in-memory for testing)
+spring.datasource.url=jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+spring.datasource.driverClassName=org.h2.Driver
+spring.datasource.username=sa
+spring.datasource.password=
+spring.jpa.database-platform=org.hibernate.dialect.H2Dialect
+spring.jpa.hibernate.ddl-auto=update # Use 'update' for schema management in dev
+spring.jackson.serialization.write-dates-as-timestamps=false # Good practice for Instant
+
+# If using PostgreSQL:
+# spring.datasource.url=jdbc:postgresql://localhost:5432/yourdb
+# spring.datasource.username=youruser
+# spring.datasource.password=yourpassword
+# spring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect
+```
+
+---
+
+### Debezium Configuration (Conceptual)
+
+You'll deploy Debezium as a Kafka Connect connector. Here's a sample configuration (e.g., `postgresql-outbox-connector.json`) for PostgreSQL.
+
+```json
+{
+  "name": "outbox-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "tasks.max": "1",
+    "database.hostname": "localhost",
+    "database.port": "5432",
+    "database.user": "debezium",
+    "database.password": "debezium",
+    "database.dbname": "yourdb",
+    "database.server.name": "your-db-server",
+    "topic.prefix": "outbox",
+    "schema.include.list": "public",
+    "table.include.list": "public.outbox_messages",
+    "plugin.name": "pgoutput",
+    "publication.name": "dbz_publication",
+    "slot.name": "dbz_replication_slot",
+
+    // --- Debezium Transforms for the Outbox Pattern ---
+    "transforms": "outbox,extractkey,route",
+    "transforms.outbox.type": "io.debezium.transforms.outbox.EventRouter",
+    "transforms.outbox.table.field.event.id": "id",
+    "transforms.outbox.table.field.event.key": "aggregate_id", // Use aggregate_id as Kafka key
+    "transforms.outbox.table.field.event.type": "event_type",
+    "transforms.outbox.table.field.event.timestamp": "timestamp",
+    "transforms.outbox.table.field.event.payload": "payload",
+    "transforms.outbox.table.field.event.metadata": "metadata",
+    "transforms.outbox.table.field.aggregate.type": "aggregate_type",
+    "transforms.outbox.table.field.aggregate.id": "aggregate_id",
+    "transforms.outbox.route.topic.replacement": "${aggregate_type}", // Route to outbox.<aggregate_type> topic
+
+    // This transform is automatically applied by EventRouter, but if you don't use EventRouter
+    // and need to extract the 'after' state explicitly
+    "transforms.extractkey.type": "org.apache.kafka.connect.transforms.ExtractField$Key",
+    "transforms.extractkey.field": "aggregate_id", // Promotes aggregate_id from the JSON message to the Kafka message key
+
+    // Route events to a specific topic based on 'aggregate_type'
+    "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+    "transforms.route.regex": "outbox.public.outbox_messages",
+    "transforms.route.replacement": "outbox.${routedByAggregateType}", // Use the field from the EventRouter
+    "transforms.route.field.routedByAggregateType": "aggregate_type", // This requires the EventRouter to have made 'aggregate_type' available in the header or value. The EventRouter transformer itself can handle topic routing more directly.
+    "transforms.outbox.route.by.field": "aggregate_type", // Simpler direct routing
+
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "false"
+  }
+}
+```
+
+**Important Notes on Debezium Transforms:**
+
+*   **`EventRouter` Transform:** This is a specialized Debezium SMT (Single Message Transform) designed specifically for the Transactional Outbox pattern.
+    *   It expects `id`, `aggregate_id`, `aggregate_type`, `event_type`, `timestamp`, `payload`, and `metadata` fields in your `outbox_messages` table.
+    *   It automatically wraps the `payload` into the Kafka message value and sets the Kafka key based on `aggregate_id`.
+    *   It can route to specific topics (e.g., `outbox.Customer`, `outbox.Order`) based on `aggregate_type`.
+    *   It filters out `DELETE` operations on the `outbox_messages` table (which is what your clean-up process would do, if you had one).
+*   **CDC (Debezium) only processes `INSERT`s:** When you insert a row into `outbox_messages`, Debezium picks it up. After it's published, you can (optionally) have a separate, idempotent cleanup job or a Debezium signal that deletes the record from `outbox_messages`. Debezium will then capture this `DELETE` event, but the `EventRouter` transform will typically filter it out, preventing re-publishing.
+
+---
+
+### How to test the Java Producer Service
+
+1.  Run your Spring Boot application.
+2.  Use a tool like `curl` or Postman to send a POST request:
+
+    ```bash
+    curl -X POST http://localhost:8080/customers/profile \
+    -H "Content-Type: application/json" \
+    -d '{
+      "customerId": "customer-abc-123",
+      "newName": "Alice Smith",
+      "newAddress": "123 Main St, Anytown"
+    }'
+    ```
+
+3.  Check your database `events_store_t` and `outbox_messages` tables. You should see entries for `CustomerNameChanged` and `CustomerAddressChanged` in both, all committed atomically.
+
+---
+
+### Key Benefits of this Setup
+
+*   **Guaranteed Event Persistence:** Events are first stored in your durable `events_store_t` and `outbox_messages` tables within a single, local, ACID transaction. This means if your application crashes before the event is published to Kafka, it's still safe in your database and will be picked up by Debezium later.
+*   **Decoupling:** Your core business logic (in `CustomerApplicationService`) doesn't directly interact with Kafka. It only interacts with the database. This makes your service more resilient to Kafka outages.
+*   **Simplified Retries:** Debezium and Kafka Connect handle the complexities of retrying Kafka publication.
+*   **Single Source of Truth:** Your `events_store_t` remains the authoritative event log for replay and aggregate reconstruction.
+*   **Scalability:** You can scale your application service and Debezium independently.
+
+This pattern is a fundamental building block for highly reliable, event-driven microservices.
+

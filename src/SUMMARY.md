@@ -20,6 +20,7 @@
   - [UUID](./design/uuid.md)
   - [Composit key vs Surrogate UUID key](./design/composite-surrogate.md)
   - [Atomic Events vs Composite Events](./design/atomic-composite.md)
+  - [Database Concurrency](./design/database-concurrency.md)
 - [Implementation](./implementation.md)
   - [Sign In](./implementation/signin.md)
   - [Services](./implementation/services.md)
