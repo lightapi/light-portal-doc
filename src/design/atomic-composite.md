@@ -1253,48 +1253,59 @@ You'll deploy Debezium as a Kafka Connect connector. Here's a sample configurati
   "config": {
     "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
     "tasks.max": "1",
-    "database.hostname": "localhost",
+    
+    "database.hostname": "postgres",
     "database.port": "5432",
-    "database.user": "debezium",
-    "database.password": "debezium",
-    "database.dbname": "yourdb",
-    "database.server.name": "your-db-server",
-    "topic.prefix": "outbox",
+    "database.user": "postgres",
+    "database.password": "secret",
+    "database.dbname": "configserver",
+    "database.server.name": "postgres",
+    "topic.prefix": "portal-event", 
+
     "schema.include.list": "public",
-    "table.include.list": "public.outbox_messages",
+    "table.include.list": "public.outbox_message_t",
+    "message.key.columns": "public.outbox_message_t:user_id",
+
     "plugin.name": "pgoutput",
     "publication.name": "dbz_publication",
     "slot.name": "dbz_replication_slot",
 
-    // --- Debezium Transforms for the Outbox Pattern ---
-    "transforms": "outbox,extractkey,route",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false",
+    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "key.converter.schemas.enable": "false",
+
+    "transforms": "unwrap,timestamp_converter,extractPayload,extractKey,outbox,final_route", 
+
+    "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+    "transforms.unwrap.drop.tombstones": "false",
+    "transforms.unwrap.delete.handling.mode": "none",
+
+    "transforms.timestamp_converter.type": "org.apache.kafka.connect.transforms.TimestampConverter$Value",
+    "transforms.timestamp_converter.field": "event_ts",
+    "transforms.timestamp_converter.target.type": "Timestamp",
+    "transforms.timestamp_converter.format": "yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'",
+
+    "transforms.extractPayload.type": "org.apache.kafka.connect.transforms.ExtractField$Value",
+    "transforms.extractPayload.field": "payload",
+    "transforms.extractPayload.parse.json": "true",
+
+    "transforms.extractKey.type": "org.apache.kafka.connect.transforms.ExtractField$Key",
+    "transforms.extractKey.field": "user_id",
+
     "transforms.outbox.type": "io.debezium.transforms.outbox.EventRouter",
     "transforms.outbox.table.field.event.id": "id",
-    "transforms.outbox.table.field.event.key": "aggregate_id", // Use aggregate_id as Kafka key
+    "transforms.outbox.table.field.event.key": "user_id",
     "transforms.outbox.table.field.event.type": "event_type",
-    "transforms.outbox.table.field.event.timestamp": "timestamp",
+    "transforms.outbox.table.field.event.timestamp": "event_ts",
     "transforms.outbox.table.field.event.payload": "payload",
     "transforms.outbox.table.field.event.metadata": "metadata",
     "transforms.outbox.table.field.aggregate.type": "aggregate_type",
     "transforms.outbox.table.field.aggregate.id": "aggregate_id",
-    "transforms.outbox.route.topic.replacement": "${aggregate_type}", // Route to outbox.<aggregate_type> topic
 
-    // This transform is automatically applied by EventRouter, but if you don't use EventRouter
-    // and need to extract the 'after' state explicitly
-    "transforms.extractkey.type": "org.apache.kafka.connect.transforms.ExtractField$Key",
-    "transforms.extractkey.field": "aggregate_id", // Promotes aggregate_id from the JSON message to the Kafka message key
-
-    // Route events to a specific topic based on 'aggregate_type'
-    "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
-    "transforms.route.regex": "outbox.public.outbox_messages",
-    "transforms.route.replacement": "outbox.${routedByAggregateType}", // Use the field from the EventRouter
-    "transforms.route.field.routedByAggregateType": "aggregate_type", // This requires the EventRouter to have made 'aggregate_type' available in the header or value. The EventRouter transformer itself can handle topic routing more directly.
-    "transforms.outbox.route.by.field": "aggregate_type", // Simpler direct routing
-
-    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
-    "value.converter.schemas.enable": "false",
-    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
-    "key.converter.schemas.enable": "false"
+    "transforms.final_route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+    "transforms.final_route.regex": "portal-event\\.public\\.outbox_message_t", 
+    "transforms.final_route.replacement": "portal-event"
   }
 }
 ```
