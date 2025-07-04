@@ -1350,3 +1350,74 @@ You'll deploy Debezium as a Kafka Connect connector. Here's a sample configurati
 
 This pattern is a fundamental building block for highly reliable, event-driven microservices.
 
+## Multiple Topics
+
+This is a classic scenario in event-driven architectures: an event needs to trigger processing in multiple downstream systems. The key is maintaining atomicity and understanding transaction boundaries.
+
+Given your setup where:
+1.  `ScheduleCreatedEvent` originates from your service's outbox.
+2.  Debezium pushes it to `portal-event`.
+3.  Your `PortalEventConsumer` reads from `portal-event` and performs database updates (like `notification_t`).
+4.  The same event needs to go to be processed by the Schedule Kafka Streams.
+5.  All operations related to processing this event should ideally be atomic.
+
+---
+
+### Understanding the Transactional Challenge
+
+Your `PortalEventConsumer` has a well-defined transactional boundary:
+**`[Start DB Tx] -> [DB Updates (e.g., notification_t)] -> [DB Commit] -> [Kafka Consumer Offset Commit]`**
+
+You want to add "push to `light-schedule`" into this atomic unit.
+
+### Options for Pushing to `light-schedule`
+
+Let's evaluate the best places:
+
+#### 1. **NOT Recommended: Direct Kafka Producer Send within `PortalEventConsumer`'s DB Transaction.**
+
+*   **Approach:** Inside the `PortalEventConsumer` loop, after processing `ScheduleCreatedEvent` and before `conn.commit()`, instantiate a Kafka Producer and `producer.send()` the event to `light-schedule`.
+*   **Problem:** This is incredibly difficult to make truly atomic across all three resources (source Kafka topic `portal-event` offset, your database transaction, AND the target Kafka topic `light-schedule`).
+    *   If `producer.send()` to `light-schedule` fails *after* `conn.commit()` but *before* `consumer.commitSync()`, you have an inconsistent state: `notification_t` is updated, but `light-schedule` didn't get the event. The consumer will re-process, leading to duplicates in `notification_t` (which requires idempotency) and potential duplicates to `light-schedule`.
+    *   Managing Kafka Producer transactions nested within a JDBC transaction is not standard and adds immense complexity.
+
+#### 2. **Recommended for Robustness (but more infrastructure): A Secondary Outbox Table.**
+
+*   **Approach:**
+    1.  When `PortalEventConsumer` processes `ScheduleCreatedEvent` from `portal-event`, it updates `notification_t` (and any other DB projections) in its current DB transaction.
+    2.  **Within the *same* DB transaction**, it also inserts a record (representing the `ScheduleCreatedEvent` for `light-schedule`) into a *new, dedicated outbox table* (e.g., `schedule_events_outbox_t`).
+    3.  A **second Debezium connector** (or a polling publisher) then monitors `schedule_events_outbox_t` and pushes events to the `light-schedule` topic.
+*   **Benefits:**
+    *   **True Atomicity:** The event lands in `notification_t` AND is queued for `light-schedule` publishing, all within the `PortalEventConsumer`'s single DB transaction. This is guaranteed.
+    *   **High Reliability:** Leverages the proven Transactional Outbox pattern again.
+*   **Drawbacks:**
+    *   Adds another outbox table to manage.
+    *   Requires another Debezium connector instance.
+    *   More operational overhead.
+
+#### 3. **Most Recommended for Simplicity & Kafka Streams Integration: A Separate Kafka Streams Application.**
+
+*   **Approach:**
+    1.  Your `PortalEventConsumer` continues to subscribe to `portal-event` and performs its database updates to `notification_t` (and other projections) as it currently does. It remains the sink for *all* events from `portal-event` into your relational database.
+    2.  Create a **separate, dedicated Kafka Streams application** whose sole purpose is to process scheduling events.
+    3.  This Kafka Streams application subscribes directly to the `portal-event` topic.
+    4.  It uses Kafka Streams DSL to `filter` for `ScheduleCreatedEvent`s.
+*   **Benefits:**
+    *   **Clean Separation of Concerns:** Your `PortalEventConsumer` is a database sink. Your Kafka Streams app is a stream processor.
+    *   **Kafka Streams EOS (Exactly-Once Semantics):** Kafka Streams handles transactional guarantees (atomic consumption from `portal-event` and process the scheduled events natively.
+    *   **Simpler Code:** No complex producer/consumer/DB transaction coordination in one app.
+    *   **Scalability:** Each application can scale independently.
+*   **Drawbacks:**
+    *   Adds another logical application to deploy and manage.
+
+---
+
+### Best Place to Push to `light-schedule`:
+
+For your setup, the **Separate Kafka Streams Application (Option 3)** is generally the best approach.
+
+*   **Your `PortalEventConsumer`'s role:** It acts as a **generic projection builder** into your relational database, consuming all events from `portal-event` and updating `notification_t` (and any other necessary read models). This ensures a full audit and visibility for *all* processed events in your DB.
+*   **The new Kafka Streams app's role:** It acts as a **specialized router and processor** for `ScheduleCreatedEvent`s specifically, forwarding them to the appropriate Kafka Streams pipeline (`light-schedule`).
+
+This maintains a clean, decoupled architecture where each component has a clear responsibility and leverages Kafka's native stream processing capabilities for atomic Kafka-to-Kafka operations.
+
