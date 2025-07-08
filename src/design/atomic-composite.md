@@ -1310,6 +1310,79 @@ You'll deploy Debezium as a Kafka Connect connector. Here's a sample configurati
 }
 ```
 
+And here is the curl command to create the connector locally. 
+
+```
+curl --location --request POST 'http://localhost:8083/connectors' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+  "name": "outbox-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "tasks.max": "1",
+    
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "postgres",
+    "database.password": "secret",
+    "database.dbname": "configserver",
+    "database.server.name": "postgres",
+    "topic.prefix": "portal-event", 
+
+    "schema.include.list": "public",
+    "table.include.list": "public.outbox_message_t",
+    "message.key.columns": "public.outbox_message_t:user_id",
+
+    "plugin.name": "pgoutput",
+    "publication.name": "dbz_publication",
+    "slot.name": "dbz_replication_slot",
+    "slot.drop.on.stop": "false", 
+    "signal.when.disconnected": "true",
+    "tombstones.on.delete": "true",
+    "max.retries": 5,
+    "retry.delay.ms": 10000,
+
+    "value.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "value.converter.schemas.enable": "false",
+    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "key.converter.schemas.enable": "false",
+
+    "transforms": "unwrap,timestamp_converter,extractPayload,extractKey,outbox,final_route", 
+
+    "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+    "transforms.unwrap.drop.tombstones": "false",
+    "transforms.unwrap.delete.handling.mode": "none",
+
+    "transforms.timestamp_converter.type": "org.apache.kafka.connect.transforms.TimestampConverter$Value",
+    "transforms.timestamp_converter.field": "event_ts",
+    "transforms.timestamp_converter.target.type": "Timestamp",
+    "transforms.timestamp_converter.format": "yyyy-MM-dd'\''T'\''HH:mm:ss.SSSSSS'\''Z'\''",
+
+    "transforms.extractPayload.type": "org.apache.kafka.connect.transforms.ExtractField$Value",
+    "transforms.extractPayload.field": "payload",
+    "transforms.extractPayload.parse.json": "true",
+
+    "transforms.extractKey.type": "org.apache.kafka.connect.transforms.ExtractField$Key",
+    "transforms.extractKey.field": "user_id",
+
+    "transforms.outbox.type": "io.debezium.transforms.outbox.EventRouter",
+    "transforms.outbox.table.field.event.id": "id",
+    "transforms.outbox.table.field.event.key": "user_id",
+    "transforms.outbox.table.field.event.type": "event_type",
+    "transforms.outbox.table.field.event.timestamp": "event_ts",
+    "transforms.outbox.table.field.event.payload": "payload",
+    "transforms.outbox.table.field.event.metadata": "metadata",
+    "transforms.outbox.table.field.aggregate.type": "aggregate_type",
+    "transforms.outbox.table.field.aggregate.id": "aggregate_id",
+
+    "transforms.final_route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+    "transforms.final_route.regex": "portal-event\\.public\\.outbox_message_t", 
+    "transforms.final_route.replacement": "portal-event"
+  }
+}
+'
+```
+
 **Important Notes on Debezium Transforms:**
 
 *   **`EventRouter` Transform:** This is a specialized Debezium SMT (Single Message Transform) designed specifically for the Transactional Outbox pattern.
