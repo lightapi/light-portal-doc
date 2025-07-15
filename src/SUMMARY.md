@@ -21,6 +21,7 @@
   - [Composit key vs Surrogate UUID key](./design/composite-surrogate.md)
   - [Atomic Events vs Composite Events](./design/atomic-composite.md)
   - [Database Concurrency](./design/database-concurrency.md)
+  - [MSAL Light OAuth Integration](./design/msal-light-oauth.md)
 - [Implementation](./implementation.md)
   - [Sign In](./implementation/signin.md)
   - [Services](./implementation/services.md)
