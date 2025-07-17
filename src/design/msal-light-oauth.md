@@ -1,5 +1,7 @@
 # MSAL Light OAuth Integration
 
+## Token Exchange
+
 We have a React Single Page Application(SPA) running within a corporate network using Azure AD for SSO. However, we want to use JWT tokens from another OAuth 2.0 provider Light-OAuth to issue the token with additional custom claims for fine-grained Authorization. What is the best way to do the integration? 
 
 This is a common and powerful architectural pattern used to separate authentication from authorization, allowing you to use a central identity provider (like Azure AD) for *who the user is* and a specialized service for *what the user can do*.
@@ -213,3 +215,61 @@ This is a bad idea because:
 *   **Terrible User Experience:** It can lead to multiple redirects, popups, and a confusing login process.
 *   **Security Risk:** It increases the surface area for token handling in the browser and might require you to use less secure flows (like Implicit flow) on the second provider.
 *   **Complexity:** Managing the state of two independent authentication libraries and their tokens in a SPA is extremely difficult and error-prone.
+
+
+## Client Secret
+
+Token exchange specification doesn't require client_id and client_secret to be sent to the second OAuth 2.0 provider to exchage the token. However, it is highly recommended to pass the client_id and client_secret from the BFF to the second OAuth 2.0 provider. The subject token along is not sufficient. 
+
+This is a critical security aspect of the Token Exchange flow. Let's break down why.
+
+### The "Two Questions" Security Model
+
+When your BFF makes the token exchange request, the second OAuth provider needs to answer two fundamental security questions:
+
+1.  **WHO IS THE USER?** (Authentication of the Subject)
+    *   This question is answered by the `subject_token` (the Microsoft token).
+    *   The provider validates the token's signature, issuer (`iss`), expiration (`exp`), and audience (`aud`) to confirm that it's a legitimate token for a valid user from a trusted identity provider (Microsoft).
+
+2.  **WHO IS *ASKING* FOR THIS TOKEN?** (Authentication of the Client)
+    *   This question is answered by the `client_id` and `client_secret`.
+    *   This is crucial. The provider needs to know *which application* is requesting to act on the user's behalf. It's not enough that the user is valid; the application making the request must also be a known, trusted, and authorized client.
+
+### Why the Subject Token Alone is a Security Risk
+
+Imagine if only the `subject_token` were required. Any malicious actor or compromised service that managed to get a user's Microsoft access token could then send it to your second OAuth provider and exchange it for a new token containing your fine-grained authorization claims. This would allow them to impersonate the user within your system completely.
+
+By requiring the `client_id` and `client_secret`, you ensure that **only your specific, trusted BFF application** is allowed to perform this exchange. The `client_secret` is the proof that the request is coming from your backend and not some other application.
+
+---
+
+### The Token Exchange Request Body
+
+So, the `POST` request your `MsalTokenExchangeHandler` (the BFF) sends to your second provider's token endpoint will be `application/x-www-form-urlencoded` and must look like this:
+
+```
+grant_type=urn:ietf:params:oauth:grant-type:token-exchange
+&client_id=YOUR_BFFS_CLIENT_ID_FOR_THE_SECOND_PROVIDER
+&client_secret=YOUR_BFFS_CLIENT_SECRET
+&subject_token=THE_MICROSOFT_ACCESS_TOKEN_FROM_THE_SPA
+&subject_token_type=urn:ietf:params:oauth:token-type:access_token
+&scope=permissions_for_the_new_token
+```
+
+### Configuration Checklist for your Second OAuth Provider
+
+This means that on your second OAuth 2.0 provider, you must:
+
+1.  **Create a Client Registration:** Create a new "Application" or "Client" specifically for your `light-gateway` BFF.
+2.  **Set Client Type:** Configure this client as a **Confidential Client** (as opposed to a Public Client like a SPA), because it is capable of securely storing a secret.
+3.  **Generate Credentials:** Generate a `client_id` and a `client_secret` for this BFF client.
+4.  **Enable Grant Type:** Explicitly enable the `urn:ietf:params:oauth:grant-type:token-exchange` grant type for this specific client. Your provider's security policy should only allow trusted, confidential clients to use this powerful grant type.
+5.  **Store Credentials Securely:** Store the generated `client_id` and `client_secret` securely in your BFF's configuration (e.g., in `secret.yml` or environment variables), where they are not exposed to the outside world.
+
+In short:
+
+*   The **`subject_token`** proves **who the user is**.
+*   The **`client_id` and `client_secret`** prove **who your BFF is**.
+
+Both are required for a secure delegation and token exchange process.
+
