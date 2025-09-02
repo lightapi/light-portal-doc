@@ -85,7 +85,7 @@ Your React app's interaction with MSAL will remain largely the same, with one ke
     };
     ```
 
-2.  **Call Your Backend:** After getting the token, instead of using it to call various protected resources, you make a single call to a dedicated endpoint on your backend (e.g., `/api/auth/token-exchange`) to initiate the session.
+2.  **Call Your Backend:** After getting the token, instead of using it to call various protected resources, you make a single call to a dedicated endpoint on your backend (e.g., `/auth/ms/exchange`) to initiate the session.
 
     ```javascript
     import { useMsal } from "@azure/msal-react";
@@ -104,7 +104,7 @@ Your React app's interaction with MSAL will remain largely the same, with one ke
           const microsoftAccessToken = response.accessToken;
 
           // 2. Send it to our backend for exchange
-          const backendResponse = await fetch('/api/auth/token-exchange', {
+          const backendResponse = await fetch('/auth/ms/exchange', {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${microsoftAccessToken}`,
@@ -139,67 +139,113 @@ Your React app's interaction with MSAL will remain largely the same, with one ke
 
 This is where the core logic resides. You'll create an endpoint that receives the Microsoft token and exchanges it.
 
-1.  **Protect the Endpoint:** Configure your backend (e.g., Node.js/Express, ASP.NET Core) to validate the `Bearer` token from Microsoft that it receives from your React app. This ensures only authenticated users from your SPA can trigger an exchange.
+1.  **Protect the Endpoint:** Configure your backend to validate the `Bearer` token from Microsoft that it receives from your React app. This ensures only authenticated users from your SPA can trigger an exchange.
 
 2.  **Implement the Exchange Logic:**
 
-    ```javascript
-    // Example using Node.js and Axios
-    const express = require('express');
-    const axios = require('axios');
-    const app = express();
+    ```Java
+        if (exchange.getRelativePath().equals(config.getExchangePath())) {
+            // token exchange request handling.
+            if(logger.isTraceEnabled()) logger.trace("MsalTokenExchangeHandler exchange is called.");
 
-    // This endpoint must be protected by middleware that validates the incoming Microsoft Access Token
-    app.post('/api/auth/token-exchange', async (req, res) => {
-      // 1. Extract the Microsoft token from the Authorization header
-      // The validation should have already happened in a middleware step.
-      const microsoftAccessToken = req.headers.authorization.split(' ')[1];
+            String authHeader = exchange.getRequestHeaders().getFirst(Headers.AUTHORIZATION);
+            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+                setExchangeStatus(exchange, JWT_BEARER_TOKEN_MISSING);
+                return;
+            }
+            String microsoftToken = authHeader.substring(7);
 
-      // 2. Prepare the request for your second OAuth provider
-      const tokenExchangeData = new URLSearchParams({
-        grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
-        client_id: process.env.SECOND_PROVIDER_CLIENT_ID, // Your backend's client ID
-        client_secret: process.env.SECOND_PROVIDER_CLIENT_SECRET, // Your backend's secret
-        subject_token: microsoftAccessToken, // The token to exchange
-        subject_token_type: 'urn:ietf:params:oauth:token-type:access_token',
-        // Request scopes for the new token from the second provider
-        scope: 'read:fine-grained-permissions'
-      });
+            // --- Validate the incoming Microsoft Token ---
+            if(msalJwtVerifier == null) {
+                // handle case where config failed to load
+                throw new Exception("MsalJwtVerifier is not initialized.");
+            }
+            try {
+                // We only need to verify it, we don't need the claims for much.
+                // The second provider will do its own validation and claim mapping.
+                // Set skipAudienceVerification to true if the 'aud' doesn't match this BFF's client ID.
+                String reqPath = exchange.getRequestPath();
+                msalJwtVerifier.verifyJwt(microsoftToken, msalSecurityConfig.isIgnoreJwtExpiry(), true, null, reqPath, null);
+            } catch (InvalidJwtException e) {
+                logger.error("Microsoft token validation failed.", e);
+                setExchangeStatus(exchange, INVALID_AUTH_TOKEN, e.getMessage());
+                return;
+            }
 
-      try {
-        // 3. Make the POST request to the second provider's token endpoint
-        const response = await axios.post(
-          'https://your-second-provider.com/oauth/token', // The token endpoint URL
-          tokenExchangeData,
-          {
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-            },
-          }
-        );
+            // --- Perform Token Exchange ---
+            String csrf = UuidUtil.uuidToBase64(UuidUtil.getUUID());
+            TokenExchangeRequest request = new TokenExchangeRequest();
+            request.setSubjectToken(microsoftToken);
+            request.setSubjectTokenType("urn:ietf:params:oauth:token-type:jwt");
+            request.setCsrf(csrf); // The CSRF for the *new* token we are getting
 
-        const newEnrichedToken = response.data.access_token;
+            Result<TokenResponse> result = OauthHelper.getTokenResult(request);
+            if (result.isFailure()) {
+                logger.error("Token exchange failed with status: {}", result.getError());
+                setExchangeStatus(exchange, TOKEN_EXCHANGE_FAILED, result.getError().getDescription());
+                return;
+            }
 
-        // 4. IMPORTANT: Decide what to do with the new token.
-        // Option A (Recommended for SPAs): Set a secure, HttpOnly session cookie.
-        // This is the most secure method as the token is not exposed to browser script.
-        res.cookie('session_token', newEnrichedToken, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'strict',
-        });
-        res.status(200).json({ status: 'success' });
+            // --- The setCookies logic is identical ---
+            List<String> scopes = setCookies(exchange, result.getResult(), csrf);
+            if(logger.isTraceEnabled()) logger.trace("scopes = {}", scopes);
 
-        // Option B: Return the new token to the SPA.
-        // The SPA would then have to manage this token and send it as a Bearer token
-        // on subsequent requests to your backend.
-        // res.status(200).json({ newAccessToken: newEnrichedToken });
-
-      } catch (error) {
-        console.error('Error during token exchange:', error.response?.data || error.message);
-        res.status(500).json({ error: 'Failed to exchange token' });
-      }
-    });
+            exchange.setStatusCode(StatusCodes.OK);
+            exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, "application/json");
+            // Return the scopes in the response body
+            Map<String, Object> rs = new HashMap<>();
+            rs.put(SCOPES, scopes);
+            exchange.getResponseSender().send(JsonMapper.toJson(rs));
+        } else if (exchange.getRelativePath().equals(config.getLogoutPath())) {
+            // logout request handling, this is the same as StatelessAuthHandler to remove the cookies.
+            if(logger.isTraceEnabled()) logger.trace("MsalTokenExchangeHandler logout is called.");
+            removeCookies(exchange);
+            exchange.endExchange();
+        } else {
+            // This is the subsequent request handling after the token exchange. Here we verify the JWT in the cookies.
+            if(logger.isTraceEnabled()) logger.trace("MsalTokenExchangeHandler is called for subsequent request.");
+            String jwt = null;
+            Cookie cookie = exchange.getRequestCookie(ACCESS_TOKEN);
+            if(cookie != null) {
+                jwt = cookie.getValue();
+                // verify the jwt with the internal verifier, the token is from the light-oauth token exchange.
+                JwtClaims claims = internalJwtVerifier.verifyJwt(jwt, securityConfig.isIgnoreJwtExpiry(), true);
+                String jwtCsrf = claims.getStringClaimValue(Constants.CSRF);
+                // get csrf token from the header. Return error is it doesn't exist.
+                String headerCsrf = exchange.getRequestHeaders().getFirst(HttpStringConstants.CSRF_TOKEN);
+                if(headerCsrf == null || headerCsrf.trim().length() == 0) {
+                    setExchangeStatus(exchange, CSRF_HEADER_MISSING);
+                    return;
+                }
+                // verify csrf from jwt token in httpOnly cookie
+                if(jwtCsrf == null || jwtCsrf.trim().length() == 0) {
+                    setExchangeStatus(exchange, CSRF_TOKEN_MISSING_IN_JWT);
+                    return;
+                }
+                if(logger.isDebugEnabled()) logger.debug("headerCsrf = " + headerCsrf + " jwtCsrf = " + jwtCsrf);
+                if(!headerCsrf.equals(jwtCsrf)) {
+                    setExchangeStatus(exchange, HEADER_CSRF_JWT_CSRF_NOT_MATCH, headerCsrf, jwtCsrf);
+                    return;
+                }
+                // renew the token 1.5 minute before it is expired to keep the session if the user is still using it
+                // regardless the refreshToken is long term remember me or not. The private message API access repeatedly
+                // per minute will make the session continue until the browser tab is closed.
+                if(claims.getExpirationTime().getValueInMillis() - System.currentTimeMillis() < 90000) {
+                    jwt = renewToken(exchange, exchange.getRequestCookie(REFRESH_TOKEN));
+                }
+            } else {
+                // renew the token and set the cookies
+                jwt = renewToken(exchange, exchange.getRequestCookie(REFRESH_TOKEN));
+            }
+            if(logger.isTraceEnabled()) logger.trace("jwt = " + jwt);
+            if(jwt != null) exchange.getRequestHeaders().put(Headers.AUTHORIZATION, "Bearer " + jwt);
+            // if there is no jwt and refresh token available in the cookies, the user not logged in or
+            // the session is expired. Or the endpoint that is trying to access doesn't need a token
+            // for example, in the light-portal command side, createUser doesn't need a token. let it go
+            // to the service and an error will be back if the service does require a token.
+            // don't call the next handler if the exchange is completed in renewToken when error occurs.
+            if(!exchange.isComplete()) Handler.next(exchange, next);
+        }
     ```
 
 ---
@@ -332,5 +378,18 @@ You wouldn't want a security system where the vault guard blindly trusts the fro
 
 The verifications are not redundant; they are a fundamental part of a layered, defense-in-depth security strategy.
 
+
+## Single Page Application
+
+There are two endpoints that the SPA should access for both token exchange and logout. 
+
+### Login
+
+After the SSO with Azure AD via SSO, you need to send this ID token to the backend API endpoint "/auth/ms/exchange" to establish the session with a GET request. The header is the standard authorization header with "Bearer IdToken". You will receive a response in JSON with a list of scopes that is represent the access permission. You can display them to the user for consent or simply ignore them. Along with the response body, some cookies will be set on the browser local storage to establish the session. Once the login is done, the backend will automatically renew the access token with a refresh token automatically as long as the user sending the request to the server. 
+
+
+### Logout
+
+To logout, you need to logout from the Azure AD and then send a GET request to the backend API endpoint "/auth/ms/logout" to remove session cookies. 
 
 
