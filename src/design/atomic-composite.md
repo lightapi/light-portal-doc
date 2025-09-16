@@ -1270,7 +1270,7 @@ You'll deploy Debezium as a Kafka Connect connector. Here's a sample configurati
     "publication.name": "dbz_publication",
     "slot.name": "dbz_replication_slot",
 
-    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter": "org.apache.kafka.connect.storage.StringConverter",
     "value.converter.schemas.enable": "false",
     "key.converter": "org.apache.kafka.connect.storage.StringConverter",
     "key.converter.schemas.enable": "false",
