@@ -26,6 +26,7 @@
   - [Optimistic vs Pessimistic UI](./design/optimistic-pessimistic-ui.md)
   - [Soft Delete vs Hard Delete](./design/soft-hard-delete.md)
   - [Tenant Migration](./design/tenant-migration.md)
+  - [Product Version Config](./design/product-version-config.md)
 - [Implementation](./implementation.md)
   - [Sign In](./implementation/signin.md)
   - [Services](./implementation/services.md)
