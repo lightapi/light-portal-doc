@@ -1,6 +1,6 @@
 ## Soft Delete vs Hard Delete
 
-Here is a classic problem in Event Sourcing, often related to the concept of **"soft deletes" or "state transitions" versus "hard deletes" and re-insertions**. The core issue is that `aggregate_version` must be strictly monotonic for a given aggregate. If you try to re-insert an aggregate at an old version, it fundamentally violates Event Sourcing principles.
+Here is a classic problem in Event Sourcing, often related to the concept of **"soft deletes" or "state transitions" versus "hard deletes" and re-insertions**. The core issue is that `aggregate_version` must be strictly unique for a given aggregate. If you try to re-insert an aggregate at an old version, it fundamentally violates Event Sourcing principles.
 
 Let's break down the scenario and the best ways to handle it.
 
@@ -9,9 +9,9 @@ Let's break down the scenario and the best ways to handle it.
 ### The Problem Scenario: Version Conflict on Re-add
 
 Your scenario:
-1.  `AddHostToUserMappingEvent (userId=U, hostId=H, sequence_number=1)` -> `event_store_t` has version 1. `user_host_t` (projection) has version 1.
-2.  `RemoveHostToUserMappingEvent (userId=U, hostId=H, sequence_number=2)` -> `event_store_t` has version 2. `user_host_t` either deletes or marks as inactive.
-3.  `AddHostToUserMappingEvent (userId=U, hostId=H, sequence_number=1)` -> **CONFLICT!** This event says the aggregate `(U,H)` is at version 1 again, but `event_store_t` already has version 2 for `(U,H)`.
+1.  `UserHostCreatedEvent (userId=U, hostId=H, aggregate_version=1)` -> `event_store_t` has version 1. `user_host_t` (projection) has version 1.
+2.  `UserHostDeletedEvent (userId=U, hostId=H, aggregate_version=2)` -> `event_store_t` has version 2. `user_host_t` either deletes or marks as inactive.
+3.  `UserHostCreatedEvent (userId=U, hostId=H, aggregate_version=1)` -> **CONFLICT!** This event says the aggregate `(U,H)` is at version 1 again, but `event_store_t` already has version 2 for `(U,H)`.
 
 **Root Cause:** You cannot "re-add" an aggregate at an old version. An aggregate's version always strictly increases. The action of "adding back" is not a "first time add" in the event history; it's a *new* state transition.
 
@@ -34,26 +34,26 @@ This is the most common and robust approach. Instead of thinking of "add" and "r
 
 **Event Types:**
 
-*   `UserHostMappingActivatedEvent (userId, hostId, sequence_number)`
-*   `UserHostMappingDeactivatedEvent (userId, hostId, sequence_number)`
+*   `UserHostActivatedEvent (userId, hostId, sequence_number)`
+*   `UserHostDeactivatedEvent (userId, hostId, sequence_number)`
 
 **Scenario with State Transitions:**
 
 1.  **Add Host to User Mapping (First Time):**
     *   Command: `ActivateUserHostMapping(userId=U, hostId=H, expectedVersion=0)` (Expected version 0 because it doesn't exist yet).
-    *   Aggregate `(U,H)`: Generates `UserHostMappingActivatedEvent (userId=U, hostId=H, sequence_number=1)`.
+    *   Aggregate `(U,H)`: Generates `UserHostActivatedEvent (userId=U, hostId=H, sequence_number=1)`.
     *   `event_store_t`: Saves version 1.
     *   `user_host_t` (projection): **INSERTS** record `(U, H, status=ACTIVE, aggregate_version=1)`.
 
 2.  **Remove Host to User Mapping:**
     *   Command: `DeactivateUserHostMapping(userId=U, hostId=H, expectedVersion=1)`.
-    *   Aggregate `(U,H)`: Generates `UserHostMappingDeactivatedEvent (userId=U, hostId=H, sequence_number=2)`.
+    *   Aggregate `(U,H)`: Generates `UserHostDeactivatedEvent (userId=U, hostId=H, sequence_number=2)`.
     *   `event_store_t`: Saves version 2.
     *   `user_host_t` (projection): **UPDATES** record `(U, H)` to `status=INACTIVE, aggregate_version=2`. (Doesn't delete the row).
 
 3.  **Add Back the Same Host to User Mapping:**
     *   Command: `ReactivateUserHostMapping(userId=U, hostId=H, expectedVersion=2)`. (Expected version 2 because it's currently INACTIVE at version 2).
-    *   Aggregate `(U,H)`: Generates `UserHostMappingActivatedEvent (userId=U, hostId=H, sequence_number=3)`.
+    *   Aggregate `(U,H)`: Generates `UserHostActivatedEvent (userId=U, hostId=H, sequence_number=3)`.
     *   `event_store_t`: Saves version 3.
     *   `user_host_t` (projection): **UPDATES** record `(U, H)` to `status=ACTIVE, aggregate_version=3`.
 
@@ -69,9 +69,9 @@ This is the most common and robust approach. Instead of thinking of "add" and "r
 *   **Approach:** Instead of `(U,H)` being one aggregate that changes status, you treat each "active period" of `(U,H)` as a new, distinct aggregate.
 *   `aggregate_id`: A brand new UUID for *each activation* of `(U,H)`.
 *   Event Types:
-    *   `UserHostMappingCreated (mappingId=M1, userId=U, hostId=H, sequence_number=1)`
-    *   `UserHostMappingTerminated (mappingId=M1, userId=U, hostId=H, sequence_number=2)`
-    *   `UserHostMappingCreated (mappingId=M2, userId=U, hostId=H, sequence_number=1)` (for the second time)
+    *   `UserHostCreatedEvent (mappingId=M1, userId=U, hostId=H, sequence_number=1)`
+    *   `UserHostDeletedEvent (mappingId=M1, userId=U, hostId=H, sequence_number=2)`
+    *   `UserHostCreatedEvent (mappingId=M2, userId=U, hostId=H, sequence_number=1)` (for the second time)
 *   **Projection:** The `user_host_t` table would track these `mappingId`s, possibly with `start_ts` and `end_ts`. When a mapping is terminated, you update its `end_ts`. When "added back," you insert a new row with a new `mappingId`.
 *   **Complexity:** Managing which `mappingId` is current for `(U,H)` can be tricky. It's usually overkill for simple active/inactive toggles.
 
@@ -98,23 +98,23 @@ This is the most common and robust approach. Instead of thinking of "add" and "r
     ```
 
 2.  **Define specific Event Types:**
-    *   `UserHostMappingActivatedEvent`
-    *   `UserHostMappingDeactivatedEvent`
+    *   `UserHostActivatedEvent`
+    *   `UserHostDeactivatedEvent`
 
 3.  **Command Handling Logic (Write Model):**
     *   When the "add host to user" command comes in:
         *   Load the `UserHostMapping` aggregate (identified by `(host_id, user_id)`).
-        *   If not found (expectedVersion 0), generate `UserHostMappingActivatedEvent`.
-        *   If found and `status=INACTIVE` (expectedVersion > 0), generate `UserHostMappingActivatedEvent`.
+        *   If not found (expectedVersion 0), generate `UserHostActivatedEvent`.
+        *   If found and `status=INACTIVE` (expectedVersion > 0), generate `UserHostActivatedEvent`.
         *   If found and `status=ACTIVE` (expectedVersion > 0), reject (already active, idempotent no-op).
     *   When the "remove host from user" command comes in:
         *   Load the `UserHostMapping` aggregate.
         *   If not found or `status=INACTIVE`, reject (already inactive/not found).
-        *   If `status=ACTIVE`, generate `UserHostMappingDeactivatedEvent`.
+        *   If `status=ACTIVE`, generate `UserHostDeactivatedEvent`.
 
 4.  **`PortalEventConsumer` Logic (Read Model Update):**
 
-    *   **For `UserHostMappingActivatedEvent`:**
+    *   **For `UserHostActivatedEvent`:**
         *   This event means the mapping is now active.
         *   Try to `UPDATE user_host_t SET status='ACTIVE', aggregate_version=? WHERE host_id=? AND user_id=? AND aggregate_version=?`.
         *   If 0 rows updated:
@@ -123,7 +123,7 @@ This is the most common and robust approach. Instead of thinking of "add" and "r
             *   If it *doesn't* exist, it's the *very first time* this mapping became active, so `INSERT INTO user_host_t (...) VALUES (...)`.
         *   This will handle both initial creation and reactivation as idempotent updates/inserts based on state.
 
-    *   **For `UserHostMappingDeactivatedEvent`:**
+    *   **For `UserHostDeactivatedEvent`:**
         *   This event means the mapping is now inactive.
         *   `UPDATE user_host_t SET status='INACTIVE', aggregate_version=? WHERE host_id=? AND user_id=? AND aggregate_version=?`.
         *   If 0 rows updated, it's either `ConcurrencyException` or "not found" (already inactive).
@@ -151,8 +151,8 @@ The command handler's job is to:
 
 *   **Aggregate ID:** A composite of `hostId` and `userId` (e.g., `hostId + "_" + userId`).
 *   **Events:**
-    *   `UserHostMappingActivatedEvent`: Represents the relationship becoming active.
-    *   `UserHostMappingDeactivatedEvent`: Represents the relationship becoming inactive.
+    *   `UserHostActivatedEvent`: Represents the relationship becoming active.
+    *   `UserHostDeactivatedEvent`: Represents the relationship becoming inactive.
 
 ---
 
@@ -189,9 +189,9 @@ public class UserHostMappingAggregate {
     }
 
     private void applyEvent(DomainEvent event) {
-        if (event instanceof UserHostMappingActivatedEvent) {
+        if (event instanceof UserHostActivatedEvent) {
             this.currentStatus = UserHostMappingStatus.ACTIVE;
-        } else if (event instanceof UserHostMappingDeactivatedEvent) {
+        } else if (event instanceof UserHostDeactivatedEvent) {
             this.currentStatus = UserHostMappingStatus.INACTIVE;
         }
         this.currentVersion = event.getSequenceNumber(); // Update version based on event
@@ -214,7 +214,7 @@ public class UserHostMappingAggregate {
 
         // Generate new event
         long nextVersion = this.currentVersion + 1;
-        UserHostMappingActivatedEvent event = new UserHostMappingActivatedEvent(
+        UserHostActivatedEvent event = new UserHostActivatedEvent(
             UUID.randomUUID(), Instant.now(), getAggregateId(), "UserHostMapping", nextVersion, hostId, userId
         );
         uncommittedEvents.add(event);
@@ -235,7 +235,7 @@ public class UserHostMappingAggregate {
 
         // Generate new event
         long nextVersion = this.currentVersion + 1;
-        UserHostMappingDeactivatedEvent event = new UserHostMappingDeactivatedEvent(
+        UserHostDeactivatedEvent event = new UserHostDeactivatedEvent(
             UUID.randomUUID(), Instant.now(), getAggregateId(), "UserHostMapping", nextVersion, hostId, userId
         );
         uncommittedEvents.add(event);
@@ -283,9 +283,9 @@ public class UserHostMappingCommandHandler { // This is your application service
 
         // 2. Perform business logic based on intent (activate) and current state
         if (activate) {
-            aggregate.activateMapping(expectedVersionFromUI); // Will generate UserHostMappingActivatedEvent
+            aggregate.activateMapping(expectedVersionFromUI); // Will generate UserHostActivatedEvent
         } else {
-            aggregate.deactivateMapping(expectedVersionFromUI); // Will generate UserHostMappingDeactivatedEvent
+            aggregate.deactivateMapping(expectedVersionFromUI); // Will generate UserHostDeactivatedEvent
         }
 
         // 3. Persist new events
@@ -307,7 +307,7 @@ public class UserHostMappingCommandHandler { // This is your application service
 
 The consumer updates `user_host_t` based on the events.
 
-*   **For `UserHostMappingActivatedEvent`:**
+*   **For `UserHostActivatedEvent`:**
     ```java
     // In your PortalEventConsumer (inside processSingleEventWithRetries for this event type)
     Map<String, Object> eventData = extractEventData(eventMap);
@@ -339,7 +339,7 @@ The consumer updates `user_host_t` based on the events.
     ```
     *   **Crucial `ON CONFLICT ... WHERE user_host_t.aggregate_version < EXCLUDED.aggregate_version`:** This makes the projection update idempotent and handles out-of-order delivery. If the database already has a *newer* version than the incoming event, it simply does nothing (`0 rows affected`), preventing a stale event from overwriting a more recent state.
 
-*   **For `UserHostMappingDeactivatedEvent`:**
+*   **For `UserHostDeactivatedEvent`:**
     ```java
     // In your PortalEventConsumer (inside processSingleEventWithRetries for this event type)
     Map<String, Object> eventData = extractEventData(eventMap);
@@ -370,17 +370,17 @@ The UI will initially query the `user_host_t` read model.
 *   **Scenario A: UI queries, no record for `(U,H)` found.**
     *   UI infers state is "Non-Existent" or "Inactive".
     *   UI provides `expectedVersion = 0` to the command (because the read model had no entry).
-    *   Command handler: `aggregate.currentStatus == NON_EXISTENT`. Generates `UserHostMappingActivatedEvent (sequence_number=1)`.
+    *   Command handler: `aggregate.currentStatus == NON_EXISTENT`. Generates `UserHostActivatedEvent (sequence_number=1)`.
 
 *   **Scenario B: UI queries, record `(U,H, status=ACTIVE, aggregate_version=1)` found.**
     *   UI provides `expectedVersion = 1` to the command.
     *   User wants to "remove."
-    *   Command handler: `aggregate.currentStatus == ACTIVE`. Generates `UserHostMappingDeactivatedEvent (sequence_number=2)`.
+    *   Command handler: `aggregate.currentStatus == ACTIVE`. Generates `UserHostDeactivatedEvent (sequence_number=2)`.
 
 *   **Scenario C: UI queries, record `(U,H, status=INACTIVE, aggregate_version=2)` found.** (This assumes your UI *could* list inactive items, or an admin UI can see it.)
     *   UI provides `expectedVersion = 2` to the command.
     *   User wants to "add back" / "reactivate."
-    *   Command handler: `aggregate.currentStatus == INACTIVE`. Generates `UserHostMappingActivatedEvent (sequence_number=3)`.
+    *   Command handler: `aggregate.currentStatus == INACTIVE`. Generates `UserHostActivatedEvent (sequence_number=3)`.
 
 *   **Crucial UI Aspect:** If the UI doesn't display inactive items (which is typical for a "list active" view), and the user tries to "add" an item that *used to exist but is now inactive*, the UI would initially send `expectedVersion = 0`.
     *   Command handler receives `expectedVersion = 0`, but aggregate is actually `INACTIVE` at `version=2`.
