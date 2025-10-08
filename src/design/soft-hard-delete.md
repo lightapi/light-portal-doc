@@ -75,6 +75,11 @@ This is the most common and robust approach. Instead of thinking of "add" and "r
 *   **Projection:** The `user_host_t` table would track these `mappingId`s, possibly with `start_ts` and `end_ts`. When a mapping is terminated, you update its `end_ts`. When "added back," you insert a new row with a new `mappingId`.
 *   **Complexity:** Managing which `mappingId` is current for `(U,H)` can be tricky. It's usually overkill for simple active/inactive toggles.
 
+#### Option 3: History Table for User Host Mapping
+* **Approach:** Create a user_host_history_t to keep a history of UserHostMapping. 
+* **Projection:** The `user_host_t` and `user_host_history_t` join together for the query with both snapshot and historical views. 
+* **Complexity:** Managing both original and historical tables is overkill in this use case unless you need historical query very frequently. 
+
 ---
 
 ### Recommended Approach for your `user_host_t` scenario
