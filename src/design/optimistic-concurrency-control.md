@@ -1,6 +1,6 @@
 # Optimistic Concurrency Control (OCC)
 
-In the previous document(./optimistic-pessimistic-ui.md), we have decided to leverage the OCC to prevent multiple users update the same aggregate at the same time from different browser sessions. 
+In the previous documento [optimistic-pessimistic-ui](./optimistic-pessimistic-ui.md), we have decided to leverage the OCC to prevent multiple users update the same aggregate at the same time from different browser sessions. 
 
 With OCC, we have the single point of necessary trust: **the read model must be consistent *enough* to support the OCC check.**
 
