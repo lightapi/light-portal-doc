@@ -27,6 +27,7 @@
   - [Soft Delete vs Hard Delete](./design/soft-hard-delete.md)
   - [Tenant Migration](./design/tenant-migration.md)
   - [Product Version Config](./design/product-version-config.md)
+  - [Optimistic Concurrency Control](./design/optimistic-concurrency-control.md)
 - [Implementation](./implementation.md)
   - [Sign In](./implementation/signin.md)
   - [Services](./implementation/services.md)
