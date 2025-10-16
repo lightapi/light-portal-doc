@@ -664,6 +664,7 @@ This is generally the **most robust and recommended approach** for ensuring **at
 *   **No Data Loss:** Events are never lost between generation and publication to Kafka.
 *   **Decoupling:** The service generating events doesn't need to know about Kafka's availability. It only needs to commit to its local database. The Outbox Relayer handles the Kafka dependency.
 *   **Effective Once:** Combined with Kafka's idempotent producer, this provides effectively once-delivery.
+*   **Source of Truth:** The event_store_t database table will be our source of truth and it allows queries against it.
 
 #### Where the `events_store_t` is populated:
 
@@ -691,6 +692,7 @@ This approach involves two stages of atomicity: first, the producer guarantees d
 *   **Producer Responsibility:** The service that generates the events *also* has the responsibility of publishing to Kafka. If Kafka is down or slow, the producer service might be blocked or need to implement complex retry logic.
 *   **Data Durability Gap:** There's a theoretical, albeit small, window where events are generated but might not yet be durably committed to *your* authoritative `events_store_t` database if the consumer or Kafka has issues. (Kafka itself provides durability, but your *application's* Event Store is separate).
 *   **Complexity for Replay:** If your consumer fails and you need to replay events, where do you replay from? Kafka? What if Kafka's retention is short? This pattern *requires* Kafka to be the true long-term Event Store, or it introduces a reliance on the consumer correctly populating the DB.
+*   **Source of Truth:** The Kafka topic is written first and it will be our event store. It doesn't support query on the events directly. 
 
 #### Where the `events_store_t` is populated:
 

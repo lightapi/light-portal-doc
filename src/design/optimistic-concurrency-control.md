@@ -75,15 +75,15 @@ The "best" option balances **data consistency (critical)** against **performance
 
 ### Implementation Flow for Option 2 (The Correct Flow)
 
-1.  **UI/List View:** Populated from `Projection.queryEntities(offset, limit, filters)`. This query is fast and does **NOT** return the version (or returns the stale one, which is ignored).
+1.  **UI/List View:** Populated from `Projection.queryEntities(offset, limit, filters)`. This query is fast and returns the version from Read Model. (The version might be the stale one).
 2.  **User Action:** User clicks "Edit" button for `role_id=R1`.
-3.  **Backend Call 1 (Version Check):** UI calls a dedicated endpoint: `/api/write/version/{aggregate_id}` (R1).
-    *   **Backend:** Executes `SELECT MAX(sequence_number) FROM event_store_t WHERE aggregate_id = 'R1'`. Returns `currentVersion = V`.
-    *   **Failure Check:** If the UI has cached data from V\_stale, you might perform a check here and prompt a refresh, but usually you just return V.
-4.  **Backend Call 2 (Form Data):** UI calls `/api/read/role/{id}` to get fresh form data if needed (or uses data from the list).
-5.  **UI Form:** Data is populated. A hidden field is set to `aggregateVersion = V`.
-6.  **User Submission:** UI sends `UpdateCommand(..., expectedVersion=V)` to the command endpoint.
-7.  **Command Handler:** Executes OCC check against the Event Store. **This check is now authoritative and highly likely to succeed.**
+3.  **Backend Call 1 (Version Check):** UI calls a dedicated endpoint: `/api/write/version/{aggregate_id}` (R1). The backend executes `SELECT MAX(aggregate_version) FROM event_store_t WHERE aggregate_id = 'R1'`. Returns `currentVersion = V`.
+4.  **Version Comparison 1:** Compare the V with aggregate_version of the UI form data derived from the list view. If they are the same, no further action. 
+5.  **Backend Call 2:** If the form data version is less than the V from event_store_t, UI calls `/api/read/role/{id}` to get fresh form data from the Read Model.
+6.  **Version Comprison 2:** Compare the V with aggregate_version reload from the Read Model. In most of the case, they should be the same. However, the Read Model might not be updated if there is consumer lag. In this case, an error message will be shown on the UI to inform user to wait several minutes to refresh. If problem persist, the user needs to report to the support team to get the issue resolved.  
+7.  **UI Form:** Data is populated. A hidden field is set to `aggregateVersion = V`.
+8.  **User Submission:** UI sends `UpdateCommand(..., expectedVersion=V)` to the command endpoint.
+9.  **Command Handler:** Executes OCC check against the Event Store. **This check is now authoritative and highly likely to succeed.**
 
 
 
