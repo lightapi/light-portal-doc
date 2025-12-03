@@ -28,6 +28,7 @@
   - [Tenant Migration](./design/tenant-migration.md)
   - [Product Version Config](./design/product-version-config.md)
   - [Optimistic Concurrency Control](./design/optimistic-concurrency-control.md)
+  - [Cascade Soft Delete](./design/cascade-soft-delete.md)
 - [Implementation](./implementation.md)
   - [Sign In](./implementation/signin.md)
   - [Services](./implementation/services.md)
