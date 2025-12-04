@@ -10,7 +10,7 @@ When a parent entity (e.g., `role_t`) is soft-deleted, all its dependent childre
 
 ### 2. Implementation in the Command/Event Handler/Database
 
-#### Strategy A: Event Amplification (Recommended for True EDA/Event Sourcing)
+#### Strategy A: Event Amplification
 
 The command handler that received the initial command/event (e.g., `DeleteRoleCommand` -> `RoleDeletedEvent`) should not directly perform the cascading *database* updates. Instead, it should be responsible for **emitting new cascading events** for each child entity.
 
@@ -54,6 +54,8 @@ Create a trigger in database to manage the cascade soft delete for child tables.
 Create a cascade_relationships_v view based on the foreign keys. 
 
 ```
+-- create a view to simplify the foreign key relationship. 
+
 DROP VIEW IF EXISTS cascade_relationships_v;
 
 CREATE VIEW cascade_relationships_v AS
@@ -126,30 +128,42 @@ SELECT
     COUNT(*) AS column_count,
     fd.child_table_oid,
     fd.parent_table_oid,
-    -- Check for active column in BOTH tables
+    -- Check for required columns
     EXISTS (
         SELECT 1 FROM pg_attribute a
         WHERE a.attrelid = fd.parent_table_oid
-          AND a.attname = 'active'
+          AND a.attname = 'delete_ts'
           AND NOT a.attisdropped
-    ) AS parent_has_active,
+    ) AS parent_has_delete_ts,
     EXISTS (
         SELECT 1 FROM pg_attribute a
         WHERE a.attrelid = fd.child_table_oid
-          AND a.attname = 'active'
+          AND a.attname = 'delete_ts'
           AND NOT a.attisdropped
-    ) AS child_has_active
+    ) AS child_has_delete_ts,
+    EXISTS (
+        SELECT 1 FROM pg_attribute a
+        WHERE a.attrelid = fd.parent_table_oid
+          AND a.attname = 'delete_user'
+          AND NOT a.attisdropped
+    ) AS parent_has_delete_user,
+    EXISTS (
+        SELECT 1 FROM pg_attribute a
+        WHERE a.attrelid = fd.child_table_oid
+          AND a.attname = 'delete_user'
+          AND NOT a.attisdropped
+    ) AS child_has_delete_user
 FROM fk_details fd
--- Only include relationships where BOTH tables have active column
+-- Only include relationships where both tables have deletion tracking
 WHERE EXISTS (
     SELECT 1 FROM pg_attribute a
     WHERE a.attrelid = fd.parent_table_oid
-      AND a.attname = 'active'
+      AND a.attname = 'delete_ts'
       AND NOT a.attisdropped
 ) AND EXISTS (
     SELECT 1 FROM pg_attribute a
     WHERE a.attrelid = fd.child_table_oid
-      AND a.attname = 'active'
+      AND a.attname = 'delete_ts'
       AND NOT a.attisdropped
 )
 GROUP BY 
@@ -170,8 +184,9 @@ WHERE parent_table = 'api_t' AND child_table = 'api_version_t';
 And the result. 
 
 ```
-parent_schema	parent_table	child_schema	child_table	constraint_name	foreign_key_mapping	foreign_key_json	parent_columns	child_columns	column_count	child_table_oid	parent_table_oid	parent_has_active	child_has_active
-public	api_t	public	api_version_t	api_fkv2	host_id → host_id, api_id → api_id	{"api_id": "api_id", "host_id": "host_id"}	["host_id","api_id"]	["host_id","api_id"]	2	348265	348254	true	true
+parent_schema parent_table child_schema child_table   constraint_name                   foreign_key_mapping                foreign_key_json                           parent_columns       child_columns        column_count child_table_oid parent_table_oid parent_has_delete_ts child_has_delete_ts parent_has_delete_user child_has_delete_user 
+------------- ------------ ------------ ------------- --------------------------------- ---------------------------------- ------------------------------------------ -------------------- -------------------- ------------ --------------- ---------------- -------------------- ------------------- ---------------------- --------------------- 
+public        api_t        public       api_version_t api_version_t_host_id_api_id_fkey host_id → host_id, api_id → api_id {"api_id": "api_id", "host_id": "host_id"} ["host_id","api_id"] ["host_id","api_id"] 2            360279          360268           true                 true                true                   true                  
 
 ```
 
@@ -179,40 +194,61 @@ public	api_t	public	api_version_t	api_fkv2	host_id → host_id, api_id → api_i
 Create a function for update active to true and false. 
 
 ```
-CREATE OR REPLACE FUNCTION dynamic_cascade_soft_operations()
+CREATE OR REPLACE FUNCTION smart_cascade_soft_delete()
 RETURNS TRIGGER AS $$
 DECLARE
     fk_record RECORD;
     where_clause TEXT;
     query_text TEXT;
     column_index INT;
-    child_has_active BOOLEAN;
+    current_user_name TEXT;
+    deletion_context TEXT;
+    deletion_context_pattern TEXT;
+    delete_timestamp TIMESTAMP;
 BEGIN
+    -- Get current user
+    current_user_name := current_user;
+    
     -- Handle SOFT DELETE (active = false)
     IF NEW.active = FALSE AND OLD.active = TRUE THEN
+        -- Generate deletion timestamp
+        delete_timestamp := CURRENT_TIMESTAMP;
+        
+        -- Set deletion context
+        deletion_context := format('PARENT_CASCADE_%s_%s', 
+            TG_TABLE_NAME, 
+            to_char(delete_timestamp, 'YYYYMMDD_HH24MISSMS')
+        );
+        
+        -- Update parent with deletion context if columns exist
+        IF EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = TG_TABLE_SCHEMA 
+              AND table_name = TG_TABLE_NAME 
+              AND column_name = 'delete_user'
+        ) THEN
+            NEW.delete_user := deletion_context;
+        END IF;
+        
+        IF EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = TG_TABLE_SCHEMA 
+              AND table_name = TG_TABLE_NAME 
+              AND column_name = 'delete_ts'
+        ) THEN
+            NEW.delete_ts := delete_timestamp;
+        END IF;
+        
+        -- Update parent's update columns
+        NEW.update_ts := delete_timestamp;
+        NEW.update_user := current_user_name;
+        
         FOR fk_record IN
             SELECT *
             FROM cascade_relationships_v
             WHERE parent_schema = TG_TABLE_SCHEMA
               AND parent_table = TG_TABLE_NAME
         LOOP
-            -- Double-check that child table has active column
-            SELECT EXISTS (
-                SELECT 1 FROM pg_attribute a
-                WHERE a.attrelid = (
-                    SELECT oid FROM pg_class 
-                    WHERE relname = fk_record.child_table 
-                      AND relnamespace = (SELECT oid FROM pg_namespace 
-                                         WHERE nspname = fk_record.child_schema)
-                )
-                AND a.attname = 'active'
-                AND NOT a.attisdropped
-            ) INTO child_has_active;
-            
-            IF NOT child_has_active THEN
-                CONTINUE;
-            END IF;
-            
             -- Build WHERE clause
             where_clause := '';
             FOR column_index IN 1..fk_record.column_count LOOP
@@ -226,41 +262,38 @@ BEGIN
                 );
             END LOOP;
             
+            -- Add condition to only update currently active records
+            where_clause := where_clause || ' AND active = TRUE';
+            
+            -- Cascade the soft delete with context
             query_text := format(
-                'UPDATE %I.%I SET active = FALSE 
-                 WHERE %s AND active = TRUE',
+                'UPDATE %I.%I 
+                 SET active = FALSE,
+                     delete_ts = $2, 
+                     delete_user = $3,
+                     update_ts = $2,
+                     update_user = $4
+                 WHERE %s',
                 fk_record.child_schema,
                 fk_record.child_table,
                 where_clause
             );
             
-            EXECUTE query_text USING OLD;
+            EXECUTE query_text USING OLD, delete_timestamp, deletion_context, current_user_name;
         END LOOP;
         
     -- Handle RESTORE (active = true)
     ELSIF NEW.active = TRUE AND OLD.active = FALSE THEN
+        -- Only restore children that were deleted by parent cascade
+        
         FOR fk_record IN
             SELECT *
             FROM cascade_relationships_v
             WHERE parent_schema = TG_TABLE_SCHEMA
               AND parent_table = TG_TABLE_NAME
         LOOP
-            -- Double-check that child table has active column
-            SELECT EXISTS (
-                SELECT 1 FROM pg_attribute a
-                WHERE a.attrelid = (
-                    SELECT oid FROM pg_class 
-                    WHERE relname = fk_record.child_table 
-                      AND relnamespace = (SELECT oid FROM pg_namespace 
-                                         WHERE nspname = fk_record.child_schema)
-                )
-                AND a.attname = 'active'
-                AND NOT a.attisdropped
-            ) INTO child_has_active;
-            
-            IF NOT child_has_active THEN
-                CONTINUE;
-            END IF;
+            -- Pattern to match cascade deletions
+            deletion_context_pattern := format('PARENT_CASCADE_%s_%%', TG_TABLE_NAME);
             
             -- Build WHERE clause
             where_clause := '';
@@ -275,16 +308,49 @@ BEGIN
                 );
             END LOOP;
             
+            -- Only restore cascade-deleted records
+            where_clause := where_clause || 
+                ' AND delete_user LIKE $2 AND active = FALSE';
+            
+            -- Restore the records
             query_text := format(
-                'UPDATE %I.%I SET active = TRUE 
-                 WHERE %s AND active = FALSE',
+                'UPDATE %I.%I 
+                 SET active = TRUE,
+                     delete_ts = NULL, 
+                     delete_user = NULL,
+                     update_ts = CURRENT_TIMESTAMP,
+                     update_user = $3
+                 WHERE %s',
                 fk_record.child_schema,
                 fk_record.child_table,
                 where_clause
             );
             
-            EXECUTE query_text USING OLD;
+            EXECUTE query_text USING OLD, deletion_context_pattern, current_user_name;
         END LOOP;
+        
+        -- Clear parent's deletion context
+        IF EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = TG_TABLE_SCHEMA 
+              AND table_name = TG_TABLE_NAME 
+              AND column_name = 'delete_user'
+        ) THEN
+            NEW.delete_user := NULL;
+        END IF;
+        
+        IF EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = TG_TABLE_SCHEMA 
+              AND table_name = TG_TABLE_NAME 
+              AND column_name = 'delete_ts'
+        ) THEN
+            NEW.delete_ts := NULL;
+        END IF;
+        
+        -- Update parent's update columns
+        NEW.update_ts := CURRENT_TIMESTAMP;
+        NEW.update_user := current_user_name;
     END IF;
     
     RETURN NEW;
@@ -296,11 +362,12 @@ $$ LANGUAGE plpgsql;
 Install the trigger.
 
 ```
--- Apply cascade triggers only to tables that have active column
+-- Apply cascade triggers only to tables that have BOTH active AND delete_ts columns
 DO $$
 DECLARE
     table_record RECORD;
     has_active_column BOOLEAN;
+    has_delete_ts_column BOOLEAN;
 BEGIN
     FOR table_record IN
         SELECT 
@@ -312,14 +379,13 @@ BEGIN
         WHERE c.relkind = 'r'  -- Regular tables only
           AND n.nspname NOT IN ('pg_catalog', 'information_schema')
           AND EXISTS (
-              -- Has at least one foreign key constraint where it's the referenced table
               SELECT 1 FROM pg_constraint con
               JOIN pg_class ref ON con.confrelid = ref.oid
               WHERE con.contype = 'f'
                 AND ref.oid = c.oid
           )
     LOOP
-        -- Check if table has active column
+        -- Check if table has required columns
         SELECT EXISTS (
             SELECT 1 FROM pg_attribute a
             WHERE a.attrelid = table_record.table_oid
@@ -327,9 +393,17 @@ BEGIN
               AND NOT a.attisdropped
         ) INTO has_active_column;
         
-        IF NOT has_active_column THEN
-            RAISE NOTICE 'Skipping %.% - no active column', 
-                table_record.schema_name, table_record.table_name;
+        SELECT EXISTS (
+            SELECT 1 FROM pg_attribute a
+            WHERE a.attrelid = table_record.table_oid
+              AND a.attname = 'delete_ts'
+              AND NOT a.attisdropped
+        ) INTO has_delete_ts_column;
+        
+        IF NOT (has_active_column AND has_delete_ts_column) THEN
+            RAISE NOTICE 'Skipping %.% - missing required columns (active: %, delete_ts: %)', 
+                table_record.schema_name, table_record.table_name,
+                has_active_column, has_delete_ts_column;
             CONTINUE;
         END IF;
         
@@ -344,7 +418,7 @@ BEGIN
             'CREATE TRIGGER trg_cascade_soft_ops
              AFTER UPDATE OF active ON %I.%I
              FOR EACH ROW
-             EXECUTE FUNCTION dynamic_cascade_soft_operations()',
+             EXECUTE FUNCTION smart_cascade_soft_delete()',
             table_record.schema_name, table_record.table_name
         );
         
@@ -354,89 +428,27 @@ BEGIN
 END $$;
 ```
 
-And here is the result.
+The above appoach has the following benefits.
 
-```
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.tag_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.tag_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.category_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.category_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.api_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.api_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.api_version_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.api_version_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.api_endpoint_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.api_endpoint_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.api_endpoint_scope_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.api_endpoint_scope_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.config_property_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.config_property_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.platform_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.platform_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.pipeline_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.pipeline_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.instance_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.instance_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.deployment_instance_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.deployment_instance_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.instance_api_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.instance_api_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.instance_app_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.instance_app_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.app_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.app_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.instance_app_api_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.instance_app_api_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.product_version_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.product_version_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.config_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.config_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.deployment_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.deployment_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.org_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.org_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.host_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.host_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.ref_table_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.ref_table_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.ref_value_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.ref_value_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.relation_type_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.relation_type_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.user_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.user_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.user_host_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.user_host_t
-NOTICE:  Skipping public.customer_t - no active column
-NOTICE:  Skipping public.employee_t - no active column
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.position_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.position_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.role_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.role_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.group_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.group_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.attribute_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.attribute_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.auth_provider_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.auth_provider_t
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.auth_client_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.auth_client_t
-NOTICE:  Skipping public.config_snapshot_t - no active column
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.worklist_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.worklist_t
-NOTICE:  Skipping public.process_info_t - no active column
-NOTICE:  Skipping public.task_info_t - no active column
-NOTICE:  trigger "trg_cascade_soft_ops" for relation "public.rule_t" does not exist, skipping
-NOTICE:  Created cascade trigger on public.rule_t
-```
+* Clean separation: delete_ts/delete_user are dedicated to soft delete tracking
 
+* Clear semantics: Easy to understand and query
+
+* No interference: Doesn't conflict with update_ts/update_user for normal updates
+
+* Intelligent restoration: Can restore only cascade-deleted records
+
+* Audit trail: Complete history of who deleted what and when
+
+
+This approach ensures you only restore child entities that were cascade-deleted, maintaining data integrity while providing a clear audit trail.
 
 
 ### 3. Special Handler for deletion of Host and Org 
 
 Due to the significant tables that needs to be updated when deleting a host or an org, we need to rely on the cascade delete of the database. So deletion of host or org will be implemented as hard delete and it should be warned to users on the UI interface. 
 
-### 4. Add delete_at column to reverse cascade soft delete
+### 4. Add delete_ts column to reverse cascade soft delete
 
 After cascade soft delete for role_t, all children entities will be marked as active = false. When add back the same role again, we need to mark all the cascade delete children entities to active = true. However, we need to avoid updating the rows that were soft deleted individually. By adding a delete_ts, we can use it to find out all related children entities that are cascade deleted. 
 
@@ -447,3 +459,8 @@ We need to update some queries in the db provider to add conditions for each joi
 
 **Conclusion:**
 
+Based on our team discussion, we are going to: 
+
+* Adopt the third option that use db trigger to do that same like the hard cascade delete. 
+* Change the org and host delete to hard delete. 
+* Update some queries to add condition to check the active = true. 
