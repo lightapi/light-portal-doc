@@ -88,3 +88,12 @@ There are two approaches we can take on top of the current database provider imp
 
 ### Conclusion
 
+We recommend proceeding with Option 2. While it requires an initial refactor of the Service and UI layers, it provides strict type safety and cleaner code.
+
+Reasoning:
+* Code Reuse: Option 1 requires repeating the filter iteration logic inside every DAO method. Option 2 keeps DAO methods clean.
+
+* Semantics: The active status affects multiple table joins (Data Integrity), distinguishing it from standard column filters. It should be an explicit argument.
+
+* Maintainability: Option 2 decouples the Database layer from the UI's JSON structure. If the UI changes how it sends the active status, we only change the extraction logic in the Controller, not every SQL query method.
+
