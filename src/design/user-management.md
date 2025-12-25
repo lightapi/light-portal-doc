@@ -258,7 +258,7 @@ CREATE TABLE position_t (
 );
 ```
 
-employee_position_t (Employee Position Table): Links employees to their positions with effective dates.
+user_position_t (Employee Position Table): Links employees to their positions with effective dates.
 
 ```
 CREATE TABLE employee_position_t (
