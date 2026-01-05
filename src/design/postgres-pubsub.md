@@ -129,7 +129,7 @@ This approach ensures that even if events are processed in parallel across diffe
 
 ## Configuration
 
-The consumer is configured via `db-event-consumer.yml`:
+The consumer is configured via `db-event-consumer.yml` and runs in a Java 21 **Virtual Thread**. This ensures that the frequent `Thread.sleep` (during retries) and the blocking `pgConn.getNotifications()` (waiting for wake-ups) do not tie up native system threads, making the consumer extremely lightweight.
 
 ```yaml
 groupId: user-query-group
