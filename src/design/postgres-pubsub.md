@@ -127,16 +127,89 @@ The consumer handles this via **Atomic Batch Extension**:
 
 This approach ensures that even if events are processed in parallel across different partitions, events belonging to the same user are always handled in the same transaction, maintaining consistency across subsystems.
 
+## Transaction ID and Dead Letter Queue
+
+### Transaction ID
+
+To provide precise boundaries for atomic transactions, the system uses a `transaction_id` column in the `outbox_message_t` table:
+
+```sql
+ALTER TABLE outbox_message_t ADD COLUMN transaction_id UUID;
+```
+
+When events are persisted to the outbox, all events generated within a single business transaction are assigned the same `transaction_id` (a UUID generated once per batch in `EventPersistenceImpl.insertEventStore()`).
+
+This eliminates ambiguity when grouping events:
+- **Without `transaction_id`**: Events are grouped by `host_id:user_id`, which may incorrectly group unrelated transactions from the same user.
+- **With `transaction_id`**: Events are grouped by their exact transaction boundary, ensuring atomic processing of related events only.
+
+### Dead Letter Queue (DLQ)
+
+When event processing fails, the system implements a **granular fallback mechanism** to prevent the entire batch from being blocked:
+
+#### Schema
+
+```sql
+CREATE TABLE IF NOT EXISTS dead_letter_queue (
+  group_id VARCHAR(255),
+  host_id UUID,
+  user_id UUID,
+  c_offset BIGINT,
+  transaction_id UUID,
+  payload JSONB,
+  exception TEXT,
+  created_dt TIMESTAMP DEFAULT NOW()
+);
+```
+
+#### Processing Flow
+
+1. **Normal Processing**: The consumer attempts to process all events in a claimed batch within a single database transaction.
+
+2. **Batch Failure Detection**: If any event in the batch fails (e.g., constraint violation, business logic error), the entire transaction is rolled back.
+
+3. **Fallback Mode**: The consumer switches to `processBatchWithFallback()`:
+   - Re-claims the same offset range.
+   - Groups events by `transaction_id`.
+   - For each transaction group:
+     - Creates a JDBC `Savepoint`.
+     - Attempts to process all events in that transaction.
+     - **On success**: Continues to the next transaction.
+     - **On failure**: 
+       - Rolls back to the `Savepoint`.
+       - Inserts all events from the failed transaction into `dead_letter_queue`.
+       - Logs the error with the `transaction_id` for debugging.
+
+4. **Commit**: After processing all transactions (successful or moved to DLQ), the consumer commits the transaction, advancing the offset.
+
+#### Benefits
+
+- **Isolation**: Only the failing transaction is moved to DLQ; other transactions in the batch proceed normally.
+- **Atomicity**: All events belonging to a single business transaction are either processed together or moved to DLQ together.
+- **No Blocking**: The consumer never gets stuck on a single bad event.
+- **Debuggability**: The DLQ table preserves the full context (payload, exception, transaction_id) for manual investigation and replay.
+
+
 ## Configuration
 
 The consumer is configured via `db-event-consumer.yml` and runs in a Java 21 **Virtual Thread**. This ensures that the frequent `Thread.sleep` (during retries) and the blocking `pgConn.getNotifications()` (waiting for wake-ups) do not tie up native system threads, making the consumer extremely lightweight.
 
 ```yaml
-groupId: user-query-group
-batchSize: 100
-totalPartitions: 8
-partitionId: 0
-waitPeriodMs: 10000
+# Postgres pub/sub event processor configuration
+# Consumer group id and it is default to user-query-group. Please only change it if you
+# know exactly what you are doing.
+groupId: ${db-event-consumer.groupId:user-query-group}
+# The batch size when polling from the database for events. It is not fixed and will be
+# adjusted if there are more than 100 events belong to the same transaction.
+batchSize: ${db-event-consumer.batchSize:100}
+# The number of total partitions. It should be the same number of portal-query instances.
+totalPartitions: ${db-event-consumer.totalPartitions:1}
+# Partition id starting from 0 to totalPartitions - 1 to assign each portal query instance.
+partitionId: ${db-event-consumer.partitionId:0}
+# The poll interval from the Postgres database to process the events from outbox_message_t.
+waitPeriodMs: ${db-event-consumer.waitPeriodMs:1000}
+```
+
 ## Clean Shutdown
 
 To ensure resources are released cleanly when the application stops, a `ShutdownHookProvider` is implemented:
