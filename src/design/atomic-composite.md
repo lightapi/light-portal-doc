@@ -1271,17 +1271,27 @@ You'll deploy Debezium as a Kafka Connect connector. Here's a sample configurati
     "plugin.name": "pgoutput",
     "publication.name": "dbz_publication",
     "slot.name": "dbz_replication_slot",
+    "slot.drop.on.stop": "false", 
+    "signal.when.disconnected": "true",
+    "tombstones.on.delete": "true",
+    "max.retries": 5,
+    "retry.delay.ms": 10000,
 
     "value.converter": "org.apache.kafka.connect.storage.StringConverter",
     "value.converter.schemas.enable": "false",
     "key.converter": "org.apache.kafka.connect.storage.StringConverter",
     "key.converter.schemas.enable": "false",
 
-    "transforms": "unwrap,timestamp_converter,extractPayload,extractKey,outbox,final_route", 
+    "transforms": "unwrap,addTransactionIdHeader,timestamp_converter,extractPayload,extractKey,outbox,final_route",
 
     "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
     "transforms.unwrap.drop.tombstones": "false",
     "transforms.unwrap.delete.handling.mode": "none",
+
+    "transforms.addTransactionIdHeader.type": "org.apache.kafka.connect.transforms.HeaderFrom$Value",
+    "transforms.addTransactionIdHeader.fields": "transaction_id",
+    "transforms.addTransactionIdHeader.headers": "transaction_id",
+    "transforms.addTransactionIdHeader.operation": "copy",
 
     "transforms.timestamp_converter.type": "org.apache.kafka.connect.transforms.TimestampConverter$Value",
     "transforms.timestamp_converter.field": "event_ts",
@@ -1349,11 +1359,16 @@ curl --location --request POST 'http://localhost:8083/connectors' \
     "key.converter": "org.apache.kafka.connect.storage.StringConverter",
     "key.converter.schemas.enable": "false",
 
-    "transforms": "unwrap,timestamp_converter,extractPayload,extractKey,outbox,final_route", 
+    "transforms": "unwrap,addTransactionIdHeader,timestamp_converter,extractPayload,extractKey,outbox,final_route",
 
     "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
     "transforms.unwrap.drop.tombstones": "false",
     "transforms.unwrap.delete.handling.mode": "none",
+
+    "transforms.addTransactionIdHeader.type": "org.apache.kafka.connect.transforms.HeaderFrom$Value",
+    "transforms.addTransactionIdHeader.fields": "transaction_id",
+    "transforms.addTransactionIdHeader.headers": "transaction_id",
+    "transforms.addTransactionIdHeader.operation": "copy",
 
     "transforms.timestamp_converter.type": "org.apache.kafka.connect.transforms.TimestampConverter$Value",
     "transforms.timestamp_converter.field": "event_ts",
