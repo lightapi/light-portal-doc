@@ -34,6 +34,7 @@
   - [Postgres Pub/Sub](./design/postgres-pubsub.md)
   - [Coordination Comparison](./design/coordination-comparison.md)
   - [Kafka Event Processor](./design/kafka-event-processor.md)
+  - [HttpClient Retry](./design/httpclient-retry.md)
 - [Implementation](./implementation.md)
   - [Sign In](./implementation/signin.md)
   - [Services](./implementation/services.md)
