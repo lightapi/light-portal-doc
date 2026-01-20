@@ -46,4 +46,3 @@
   - [Bronze](./license/bronze.md)
   - [Silver](./license/silver.md)
   - [Gold](./license/gold.md)
-- [Chapter 1](./chapter_1.md)
