@@ -1,3 +1,3 @@
 # Introduction
 
-The document site for light-portal.
+The document site for light-portal application.
