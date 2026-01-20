@@ -13,11 +13,10 @@ jobs:
       - name: Checkout source repo
         uses: actions/checkout@v4
 
-      - name: Install mdBook
-        run: |
-          curl -sSL https://github.com/rust-lang/mdBook/releases/latest/download/mdbook-linux-x86_64.tar.gz \
-          | tar -xz
-          sudo mv mdbook /usr/local/bin/
+      - name: Setup mdBook
+        uses: peaceiris/actions-mdbook@v3
+        with:
+          mdbook-version: 'latest' # Or specify a version, e.g., '0.4.38'
 
       - name: Build book
         run: mdbook build
