@@ -30,3 +30,4 @@ jobs:
           external_repository: lightapi/lightapi.github.io
           publish_dir: ./book
           publish_branch: master
+          cname: doc.lightapi.net
