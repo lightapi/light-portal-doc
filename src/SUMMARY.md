@@ -3,6 +3,8 @@
 - [Introduction](./introduction.md)
 - [Architecture](./architecture.md)
 - [Design](./design.md)
+  - [Portal View](./design/portal-view.md)
+    - [Mutliple Environment](./design/portal-view/multiple-environment.md)
   - [Multi-Tenant](./design/multi-tenant.md)
   - [Portal Event](./design/portal-event.md)
   - [Reference Table](./design/reference_table.md)
