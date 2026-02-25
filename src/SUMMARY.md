@@ -5,6 +5,8 @@
 - [Design](./design.md)
   - [Portal View](./design/portal-view.md)
     - [Mutliple Environment](./design/portal-view/multiple-environment.md)
+  - [OAuth Kafka](./design/oauth-kafka.md)
+    - [Token Exchange](./design/oauth-kafka/token-exchange.md)
   - [Multi-Tenant](./design/multi-tenant.md)
   - [Portal Event](./design/portal-event.md)
   - [Reference Table](./design/reference_table.md)
