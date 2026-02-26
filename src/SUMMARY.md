@@ -5,6 +5,7 @@
 - [Design](./design.md)
   - [Portal View](./design/portal-view.md)
     - [Mutliple Environment](./design/portal-view/multiple-environment.md)
+    - [MCP Registry](./design/portal-view/mcp-registry.md)
   - [OAuth Kafka](./design/oauth-kafka.md)
     - [Token Exchange](./design/oauth-kafka/token-exchange.md)
   - [Multi-Tenant](./design/multi-tenant.md)
