@@ -15,21 +15,26 @@ When implementing token exchange (RFC 8693), the server must determine which ide
 
 ## Implementation Strategy
 
-Our implementation in `ProviderIdTokenPostHandler` uses a hybrid approach:
+Our implementation in `ProviderIdTokenPostHandler` uses **Option 4: Client Context** as the primary strategy:
 
-1. **`requested_token_type`**: Primary differentiator. We support `msal` (default) and `internal`.
-2. **Modular Handlers**: Logic is delegated to `handleMsalTokenExchange` and `handleInternalTokenExchange`.
-3. **Internal Flow**: Uses `jose4j` for transparent decoding of internal JWTs and verifies against host-specific keys.
+1. **Database-Driven Configuration**: A new column `token_ex_type` has been added to the `auth_client_t` table to specify the supported exchange type for each client.
+   ```sql
+   ALTER TABLE auth_client_t ADD COLUMN token_ex_type VARCHAR(64);
+   ```
+2. **Supported Exchange Types**:
+   - `msal`: Microsoft Authentication Library based exchange.
+   - `ccac`: Client Credentials to Authorization Code exchange.
+3. **Flow Determination**: Instead of relying on client-supplied parameters like `requested_token_type`, the server retrieves the `token_ex_type` from the client context in the database to decide which handler to use. This ensures that only authorized exchange types are performed for each specific client.
 
 ## Recommendation
 
-For the current `light-portal` ecosystem:
+For the `light-portal` ecosystem:
 
-- **JWT Peek (`iss`)** is recommended for external OIDC providers (like MSAL) as it provides the best balance of user experience (no extra parameters) and reliability.
-- **`requested_token_type`** should be used for internal service-to-service exchanges where the flow is known and should be explicit.
-- **Client Context** should be considered for high-security environments where the server must dictate exactly which token sources are allowed for a given client.
+- **Option 4: Client Context** is the selected method. It provides the highest level of security by ensuring that token exchange flows are explicitly configured and restricted on a per-client basis in the database.
+- **`token_ex_type`** should be populated for any client that requires token exchange functionality. Clients without this configuration will not be allowed to perform token exchange.
 
 ## Future Considerations
 
 - Implement automated issuer discovery if the number of external providers grows.
 - Support "opaque" token exchange by integrating with introspection endpoints of external IdPs.
+- Extend the `auth_client_t` configuration to support multiple allowed exchange types per client if needed.
