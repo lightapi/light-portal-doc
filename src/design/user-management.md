@@ -593,9 +593,7 @@ And the payload:
   "csrf": "-MCx8hYFQumVw4VdD5GlGw",
   "scp": [
     "portal.r",
-    "portal.w",
-    "ref.r",
-    "ref.w"
+    "portal.w"
   ],
   "role": "admin user",
   "c1": "361",

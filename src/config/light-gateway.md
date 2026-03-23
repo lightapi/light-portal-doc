@@ -16,8 +16,6 @@ client.tokenCcClientSecret: f6h1FTI8Q3-7UScPZDzfXA
 client.tokenCcScope:
   - portal.r
   - portal.w
-  - ref.r
-  - ref.w
 ```
 
 Add TokenHandler to the handler.yml section. 
