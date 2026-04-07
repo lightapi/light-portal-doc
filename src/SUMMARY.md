@@ -52,7 +52,8 @@
 - [Configuration](./configuration.md)
   - [light-gateway](./config/light-gateway.md)
   - [light-reference](./config/light-reference.md)
-
+- [Test](./test.md)
+  - [Integration Test](./test/integration-test.md)
 - [License](./license.md)
   - [Bronze](./license/bronze.md)
   - [Silver](./license/silver.md)
