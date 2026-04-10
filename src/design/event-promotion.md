@@ -348,3 +348,141 @@ Displays detailed promotion metadata (source/target hosts, status, timestamps) a
 2.  **Phase 2 – Backend Services:** Implement `exportSnapshot`, `importDryRun`, `importExecute` services, and `promotion_t`/`promotion_item_t` DDL.
 3.  **Phase 3 – Same-Instance Promotion:** Integrate promotion tracking tables, add "Promote to Host" flow, orphan detection.
 4.  **Phase 4 – Additional Entity Types:** Add support for `rule_t`, `schema_t`, `api_t`, `config_t` and extend the dependency resolver.
+5.  **Phase 5 – Global Migration Export:** Implement dynamic table discovery for full-database migration (see below).
+
+---
+
+## Global Migration Export
+
+### Motivation
+
+The entity-level promotion (`ExportSnapshot`) is designed for **selective promotion** — the user picks specific entities (e.g., 3 instances) and promotes them from a lower environment to a higher one. For that use case, the export produces a rich nested JSON with children and dependencies, which requires hand-crafted `exportXxxSnapshot()` methods per entity type.
+
+However, a **full database migration** has fundamentally different requirements:
+
+*   **Scope:** ALL entities across ALL entity types — not a user-selected subset.
+*   **Maintainability:** When new tables are added to the system, the migration should work automatically without code changes.
+*   **Simplicity:** A flat per-table export is sufficient since all data is exported together (no missing dependency risk).
+
+### Design: Dynamic Table Discovery
+
+Instead of maintaining a manual list of entity types and per-type export methods, the Global Migration Export uses PostgreSQL `DatabaseMetaData` to automatically discover and export all projection tables.
+
+#### How It Works
+
+1.  **Discover all tables** ending in `_t` in the `public` schema via `DatabaseMetaData.getTables()`.
+2.  **Skip infrastructure tables** that should never be exported:
+    *   `event_store_t` — immutable event log (events will be regenerated on import)
+    *   `outbox_message_t` — transient consumer outbox
+    *   `consumer_offsets` — operational state
+    *   `consumer_lock` — operational lock
+    *   `promotion_t`, `promotion_item_t` — promotion tracking (environment-specific)
+3.  **For each discovered table:**
+    *   Inspect column metadata to detect if the table has `host_id` and `active` columns.
+    *   If `active` column exists: `SELECT * FROM table_t WHERE active = TRUE [AND host_id = ?]`.
+    *   If no `active` column: `SELECT * FROM table_t [WHERE host_id = ?]`.
+    *   Convert each row to `Map<String, Object>` with **camelCase** key names.
+4.  **Record a consistency marker:** `SELECT MAX(id) FROM event_store_t` at the start of the export transaction to stamp the snapshot with the `lastEventId`.
+5.  **Use `REPEATABLE READ`** transaction isolation for consistency across all tables (PostgreSQL MVCC ensures a frozen-in-time view even if events are being processed concurrently).
+
+#### Data Consistency Strategy
+
+Querying projection tables directly is safe because:
+
+*   **PostgreSQL MVCC:** `REPEATABLE READ` provides a consistent snapshot at transaction start time. Concurrent event processing does not affect the exported data.
+*   **Atomic event application:** Each event is applied via `handleEvent()` within its own transaction, so partial aggregate states are never visible.
+*   **`lastEventId` marker:** The export records the maximum event ID at transaction start, providing an auditable consistency boundary without the cost of event replay.
+
+Why not replay events from `event_store_t`?
+
+*   The projection tables **are** the replayed event result — re-replaying is redundant.
+*   `handleEvent()` has 120+ event type cases — duplicating that logic in an in-memory replayer is impractical.
+*   Event replay would not unlock any consistency benefit beyond what MVCC already provides.
+
+#### Output Format
+
+```json
+{
+  "exportVersion": "1.0",
+  "sourceHostId": "N2CMw0HGQXeLvC1wBfln2A",
+  "lastEventId": "abc123...",
+  "exportTs": "2026-04-09T20:00:00Z",
+  "tables": {
+    "config_t": {
+      "count": 5,
+      "rows": [
+        { "configId": "...", "configName": "...", "configPhase": "...", ... },
+        ...
+      ]
+    },
+    "user_t": {
+      "count": 12,
+      "rows": [
+        { "userId": "...", "email": "...", "firstName": "...", ... },
+        ...
+      ]
+    },
+    "role_t": { ... },
+    "instance_t": { ... },
+    ...
+  }
+}
+```
+
+Key differences from the per-entity promotion export:
+
+| Aspect | Per-Entity Promotion (`ExportSnapshot`) | Global Migration (`ExportGlobalSnapshot`) |
+|--------|----------------------------------------|-------------------------------------------|
+| Scope | User-selected entities | All active entities |
+| Structure | Nested (parent/children/dependencies) | Flat per-table |
+| New table support | Requires code changes | Automatic via `DatabaseMetaData` |
+| Use case | Lower env → Higher env | Full database migration |
+| Output | Entity-centric JSON | Table-centric JSON |
+| Import mechanism | Same-instance via `promotion_t` or Cross-instance via JSON | Cross-instance via JSON only |
+
+#### Import: Event-Based Migration (Refined in Phase 2.5)
+
+To ensure maximum compatibility and maintain the integrity of the event-sourced system, the global import process follows a **3-step pipeline**:
+
+`Source DB` → `Export` (Flat JSON) → `Convert to Events` (Ordered JSON) → `Import` (Target DB)
+
+##### 1. Snapshot-to-Events Conversion
+An intermediate step (`ConvertSnapshotToEvents`) transforms the flat table-centric snapshot into an ordered JSON array of CloudEvents. This format is 100% compatible with the existing **`event-importer`** CLI tool (matching the `00-bootstrap.json` structure).
+
+##### 2. Topological Sequencing (Dependency Awareness)
+Since a full migration often involves complex relationships, the converter is "Relationship Aware." It uses `DatabaseMetaData.getImportedKeys()` to dynamically discover parent→child dependencies.
+*   **Topological Sort:** It implements Kahn's algorithm to order events such that parent entities (e.g., `Org`, `Host`, `User`, `Role`) are processed before their children (e.g., `UserHost`, `RoleUser`, `AuthProviderClient`).
+*   **Dynamic:** This approach handles new tables and FK constraints automatically without requiring code changes to a "hard-coded" dependency list.
+
+##### 3. Batch Replay & Reconciliation
+The import handler performs a batch insertion of these generated events into `event_store_t` and `outbox_message_t` within a single transaction.
+*   **Nonce Re-calculation:** Nonces are re-calculated on the target system during import to ensure uniqueness.
+*   **Automatic Projections:** Inserting into the outbox triggers the `DbEventConsumerStartupHook` to rebuild all materialized projection tables on the target system.
+
+#### Service API Contract
+
+*   **Export:**
+    *   **Handler:** `GlobalSnapshotExport` (user-query)
+    *   **Service ID:** `lightapi.net/user/exportGlobalSnapshot/0.1.0`
+    *   **Request:** `{ "sourceHostId": "...", "entityTypes": [...] }`
+    *   **Response:** Canonical snapshot JSON (flat tables)
+
+*   **Convert (New):**
+    *   **Handler:** `ConvertSnapshotToEvents` (user-query)
+    *   **Service ID:** `lightapi.net/user/convertSnapshotToEvents/0.1.0`
+    *   **Request:** `{ "snapshot": "...", "targetHostId": "...", "adminUserId": "..." }`
+    *   **Response:** JSON array of ordered CloudEvents (event-importer compatible)
+
+*   **Import:**
+    *   **Handler:** `GlobalSnapshotImport` (user-command)
+    *   **Service ID:** `lightapi.net/user/importGlobalSnapshot/0.1.0`
+    *   **Request:** `{ "targetHostId": "...", "snapshot": "...", "entityTypes": [...] }`
+    *   **Response:** `{ "imported": 42, "total": 42 }`
+
+### Implementation Phases (Updated)
+
+1.  **Phase 1 – UI Foundation:** Create promotion pages, sidebar menu entry. *(Completed)*
+2.  **Phase 2 – Global Export:** Implement dynamic table discovery via JDBC metadata. *(Completed)*
+3.  **Phase 2.5 – Global Migration Step:** Implement Topological Sorting and Snapshot-to-Events conversion for CLI compatibility. *(Completed)*
+4.  **Phase 3 – Entity Promotion (Selective):** Implement recursive bundling for user-selected entities (e.g., Instance export).
+5.  **Phase 4 – Same-Instance Tracking:** Integrated `promotion_t` tracking for in-DB moves.
