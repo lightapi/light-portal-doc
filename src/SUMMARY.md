@@ -8,6 +8,7 @@
     - [MCP Registry](./design/portal-view/mcp-registry.md)
   - [OAuth Kafka](./design/oauth-kafka.md)
     - [Token Exchange](./design/oauth-kafka/token-exchange.md)
+  - [OAuth Audit](./design/oauth-audit.md)
   - [Multi-Tenant](./design/multi-tenant.md)
   - [Portal Event](./design/portal-event.md)
   - [Reference Table](./design/reference_table.md)
