@@ -44,6 +44,7 @@
   - [Config Clone](./design/config-clone.md)
   - [OAuth State](./design/oauth-state.md)
   - [Event Promotion](./design/event-promotion.md)
+  - [Deployment Workflow](./design/deployment-workflow.md)
 - [Implementation](./implementation.md)
   - [Sign In](./implementation/signin.md)
   - [Login View](./implementation/login-view.md)
