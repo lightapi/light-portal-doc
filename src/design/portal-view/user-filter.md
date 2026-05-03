@@ -347,11 +347,22 @@ exactly one effective position and the page is configured for position
 ownership, the UI can default to that position. If the user has multiple
 positions, require an explicit choice when position ownership is desired.
 
-Ownership should not change on normal update. `update_user` changes on every
-update and remains audit metadata. `owner_user_id` and `owner_position_id`
-change only through an explicit owner-transfer action or editable owner fields
-that are restricted to the current owner, `admin`, or the relevant
-entity-admin role.
+For portal forms, the optional position owner field should be exposed as
+`ownerPositionId` and backed by the existing position label dynaselect query.
+The form action uses the `position/getPositionLabel` endpoint, which is backed
+by the `queryPositionLabel` persistence method and returns the id/label pairs
+needed by the select control.
+
+Do not expose `ownerUserId` as a normal create/update form field. The command
+path must derive `owner_user_id` from the authenticated user in the event
+context. If an owner-transfer use case is needed later, implement it as a
+separate command with explicit authorization and audit behavior.
+
+Normal update forms may update `owner_position_id` when the page allows the
+caller to choose or clear the owning position. `update_user` changes on every
+update and remains audit metadata. `owner_user_id` should not change on normal
+update; it changes only through an explicit owner-transfer action restricted to
+the current owner, `admin`, or the relevant entity-admin role.
 
 Existing rows should be migrated conservatively:
 
@@ -537,8 +548,13 @@ Current implementation status:
   The UI no longer sends an owner filter for service-enforced pages because
   service-side scope must include both direct user ownership and position
   ownership.
-- The Schedule create form exposes optional `ownerPositionId`, and the schedule
-  write model persists it.
+- Owner-aware create/update forms expose optional `ownerPositionId` with a
+  host-scoped position dynaselect backed by `queryPositionLabel`.
+- Command schemas allow optional `ownerPositionId` for the owner-aware create
+  and update commands. They do not accept `ownerUserId`; `owner_user_id` comes
+  from the authenticated event user.
+- `light-portal` persistence writes `owner_user_id` from the event user on
+  create and writes `owner_position_id` from `ownerPositionId` on create/update.
 - Schedule query is the first service-enforced owner-scope path. Non all-scope
   users are filtered by
   `owner_user_id = current_user_id OR owner_position_id IN effective positions`
@@ -546,8 +562,6 @@ Current implementation status:
 
 Remaining rollout work:
 
-- Persist `ownerPositionId` on the remaining create paths once each command
-  model is updated.
 - Add explicit owner-transfer commands instead of changing ownership through
   normal update forms.
 
