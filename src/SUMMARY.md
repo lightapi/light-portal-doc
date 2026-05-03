@@ -6,6 +6,8 @@
   - [Portal View](./design/portal-view.md)
     - [Mutliple Environment](./design/portal-view/multiple-environment.md)
     - [MCP Registry](./design/portal-view/mcp-registry.md)
+    - [Too Many Pages/Forms](./design/portal-view/too-many-pages-forms.md)
+    - [User Filter](./design/portal-view/user-filter.md)
   - [OAuth Kafka](./design/oauth-kafka.md)
     - [Token Exchange](./design/oauth-kafka/token-exchange.md)
   - [OAuth Audit](./design/oauth-audit.md)
