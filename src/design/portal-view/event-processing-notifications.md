@@ -428,10 +428,19 @@ Recommended response:
 position fields regardless of which event pipeline is configured. The main list
 can hide them by default and show them in the detail view.
 
+`userId` is a filter on `getNotification`, not a separate endpoint contract. The
+profile notification page should always send the logged-in user's `userId`. The
+admin notification page can omit `userId` to request host-wide results, or pass a
+specific `userId` to narrow the host-wide view to one user.
+
 Authorization rules:
 
-- Normal users can query only their own `userId` within the selected `hostId`.
-- Admin users can query all users for the host.
+- Normal users can query only their own token `user_id` within the selected
+  `hostId`. If the request omits `userId`, the backend should apply the token
+  `user_id`; if the request supplies another `userId`, the backend should reject
+  it or override it with the token `user_id`.
+- Admin users can query all users for the host by omitting `userId`, or filter
+  to a specific user by providing `userId`.
 - The backend should enforce this using token claims, not only UI filters.
 
 ## Portal View
@@ -488,7 +497,30 @@ The header uses the count endpoint for its badge and marks failures read when
 the user opens the notification menu. The notification page also marks failures
 read when it is opened.
 
-## Retention
+### Admin Notification Page
+
+Phase 3 should add a separate admin notification page instead of overloading the
+profile notification page. The recommended location is:
+
+- Route: `/app/event/notifications`
+- Menu: `Administration` -> `Event Admin` -> `Notifications`
+
+This page should reuse the same notification table and `getNotification` read
+API, but with admin defaults:
+
+- `hostId` from the selected host.
+- No default `userId` filter, so admins see host-wide results.
+- Default status filter for `FAILED` and `DLQ`, with an option to show all
+  statuses.
+- Filters for `userId`, `eventClass`, `status`, `transactionId`, `aggregateId`,
+  processing position, time range, and error text.
+- No unread badge behavior and no call to `markFailureNotificationsRead`.
+
+The page should clearly identify itself as an admin view, such as "Admin View:
+Host Notifications". Host-wide access must still be enforced by the backend
+using token roles.
+
+## Operational Cleanup
 
 Notifications are operational history. They should not grow forever.
 
@@ -498,13 +530,77 @@ Recommended retention:
 - Keep failed and DLQ notifications longer, such as 180 days.
 - Allow host-level configuration later if needed.
 
-Retention can be handled by a scheduled cleanup task:
+Cleanup should be implemented as a generic operational cleanup process, not as
+notification-specific UI or command-handler logic. The first cleanup target is
+`notification_t`, but the same framework should also support other operational
+tables such as `message_t` for private messages.
+
+Recommended implementation:
+
+- Add an `OperationalCleanupStartupHook` on the query side.
+- Run cleanup on a fixed interval, such as daily, with config-driven enablement,
+  interval, batch size, and per-target retention days.
+- Use a single cleanup coordinator that owns multiple cleanup targets. Each
+  target defines its table, timestamp column, status/type conditions if needed,
+  retention duration, and batch delete SQL.
+- Use a database lock, such as a PostgreSQL advisory lock or a dedicated cleanup
+  lock row, so only one service instance performs cleanup at a time.
+- Delete in bounded batches to avoid long table locks and large transactions.
+- Use a separate database connection and transaction for cleanup work.
+- Log cleanup failures and continue service startup; cleanup failure must not
+  block query APIs or event processing.
+
+Do not use `schedule_t` directly for this cleanup. That scheduler is business
+workflow infrastructure that emits events into `event_store_t` and
+`outbox_message_t`. Operational cleanup is local maintenance and should stay out
+of the event-processing path.
+
+Example notification cleanup:
 
 ```sql
-DELETE FROM notification_t
-WHERE status = 'SUCCEEDED'
-  AND process_ts < now() - interval '90 days';
+WITH doomed AS (
+    SELECT host_id, id
+    FROM notification_t
+    WHERE (status IN ('SUCCEEDED', 'SKIPPED') AND process_ts < ?)
+       OR (status IN ('FAILED', 'DLQ') AND process_ts < ?)
+    ORDER BY process_ts
+    LIMIT ?
+)
+DELETE FROM notification_t n
+USING doomed d
+WHERE n.host_id = d.host_id
+  AND n.id = d.id;
 ```
+
+Private-message cleanup can be another target using `message_t.send_time`:
+
+```sql
+WITH doomed AS (
+    SELECT host_id, from_id, nonce
+    FROM message_t
+    WHERE send_time < ?
+    ORDER BY send_time
+    LIMIT ?
+)
+DELETE FROM message_t m
+USING doomed d
+WHERE m.host_id = d.host_id
+  AND m.from_id = d.from_id
+  AND m.nonce = d.nonce;
+```
+
+Recommended default cleanup targets:
+
+| Target | Table | Retention |
+| --- | --- | --- |
+| Successful notification history | `notification_t` where `status IN ('SUCCEEDED', 'SKIPPED')` | 90 days |
+| Failed notification history | `notification_t` where `status IN ('FAILED', 'DLQ')` | 180 days |
+| Private messages | `message_t` | 180 days |
+
+Do not delete recent `PENDING` notifications. Old `PENDING` rows should be
+treated as an operational signal first because they may indicate that the event
+consumer is stopped or lagging. If a hard cap is needed later, make it a
+separate, longer retention policy.
 
 ## Snapshot and Promotion
 
@@ -540,8 +636,13 @@ It should be excluded from global snapshot export and conversion alongside
 
 ### Phase 3: Operations
 
-- Add retention cleanup.
-- Add admin filters for host-wide failures.
+- Add a generic operational cleanup startup hook with retention targets for
+  `notification_t` and `message_t`.
+- Make cleanup configurable by enablement, interval, batch size, and per-target
+  retention days.
+- Add a database lock so only one service instance runs cleanup at a time.
+- Add an admin notification page under Event Admin that uses `getNotification`
+  without a `userId` filter for host-wide failures.
 - Add dashboards or alerts for repeated DLQ statuses.
 
 ## Risks and Mitigations
@@ -553,5 +654,7 @@ It should be excluded from global snapshot export and conversion alongside
 | False success rows after projection rollback | Write `SUCCEEDED` only after projection commit, or keep same-transaction success rows rollback-safe. |
 | Duplicate rows on replay | Use `ON CONFLICT (host_id, id) DO UPDATE`. |
 | Users see other users' events | Enforce token-based authorization in `getNotification`. |
-| Table grows without bound | Add retention cleanup and indexes. |
+| Operational tables grow without bound | Add generic operational cleanup targets and supporting indexes. |
+| Cleanup runs concurrently on multiple instances | Use a database lock so only one instance runs cleanup at a time. |
+| Cleanup failure blocks query service startup | Log cleanup failures and continue startup; cleanup is maintenance, not correctness-critical. |
 | Status meaning stays ambiguous | Use `status` as the only outcome field for both pg-notify and Kafka processing. |
