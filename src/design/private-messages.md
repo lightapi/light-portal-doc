@@ -302,6 +302,34 @@ The mail badge should call a count endpoint instead of loading all messages.
 `deletePrivateMessage` or `hidePrivateConversation` should set `deleted_ts` for
 the current user only.
 
+## Operational Cleanup
+
+Private messages are user content, not operational status rows. They should not
+be hard-deleted only because they are old while either participant can still see
+them.
+
+The operational cleanup job may purge active private-message rows only when all
+participant state rows for the message have `deleted_ts` set and the latest
+`deleted_ts` is older than `privateMessageRetentionDays`.
+
+Cleanup responsibilities:
+
+- Select purge candidates from `private_message_t` joined to
+  `private_message_state_t`.
+- Require every participant state row for the message to have `deleted_ts` set.
+- Use `MAX(deleted_ts)` as the retention clock so the grace period starts after
+  the last participant deletes the message.
+- Delete `private_message_state_t` rows first, then delete the
+  `private_message_t` row in the same transaction.
+- Leave `private_conversation_t` rows in place so the participant pair keeps a
+  stable conversation identity if a new message is sent later.
+- Skip private-message cleanup when `privateMessageRetentionDays` is less than
+  or equal to zero.
+
+The cleanup job should not purge visible messages, partially deleted messages,
+or recently deleted-by-all messages. A separate maximum retention policy for
+undeleted private messages would need an explicit product/security decision.
+
 ## Authorization
 
 The command and query handlers must not trust user ids supplied by the client
@@ -364,9 +392,10 @@ presence, attachments, and rich-text editing are later enhancements.
 
 ### Phase 3: Cleanup
 
-- Migrate or archive old `message_t` rows.
 - Remove `to_email` from the active private-message path.
 - Remove disabled private-message tests and replace them with focused coverage.
+- Ensure operational cleanup targets the active private-message tables and
+  purges only messages deleted by all participants after the retention window.
 - Add optional push delivery later if polling becomes insufficient.
 
 ## Testing
@@ -381,6 +410,8 @@ Backend tests should cover:
 - Conversation query rejects non-participants.
 - Unread count increments for the recipient and clears after mark-read.
 - Delete/hide affects only the current user's state.
+- Operational cleanup purges only messages deleted by all participants after
+  retention and keeps visible, partially deleted, and recently deleted messages.
 
 Frontend tests should cover:
 
@@ -396,6 +427,6 @@ Frontend tests should cover:
   host, or should some cross-host flows be allowed?
 - Should email notification include the sender display label, or only say that a
   portal message was received?
-- What retention policy should apply to private messages?
+- Should any maximum retention policy apply to undeleted private messages?
 - Should administrators have a separate support/audit view, and under what
   permission?
