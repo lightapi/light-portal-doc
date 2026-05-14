@@ -10,7 +10,7 @@
     - [User Filter](./design/portal-view/user-filter.md)
     - [Contextual Help Links](./design/portal-view/contextual-help-links.md)
     - [Event Processing Notifications](./design/portal-view/event-processing-notifications.md)
-  - [Agent Skill And Tool Discovery](./design/agent-skill-tool-discovery.md)
+  - [Agent Skill And API Endpoint Discovery](./design/agent-skill-tool-discovery.md)
   - [OAuth Kafka](./design/oauth-kafka.md)
     - [Token Exchange](./design/oauth-kafka/token-exchange.md)
   - [OAuth Audit](./design/oauth-audit.md)
