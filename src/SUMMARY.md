@@ -11,6 +11,7 @@
     - [Contextual Help Links](./design/portal-view/contextual-help-links.md)
     - [Event Processing Notifications](./design/portal-view/event-processing-notifications.md)
   - [Agent Skill And API Endpoint Discovery](./design/agent-skill-tool-discovery.md)
+  - [Workflow Editor](./design/workflow-editor.md)
   - [Portal Catalog Scope](./design/catalog-scope.md)
   - [OAuth Kafka](./design/oauth-kafka.md)
     - [Token Exchange](./design/oauth-kafka/token-exchange.md)

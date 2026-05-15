@@ -89,11 +89,14 @@ The target flow keeps runtime execution and control-plane metadata separate.
 
 ```text
 Portal UI
-  -> writes api_endpoint_t, tool_t, tool_param_t, skill_t, skill_tool_t, agent_skill_t
+  -> writes api_endpoint_t, tool_t, tool_param_t, skill_t, skill_tool_t, skill_workflow_t, agent_skill_t
 
 light-gateway /mcp
   -> lists executable tools from mcp-router.tools and downstream MCP servers
   -> executes tools/call against downstream MCP or REST services
+
+light-workflow
+  -> owns deterministic multi-step workflow execution, task state, and audit events
 
 portal-query genai-query API
   -> serves skill/tool/agent-skill catalog reads from portal data
@@ -203,6 +206,22 @@ The database already has the main tables needed for this design:
 - `skill_tool_t`: maps skills to tools for progressive disclosure.
 - `api_endpoint_t`: MCP or REST endpoint metadata, including `tool_schema` and
   `tool_metadata`.
+- `wf_definition_t`: stores workflow definitions as YAML for the
+  `light-workflow` runtime.
+
+Phase 3.5 should add a skill-to-workflow mapping table rather than storing
+workflow YAML inside `skill_t`. The recommended table is:
+
+| Column | Purpose |
+| --- | --- |
+| `host_id` | Tenant and ownership boundary. |
+| `skill_id` | Skill that can use or expose the workflow. |
+| `wf_def_id` | Workflow definition stored in `wf_definition_t`. |
+| `workflow_role` | Relationship type such as `primary`, `validation`, `remediation`, or `test`. |
+| `start_mode` | How the workflow can be started, such as `manual`, `agent`, `scheduled`, or `portal`. |
+| `config` | JSONB overrides for workflow input defaults, disclosure settings, or skill-specific runtime hints. |
+| `aggregate_version` | Event-sourced concurrency/version field. |
+| `active` | Soft delete and publication flag. |
 
 The current phase 2 persistence path can preserve semantic metadata in
 `api_endpoint_t.tool_metadata` before dedicated routing columns exist. That is
@@ -681,11 +700,56 @@ The Skill Editor should let operators:
 - link tools through `skill_tool_t`,
 - set tool access level and per-skill config,
 - preview which tools the skill would expose for a sample prompt,
+- optionally link the skill to one or more workflow definitions,
 - activate or deactivate skills.
 
 Skill content should be short and operational. It should describe when to use
 the skill, how to interpret the tools, and any sequencing rules. It should not
 contain secrets.
+
+### Workflow-backed Skills
+
+Some skills are only guidance plus a curated tool set. Other skills need a
+repeatable process that calls several tools, branches on results, waits for
+human input, runs assertions, or leaves an audit trail. Those skills should use
+`light-workflow` as the orchestration layer.
+
+The boundary is:
+
+| Layer | Responsibility |
+| --- | --- |
+| Skill | Discovery metadata, instructions, taxonomy, allowed tools, and agent guidance. |
+| Workflow | Ordered execution, branching, retries, assertions, human tasks, durable state, and audit events. |
+| Gateway | Runtime tool execution through `tools/list` and `tools/call`. |
+
+Workflow-backed skills should be optional. Use a workflow when the skill
+represents a durable or regulated process, such as API onboarding, approval,
+validation, remediation, scheduled live testing, or a multi-step operation with
+clear checkpoints. Do not require workflow backing for simple skills that only
+guide an agent toward one tool call or open-ended exploration.
+
+The workflow definition remains canonical in `wf_definition_t.definition` as
+YAML. The skill workspace should link to the definition through
+`skill_workflow_t` and should reuse the generic workflow editor described in
+[Workflow Editor](workflow-editor.md). The skill workspace can constrain the
+editor with skill context, but it should not implement its own workflow
+runtime.
+
+For workflow-backed skills, `skill_tool_t` becomes the allowed tool set. A
+save-time validator should reject workflow steps that reference a gateway tool
+not linked to the skill, unless the step is explicitly marked as a future or
+external dependency. This keeps progressive disclosure, operator review, and
+workflow execution aligned.
+
+Recommended Skill Workspace tabs:
+
+| Tab | Purpose |
+| --- | --- |
+| Overview | Edit name, description, Markdown instructions, active state, tags, and categories. |
+| Tools | Link tools, configure `skill_tool_t.config`, inspect schemas, sensitivity, and gateway availability. |
+| Workflow | Select or create workflow definitions, edit YAML, inspect the step outline, and link workflows through `skill_workflow_t`. |
+| Preview | Show the effective prompt, allowed tool set, linked workflow graph, and disclosure payload. |
+| Test | Start a workflow with JSON input, watch instance events, complete waiting tasks, and inspect assertions or failures. |
 
 ### Agent Skill Assignment
 
@@ -855,11 +919,18 @@ cache unless the gateway needs it for a concrete runtime policy decision.
 
 ### Phase 3.5: Skill Workspace And Structured Authoring
 
-- Add a richer skill authoring workspace with effective prompt preview and
-  selected-tool preview.
-- Add tool linking workflows for `skill_tool_t`.
-- Formalize `skill_tool_t.config` for per-skill tool overrides.
-- Add "create skill from LightAPI/tool" flows.
+- Add a richer Skill Workspace with Overview, Tools, Workflow, Preview, and
+  Test tabs.
+- Add tool linking workflows for `skill_tool_t` and formalize
+  `skill_tool_t.config` for per-skill tool overrides.
+- Add workflow-backed skill support through `skill_workflow_t`, with
+  `wf_definition_t.definition` kept as the canonical workflow YAML.
+- Reuse the generic [Workflow Editor](workflow-editor.md) in the Workflow tab
+  for YAML editing, step preview, validation, and test runs.
+- Add validation that workflow tool-call steps reference tools linked to the
+  skill through `skill_tool_t`.
+- Add "create skill from LightAPI/tool" flows that can generate a draft skill,
+  link relevant tools, and optionally create a starter workflow definition.
 - Add YAML/JSON import/export for structured skill documents. Normalize YAML to
   JSON for storage when a persisted structured payload is needed, while keeping
   Markdown instructions in `content_markdown`.
@@ -868,7 +939,18 @@ cache unless the gateway needs it for a concrete runtime policy decision.
 
 - Add portal UI for `agent_skill_t`.
 - Let operators assign active skills to agent definitions.
-- Add validation that assigned skills have active tools.
+- Add an Agent Definition assignment entry point in addition to the existing
+  `agent_skill_t` table page, so operators can manage assigned skills from the
+  agent context.
+- Add a batch assignment composite command that emits one
+  `AgentSkillCreatedEvent` per selected skill.
+- Add validation that assigned skills have at least one active direct
+  `skill_tool_t` link. A workflow-backed skill does not satisfy this by having
+  only `skill_workflow_t`; the workflow must use the skill's linked tools.
+- Enforce assignment validation in command handlers and mirror the same checks
+  as UI preflight feedback.
+- Treat `sequence_id` as the deterministic effective prompt/display order and
+  `priority` as a ranking weight for later catalog/search behavior.
 
 ### Phase 5: Real Skill Search
 
@@ -936,6 +1018,51 @@ cache unless the gateway needs it for a concrete runtime policy decision.
   categories. Skill files may be YAML or JSON, but the database should keep
   `content_markdown` for the instruction body; a structured JSONB skill-spec
   column belongs in a later full authoring/import phase if it becomes needed.
+
+## Resolved Phase 3.5 Decisions
+
+- Use `light-workflow` for workflow-backed skills that need durable multi-tool
+  orchestration, approvals, assertions, retries, scheduled tests, or audit
+  history.
+- Do not force every skill into a workflow. Skills remain the discovery and
+  guidance layer, and simple skills can stay instruction-and-tool based.
+- Keep `light-gateway` as the runtime tool execution path. Workflow tasks that
+  call tools should still use gateway-visible tool identities and should not
+  bypass gateway policy.
+- Keep workflow definitions in `wf_definition_t.definition` as YAML. Link skills
+  to workflow definitions through `skill_workflow_t` instead of embedding
+  workflow definitions in `skill_t`.
+- Treat `skill_tool_t` as the allowed tool set for workflow-backed skills.
+  Save-time validation should flag workflow tool calls that are not linked to
+  the skill.
+- Build the workflow authoring UI as a generic reusable editor first, then
+  embed it inside the Skill Workspace with skill-aware reference filtering and
+  validation.
+
+## Resolved Phase 4 Decisions
+
+- An assignable skill must be active and must have at least one active direct
+  tool link through `skill_tool_t`. Active `skill_workflow_t` rows are useful
+  orchestration metadata, but they do not replace the direct allowed-tool set.
+- Workflow-backed skill assignment should also rely on the Phase 3.5 validator:
+  workflow tool-call references must resolve to tools linked through
+  `skill_tool_t`.
+- Validation must be enforced server-side by `createAgentSkill`,
+  `updateAgentSkill`, and the batch assignment composite command. The Portal UI
+  should run the same checks as preflight feedback, but UI checks are not
+  authoritative.
+- Keep the existing `AgentSkill` table page and add an Agent Definition
+  assignment context so operators can assign and inspect skills from the agent
+  they are configuring.
+- Batch assignment should be a composite command that creates multiple
+  `AgentSkillCreatedEvent` events from one request.
+- `sequence_id` controls deterministic ordering when building the agent's
+  effective skill prompt/catalog. `priority` is reserved as a ranking weight
+  for later effective-catalog and search behavior.
+- Live gateway runtime executability checks are not part of Phase 4
+  persistence validation. Keep them as a diagnostics or governance item that
+  compares cataloged/assigned tools with the selected gateway instance's
+  `tools/list` response before deployment or runtime enablement.
 
 ## Recommendation
 
