@@ -838,10 +838,31 @@ cache unless the gateway needs it for a concrete runtime policy decision.
 
 ### Phase 3: Skill Authoring
 
-- Add portal UI for `skill_t`.
-- Add tool linking through `skill_tool_t`.
-- Add preview of selected tools and effective prompt instructions.
+- Keep the existing `skill_t` CRUD page as the phase 3 authoring surface.
+- Add skill-scoped category and tag assignment to the create/update skill
+  forms. The UI should use dropdowns populated from the existing portal
+  taxonomy where `entity_type = 'skill'`.
+- Persist skill categories through `entity_category_t` and skill tags through
+  `entity_tag_t`; do not add `tags` or `categories` columns to `skill_t`.
+- Implement skill save as a composite command: one event updates the skill row
+  and one taxonomy event replaces the selected category/tag associations for
+  the same skill.
+- Keep `content_markdown` as the instruction body. YAML or JSON skill files are
+  import/export envelopes; if full structured skill authoring is introduced
+  later, add a nullable JSONB skill-spec column beside `content_markdown`
+  instead of replacing it.
 - Keep embeddings optional.
+
+### Phase 3.5: Skill Workspace And Structured Authoring
+
+- Add a richer skill authoring workspace with effective prompt preview and
+  selected-tool preview.
+- Add tool linking workflows for `skill_tool_t`.
+- Formalize `skill_tool_t.config` for per-skill tool overrides.
+- Add "create skill from LightAPI/tool" flows.
+- Add YAML/JSON import/export for structured skill documents. Normalize YAML to
+  JSON for storage when a persisted structured payload is needed, while keeping
+  Markdown instructions in `content_markdown`.
 
 ### Phase 4: Agent Assignment
 
@@ -911,6 +932,10 @@ cache unless the gateway needs it for a concrete runtime policy decision.
 - Phase 2 focuses on tool and endpoint metadata. Skill-specific metadata and
   per-skill tool config should be designed later with the skill authoring
   phase.
+- Phase 3 uses the existing taxonomy join tables for skill tags and
+  categories. Skill files may be YAML or JSON, but the database should keep
+  `content_markdown` for the instruction body; a structured JSONB skill-spec
+  column belongs in a later full authoring/import phase if it becomes needed.
 
 ## Recommendation
 
