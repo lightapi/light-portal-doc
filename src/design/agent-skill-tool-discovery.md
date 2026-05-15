@@ -178,6 +178,13 @@ gateway deployment. A later host-wide diagnostics view can aggregate all
 registered gateways, but phase 2 does not need host-wide verification as the
 default.
 
+Runtime verification is not part of the persistence projection. The persistence
+layer should store catalog state, endpoint/tool metadata, and inactive drift
+state, but it should not call a live gateway. The portal UI, deployment review
+flow, or a diagnostics endpoint should call the selected gateway's `tools/list`
+with the operator or service credential, compare the returned tool names and
+schemas with the catalog, and surface the result as deployment drift.
+
 If a previously imported endpoint or tool disappears from the gateway, the sync
 process should mark the catalog projection inactive instead of deleting it
 immediately. This preserves skill mappings and gives operators a clear drift
@@ -196,6 +203,15 @@ The database already has the main tables needed for this design:
 - `skill_tool_t`: maps skills to tools for progressive disclosure.
 - `api_endpoint_t`: MCP or REST endpoint metadata, including `tool_schema` and
   `tool_metadata`.
+
+The current phase 2 persistence path can preserve semantic metadata in
+`api_endpoint_t.tool_metadata` before dedicated routing columns exist. That is
+acceptable for import/export compatibility and for small catalogs searched from
+the agent's local cache. It should not be treated as the final indexed search
+shape. Before portal-query performs database-side macro-filtering over large
+catalogs or before vector ranking becomes a production dependency, promote the
+high-use routing fields to first-class columns or indexed relationships and
+backfill them from `tool_metadata`.
 
 The existing MCP Registry design already maps MCP tools into `api_endpoint_t`.
 OpenAPI parsing also creates endpoint rows. This design uses `tool_t` as the
@@ -283,6 +299,17 @@ Recommended indexed fields or relationships:
 - active state,
 - source protocol and implementation type,
 - portal category and tag relationships.
+
+Recommended phase 2 column names for endpoint and tool projections:
+
+| Field | Suggested column or relationship | Source fallback |
+| --- | --- | --- |
+| Domain | `routing_domain` | `tool_metadata.routing.domain`, LightAPI capability group, OpenAPI tag. |
+| Semantic namespace | `semantic_namespace` | `tool_metadata.routing.semanticNamespace`, LightAPI `info.namespace`. |
+| Sensitivity tier | `sensitivity_tier` | `tool_metadata.routing.sensitivityTier`, LightAPI visibility or safety metadata. |
+| Semantic weight | `semantic_weight` | `tool_metadata.routing.semanticWeight`, default `1.0`. |
+| Source protocol | `source_protocol` | LightAPI operation protocol, OpenAPI, MCP, JSON-RPC, gRPC. |
+| Target personas | join table or indexed array | `tool_metadata.routing.targetPersonas`, LightAPI agent metadata. |
 
 The full structured payload should still be preserved in
 `api_endpoint_t.tool_metadata` so LightAPI import/export, gateway config
@@ -408,6 +435,26 @@ Recommended merge priority for endpoint metadata:
 This keeps runtime discovery useful while letting curated LightAPI descriptions
 provide richer semantic routing without hand-authoring every endpoint as an
 independent skill.
+
+Phase 2 persistence should be treated as the receiver for this metadata, not as
+the extractor. The openapi-parser, a LightAPI Description parser, or a dedicated
+ingestion worker must emit the enriched endpoint payload on the API version
+event. At minimum, the event payload for each endpoint should include:
+
+- `endpointId`, endpoint identity, protocol, method, path, name, and
+  description,
+- logical `toolSchema` generated from the LightAPI operation input contract,
+- `toolMetadata.routing` with namespace, domain, capability group, personas,
+  keywords, context requirements, sensitivity tier, and semantic weight where
+  present,
+- `toolMetadata.safety` from LightAPI safety, visibility, idempotency, and
+  destructive-operation hints,
+- response schema or result metadata when it is available for the tool
+  projection.
+
+If the parser only emits the base OpenAPI or MCP fields, the catalog remains
+valid but only has low-enrichment metadata. The phase 2 implementation should
+record that as an ingestion gap, not as a persistence defect.
 
 ## Portal Catalog Contract
 
@@ -776,11 +823,14 @@ cache unless the gateway needs it for a concrete runtime policy decision.
 - Link every API-origin tool projection back to `api_endpoint_t.endpoint_id`.
 - Store semantic routing metadata in indexed endpoint/tool fields and preserve
   the full metadata payload in `api_endpoint_t.tool_metadata`.
+- If the first code slice only writes `tool_metadata`, keep that as a
+  compatibility step and add the indexed routing-column migration before
+  database-side macro-filtering or production vector ranking is enabled.
 - Let users select which endpoint projections should be exposed to a specific
   gateway instance. This deployment selection is separate from endpoint catalog
   sync.
-- Verify runtime executability with gateway `tools/list` for the selected
-  gateway instance when a gateway is reachable.
+- Verify runtime executability outside persistence with gateway `tools/list`
+  for the selected gateway instance when a gateway is reachable.
 - Mark disappeared or non-executable projections inactive instead of deleting
   them.
 - Add drift indicators for schema, description, safety metadata, and semantic
@@ -830,7 +880,9 @@ cache unless the gateway needs it for a concrete runtime policy decision.
   projections to deploy to a specific gateway instance.
 - Runtime verification means checking the selected gateway instance's
   `tools/list` response to confirm that a deployed endpoint projection is
-  executable there. It is not the same as endpoint catalog sync.
+  executable there. It is not the same as endpoint catalog sync and should be
+  implemented in the portal UI, deployment review flow, or diagnostics layer,
+  not inside the persistence projection.
 - Gateway exposure identity is `hostId + serviceId + envTag`. The token used
   for portal APIs must carry matching `host`, `sid`, and `env` claims.
 - `tool_t.implementation_type` should be standardized and aligned with the
@@ -839,7 +891,12 @@ cache unless the gateway needs it for a concrete runtime policy decision.
   endpoint and LightAPI metadata.
 - High-use semantic routing fields should be indexed columns or indexed
   relationships, with the full structured payload preserved in
-  `api_endpoint_t.tool_metadata`.
+  `api_endpoint_t.tool_metadata`. JSON-only persistence is only an interim
+  import/export-compatible shape for small catalogs or local-cache search.
+- LightAPI Description enrichment requires an upstream parser or ingestion
+  worker to emit enriched endpoint payloads. The persistence layer can store
+  `tool_schema`, `tool_metadata.routing`, and `tool_metadata.safety`, but it
+  does not derive those fields from the raw LightAPI document by itself.
 - Endpoint category and tag classification should reuse the existing portal tag
   and category system.
 - Embeddings should start at 384 dimensions to match the current `VECTOR(384)`
