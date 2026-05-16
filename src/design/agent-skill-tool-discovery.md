@@ -768,19 +768,24 @@ Catalog lookup should be implemented through the `genai-query` API. The agent
 should fetch the assigned active catalog, cache it locally, and run progressive
 disclosure search against the cache.
 
+Phase 5 implements this for the Rust `light-agent` only. Other agent runtimes
+can adopt the same `genai-query` contract later, but they are not part of the
+Phase 5 implementation scope.
+
 Initial algorithm:
 
-1. Resolve `host_id` and agent identity from token claims, configured agent
-   definition, service registration metadata, or request fields.
-2. Use `genai-query` endpoints to load active `agent_skill_t` rows for the
-   agent.
-3. Load the linked active `skill_t`, `skill_tool_t`, `tool_t`,
-   `tool_param_t`, and related `api_endpoint_t` data.
+1. Resolve `host_id` from the agent runtime configuration and the catalog
+   request token. Resolve `agent_def_id` from `LIGHT_AGENT_AGENT_DEF_ID` or
+   `LIGHT_AGENT_API_VERSION_ID`. Resolve `service_id` and `env_tag` from the
+   registered Rust agent service config.
+2. Call `genai-query` `getEffectiveAgentCatalog`.
+3. The endpoint loads active `agent_skill_t` rows and linked active `skill_t`,
+   `skill_tool_t`, `tool_t`, `tool_param_t`, and `skill_workflow_t` rows.
 4. Build a nested effective catalog grouped by skill, with each skill carrying
    its mapped tools, schemas, endpoint identity, safety flags, and routing
    metadata.
-5. Cache the effective catalog locally with a catalog version or max aggregate
-   version.
+5. Cache the effective catalog locally with `catalogVersion` and
+   `catalogHash`.
 6. During chat, macro-filter cached entries by agent persona, domain,
    namespace, sensitivity tier, active state, and available workflow context.
 7. Rank cached entries by simple text matching over
@@ -954,27 +959,53 @@ cache unless the gateway needs it for a concrete runtime policy decision.
 
 ### Phase 5: Real Skill Search
 
-- Add the dedicated `genai-query` effective catalog endpoint with token
-  verification against `host`, `sid`, and `env` claims.
-- Implement the agent portal-query client using that endpoint.
-- Build and cache the nested effective catalog for the agent.
+- Add the dedicated `genai-query` `getEffectiveAgentCatalog` endpoint with
+  token verification against `host`, `sid`, and `env` claims.
+- The endpoint returns the active nested catalog for one
+  `hostId + agentDefId + serviceId + envTag`: agent metadata, assigned skills,
+  tags, categories, skill config, mapped tools, tool params, routing/safety
+  fields, workflow references, `catalogVersion`, and `catalogHash`.
+- Implement the Rust `light-agent` portal-query client using that endpoint.
+- Build and cache the nested effective catalog inside the Rust agent.
 - Start with local macro-filtering and keyword matching over cached skills,
   endpoint metadata, and tool projections.
-- Wire controller cache-management invalidation to clear or reload the agent
-  catalog cache.
+- Intersect selected catalog tool names with gateway `tools/list`; execute only
+  through gateway `tools/call`.
+- Wire controller cache-management invalidation to clear the Rust agent catalog
+  cache. The next chat request lazily reloads from portal-query.
+- If portal-query is unavailable or no agent definition ID is configured, the
+  Rust agent falls back to direct gateway `tools/list` without portal catalog
+  filtering.
 - Add vector ranking after 384-dimensional embeddings are populated and combine
   it with `semanticWeight`.
 
 ### Phase 6: Semantic Routing And Governance
 
-- Add approval, ownership, audit, and versioning around tool imports and skill
-  changes.
-- Add safety-policy enforcement for destructive or sensitive tools.
-- Add sensitivity-tier disclosure checks, context-lock validation, fallback
-  routing, and dependency-aware prefetch or warm-up where the runtime supports
-  it.
-- Add reports for agents with no skills, skills with no tools, and catalog
-  tools not executable by the gateway.
+- Support the Rust `light-agent` only. Other agent runtimes can adopt the same
+  catalog and diagnostics contracts later.
+- Use the normalized sensitivity tiers `public`, `internal`, `confidential`,
+  and `restricted`. Treat missing or unknown tool tiers as `internal`.
+- Enforce sensitivity-tier disclosure before portal-query returns the effective
+  catalog to the agent. Tools blocked by policy are omitted from the returned
+  `tools` list and surfaced as diagnostics for admin review.
+- Block destructive or approval-required tools unless the skill/tool policy
+  names an approval workflow. Until workflow-owned approval state exists, the
+  current `active` row plus aggregate version remains the catalog versioning
+  authority.
+- Keep gateway `tools/list` and `tools/call` as the runtime source of truth.
+  The Rust agent must still intersect catalog-selected tools with live gateway
+  `tools/list`.
+- Add Rust-agent diagnostics that compare the effective catalog against gateway
+  `tools/list` at `/diagnostics/tools`, showing catalog tools missing from the
+  gateway, gateway tools outside the catalog, and policy-blocked catalog tools.
+- Enforce the same destructive, approval-required, and sensitivity metadata at
+  the gateway before `tools/call` execution. A blocked call should include
+  `auditInfo` fields and gateway debug/warn logs with the tool name, endpoint,
+  tier, policy reason, and approval state.
+- Do not write catalog-disclosure audit records into `audit_log_t`; it is
+  reserved for workflow. Phase 6 uses `auditInfo` so the existing audit log file
+  path captures blocked gateway decisions. A generic audit table can be added in
+  a later governance phase if file logging is not enough.
 
 ## Resolved Phase 2 Decisions
 
