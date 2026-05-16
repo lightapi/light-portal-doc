@@ -95,26 +95,31 @@ building blocks:
 
 | Component | Recommended library | Responsibility |
 | --- | --- | --- |
-| Source editor | Monaco Editor with YAML support | Edit YAML/JSON, validate against the Light-Fabric workflow schema, provide autocomplete and hover help. |
+| Source editor | CodeMirror 6 with JSON/YAML extensions | Edit YAML/JSON, validate against the Light-Fabric workflow schema, provide autocomplete, lint markers, folding, and hover help. |
 | Visual graph | React Flow / xyflow | Render workflow states as nodes and transitions as edges, with custom node components for agentic task types. |
 | Property panels | Schema-backed React forms, optionally JSONForms | Edit selected node/task properties without forcing users to hand-edit every YAML field. |
 | State manager | Existing portal state pattern or Zustand if a local editor store is needed | Hold the canonical workflow document, parsed model, diagnostics, selected node, dirty state, and test run state. |
 
-The workflow YAML or JSON document remains the source of truth. Monaco edits
+The workflow YAML or JSON document remains the source of truth. CodeMirror edits
 parse into the editor store. The parsed workflow model is then projected into
 React Flow nodes and edges. React Flow edits update the same model and then
 serialize back to the YAML document.
 
-This avoids fighting a visualizer that only understands the strict CNCF
-Serverless Workflow schema. It also lets Portal define first-class visual
-treatments for Light-Fabric task types such as `agent`, `mcp`, `ask`,
+This avoids adding a second large browser editor runtime to `portal-view`,
+which already uses CodeMirror for Markdown and OpenAPI JSON/YAML editing. It
+also avoids fighting a visualizer that only understands the strict CNCF
+Serverless Workflow schema, while still letting Portal define first-class
+visual treatments for Light-Fabric task types such as `agent`, `mcp`, `ask`,
 `assert`, `rule`, `switch`, and future LLM or approval-oriented steps.
 
-Monaco should use a custom JSON Schema derived from the CNCF Serverless
-Workflow schema plus Light-Fabric agentic extensions. For YAML editing, the
-schema should be registered through a YAML-aware Monaco integration so users
-get validation, completions, and hover descriptions that match the actual
-runtime contract.
+CodeMirror should use a custom JSON Schema derived from the CNCF Serverless
+Workflow schema plus Light-Fabric agentic extensions. For JSON definitions,
+use a CodeMirror 6 JSON Schema integration such as `codemirror-json-schema` to
+provide linting, autocomplete, and hover details. For YAML definitions, reuse
+the existing portal-view CodeMirror YAML setup where possible and add schema
+validation through a YAML language-server bridge or equivalent worker-backed
+integration. The goal is Monaco-like schema assistance without Monaco's bundle
+cost.
 
 React Flow should not own the persisted shape. It owns layout, selection, edge
 creation, and node interaction. The persisted workflow definition should remain
@@ -123,7 +128,7 @@ definitions.
 
 Recommended sync behavior:
 
-1. Parse Monaco content into a typed workflow model when the YAML is valid.
+1. Parse CodeMirror content into a typed workflow model when the YAML is valid.
 2. Preserve text edits and show problems when YAML is invalid; do not destroy
    the user's in-progress text.
 3. Project valid workflow models to React Flow nodes and edges.
@@ -257,13 +262,19 @@ The first generic editor can reuse existing workflow definition APIs. Later
 phases should add editor-friendly endpoints only when they remove real UI
 complexity.
 
-Recommended future additions:
+Phase B adds the validation endpoint and keeps the reference catalog composed
+from existing read models. A single combined catalog endpoint remains optional
+if the multiple list queries become noisy or slow.
 
 | API or table | Purpose |
 | --- | --- |
-| `validateWfDefinition` | Server-side validation using the same parser and schema as `light-workflow`. |
+| `validateWfDefinition` | Server-side validation using the workflow query service parser and, later, the same schema as `light-workflow`. |
 | `formatWfDefinition` | Optional canonical formatting if the workflow parser supports round-trip formatting. |
-| `getWorkflowReferenceCatalog` | One call to fetch endpoint, tool, rule, agent, and workflow labels for the reference panel. |
+| Existing catalog queries | Fetch endpoint, tool, rule, agent, and workflow labels for the reference panel. |
+| `getWorkflowReferenceCatalog` | Optional future consolidation into one reference-panel query. |
+| `startWorkflow` | Start an editor test run for the saved workflow definition with sample JSON input. |
+| Workflow runtime read models | Refresh process, task, task assignment, worklist, and audit-log projections for the current workflow instance. |
+| `completeTask` | Complete a waiting `ask` or human task from the editor test panel by emitting a `TaskInfoUpdatedEvent`. |
 | `skill_workflow_t` | Link skills to workflow definitions without embedding workflow YAML in skills. |
 | `saveSkillWorkspace` | Composite command that saves skill metadata, taxonomy, tool links, workflow links, and optional draft workflow updates from one workspace action. |
 
@@ -279,8 +290,9 @@ workflow definition.
 - Replace create/update workflow definition textarea navigation with the editor
   where practical.
 - Keep YAML visible and canonical.
-- Use Monaco Editor with the Light-Fabric workflow schema for YAML/JSON
-  validation, autocomplete, hover help, and parse markers.
+- Reuse the existing portal-view CodeMirror editor stack with the Light-Fabric
+  workflow schema for YAML/JSON validation, autocomplete, hover help, folding,
+  and parse markers.
 - Parse YAML client-side to render a step outline and problems panel.
 - Add import/export and basic validation before save.
 
@@ -294,7 +306,8 @@ workflow definition.
   Portal already has authoritative labels.
 - Add server-side validation through `validateWfDefinition`.
 - Add runtime diagnostics that compare MCP tool references with gateway
-  `tools/list` when a gateway target is selected.
+  `tools/list` or the Rust agent `/diagnostics/tools` endpoint when a gateway
+  target is selected.
 
 ### Phase C: Test And Worklist Integration
 
@@ -303,6 +316,19 @@ workflow definition.
   and final output.
 - Let users complete `ask` tasks from the test panel.
 - Link failed test runs to remediation tasks or worklist entries.
+
+Phase C uses the existing Portal workflow command/query boundary. The editor
+starts a test run through `workflow/startWorkflow`, then refreshes
+`getProcessInfo`, `getTaskInfo`, `getTaskAsst`, `getWorklist`, and
+`getAuditLog` for the returned `wfInstanceId`. The test panel completes a
+waiting human task through `workflow/completeTask`, which preserves the
+structured response in the event data and materializes the task as completed
+through the existing `TaskInfoUpdatedEvent` projection.
+
+The panel should expose remediation links instead of silently creating
+production work. Failed process or task rows can open a prefilled remediation
+task form, and task assignments can jump to the workflow worklist with the
+current workflow instance context.
 
 ### Phase D: Visual Graph Editing
 
