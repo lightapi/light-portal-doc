@@ -339,6 +339,26 @@ current workflow instance context.
   reliable.
 - Keep YAML as the source of truth even when visual editing is enabled.
 
+Phase D adds the graph as a projection of the parsed YAML model, not a separate
+persisted representation. The graph reads `steps`, `tasks`, `states`, or `do`
+containers and renders one custom React Flow node per detected step. Node
+styling reflects the Light-Fabric task type, and the graph can overlay runtime
+task status from the Phase C test-run read models when the workflow task id
+matches a graph step id.
+
+Explicit transition fields such as `next`, `then`, `to`, and `transition`
+become solid graph edges. Ordered fallback edges are shown as dashed edges so
+authors can distinguish model transitions from inferred sequence. Creating an
+edge in React Flow updates the source step's transition in YAML, and deleting an
+explicit edge removes that transition target from YAML. Dragging nodes changes
+only the authoring layout in the browser session; it does not mutate the saved
+workflow definition.
+
+The graph must continue to tolerate partial or invalid authoring states. If the
+YAML cannot be parsed into a known workflow container, the editor keeps the
+source editor and validation panels usable and shows an empty graph state rather
+than blocking authoring.
+
 ## Recommendation
 
 Build the generic Workflow Editor before the Skill Workspace embeds workflow
