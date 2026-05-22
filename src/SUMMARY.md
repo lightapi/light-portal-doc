@@ -7,6 +7,7 @@
     - [Mutliple Environment](./design/portal-view/multiple-environment.md)
     - [MCP Registry](./design/portal-view/mcp-registry.md)
     - [Too Many Pages/Forms](./design/portal-view/too-many-pages-forms.md)
+    - [Human Task UI](./design/portal-view/human-task-ui.md)
     - [User Filter](./design/portal-view/user-filter.md)
     - [Contextual Help Links](./design/portal-view/contextual-help-links.md)
     - [Event Processing Notifications](./design/portal-view/event-processing-notifications.md)
