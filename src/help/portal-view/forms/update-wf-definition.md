@@ -10,5 +10,6 @@ Important fields:
 - `wfDefId`: workflow definition record
 - `namespace`, `name`, and `version`: workflow identity
 - `definition`: workflow YAML
+- `catalogVisible`: publish or remove the workflow from Marketplace Workflow
+  Catalog
 - `ownerPositionId`: optional position owner for team access
-

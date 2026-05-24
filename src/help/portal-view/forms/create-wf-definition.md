@@ -11,5 +11,5 @@ Important fields:
 - `name`: workflow name
 - `version`: workflow version
 - `definition`: workflow YAML
+- `catalogVisible`: publish the workflow in Marketplace Workflow Catalog
 - `ownerPositionId`: optional position owner for team access
-

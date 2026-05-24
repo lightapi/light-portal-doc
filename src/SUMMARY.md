@@ -63,6 +63,7 @@
     - [Task Center](./help/portal-view/pages/task-center.md)
     - [User Session](./help/portal-view/pages/user-session.md)
     - [API Catalog](./help/portal-view/pages/api-catalog.md)
+    - [Workflow Catalog](./help/portal-view/pages/workflow-catalog.md)
     - [API Admin](./help/portal-view/pages/api-admin.md)
     - [API Detail](./help/portal-view/pages/api-detail.md)
     - [App Admin](./help/portal-view/pages/app-admin.md)

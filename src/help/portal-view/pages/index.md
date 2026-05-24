@@ -9,3 +9,5 @@ Available page guides:
 
 - [Task Center](./task-center.md)
 - [User Session](./user-session.md)
+- [API Catalog](./api-catalog.md)
+- [Workflow Catalog](./workflow-catalog.md)
