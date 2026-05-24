@@ -8,3 +8,4 @@ records are visible, and which common actions are available.
 Available page guides:
 
 - [Task Center](./task-center.md)
+- [User Session](./user-session.md)
