@@ -60,6 +60,7 @@
   - [Deployment Workflow](./design/deployment-workflow.md)
 - [Help](./help/portal-view/index.md)
   - [Pages](./help/portal-view/pages/index.md)
+    - [Task Center](./help/portal-view/pages/task-center.md)
     - [API Catalog](./help/portal-view/pages/api-catalog.md)
     - [API Admin](./help/portal-view/pages/api-admin.md)
     - [API Detail](./help/portal-view/pages/api-detail.md)
