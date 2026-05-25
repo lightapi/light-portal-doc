@@ -11,3 +11,4 @@ Available page guides:
 - [User Session](./user-session.md)
 - [API Catalog](./api-catalog.md)
 - [Workflow Catalog](./workflow-catalog.md)
+- [Skill Workspace](./skill-workspace.md)
