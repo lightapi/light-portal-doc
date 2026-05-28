@@ -14,6 +14,7 @@
     - [API Marketplace Catalog](./design/portal-view/api-marketplace-catalog.md)
     - [AI Agent Registration](./design/portal-view/agent-registration.md)
   - [Agent Skill And API Endpoint Discovery](./design/agent-skill-tool-discovery.md)
+  - [Tool Description Embedding Population](./design/tool-description-embedding.md)
   - [Workflow Editor](./design/workflow-editor.md)
   - [Portal Catalog Scope](./design/catalog-scope.md)
   - [OAuth Kafka](./design/oauth-kafka.md)
