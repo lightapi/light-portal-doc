@@ -56,6 +56,7 @@
   - [Config Snapshot](./design/config-snapshot.md)
   - [Config Clone](./design/config-clone.md)
   - [OAuth State](./design/oauth-state.md)
+  - [Auth Client Secret Regeneration](./design/auth-client-secret-regeneration.md)
   - [Event Promotion](./design/event-promotion.md)
   - [Deployment Workflow](./design/deployment-workflow.md)
 - [Help](./help/portal-view/index.md)
