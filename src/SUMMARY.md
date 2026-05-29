@@ -33,6 +33,7 @@
   - [User Management](./design/user-management.md)
   - [Private Messages](./design/private-messages.md)
   - [Config Server](./design/config-server.md)
+  - [SID and Host Verification](./design/sid-host-verification.md)
   - [Instance File Config Phase](./design/instance-file.md)
   - [Deployment](./design/deployment.md)
   - [Timestamp](./design/timestamp.md)
