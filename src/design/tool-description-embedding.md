@@ -298,7 +298,9 @@ Add a pgvector index when catalog size makes sequential vector scans too slow:
 ```sql
 CREATE INDEX idx_tool_description_embedding
     ON tool_t USING hnsw (description_embedding vector_cosine_ops)
-    WHERE active = TRUE AND description_embedding IS NOT NULL;
+    WHERE active = TRUE
+      AND description_embedding IS NOT NULL
+      AND description_embedding_status = 'ready';
 ```
 
 `genai-query` can continue keyword search while embeddings are being populated.
