@@ -62,7 +62,7 @@
   - [Auth Client Secret Regeneration](./design/auth-client-secret-regeneration.md)
   - [Event Promotion](./design/event-promotion.md)
   - [Deployment Workflow](./design/deployment-workflow.md)
-  - [Light OAuth AgentCore OIDC Discovery](./design/light-oauth-agentcore-oidc-discovery.md)
+  - [OAuth OIDC Discovery](./design/light-oauth-agentcore-oidc-discovery.md)
 - [Help](./help/portal-view/index.md)
   - [Pages](./help/portal-view/pages/index.md)
     - [Task Center](./help/portal-view/pages/task-center.md)
