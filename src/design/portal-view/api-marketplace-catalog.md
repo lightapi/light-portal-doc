@@ -67,7 +67,7 @@ move from API-type-only links to intent-based entries:
 
 - API Catalog
 - API Clients
-- JSON Schema
+- Schema Catalog
 - YAML Rule
 - Schema Form
 
