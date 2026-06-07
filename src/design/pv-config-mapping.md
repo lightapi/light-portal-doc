@@ -337,27 +337,51 @@ negative overrides unless a future exclusion table is explicitly added.
 
 ## Manifest Source
 
-The manifest is portable. It uses logical product, config, and property names,
-not database-only IDs. It defines a config profile once, then links product
-versions to that profile.
+The canonical public manifest source is the
+`lightapi/config-profile-manifests` repository:
+
+```text
+https://github.com/lightapi/config-profile-manifests
+```
+
+This repository stores portable, product-level ConfigProfile manifests for
+LightAPI releases. It is intentionally not a generated-event repository.
+Customer-specific `hostId`, `productVersionId`, admin user IDs, generated
+CloudEvents, tenant overrides, and secrets must stay outside the public repo.
+
+Real release manifests should use this path convention:
+
+```text
+java/<product-id>/<product-version>/manifest.json
+rust/<product-id>/<product-version>/manifest.json
+```
+
+The repository also contains the manifest schema, example manifests, a local
+validation script, and a GitHub Actions workflow. Release automation should
+validate manifests in that repository before using them as input to
+`event-importer --generate-config-profiles`.
+
+The manifest itself is portable. It uses logical product, config, and property
+names, not customer-only database IDs. It defines a config profile once, then
+links product versions to that profile.
 
 ```json
 {
   "runtimeFamily": "java",
-  "releaseSet": "java-2026-06",
+  "light4jVersion": "2.3.5",
   "profiles": [
     {
       "profileName": "light-gateway-java-2.3.5",
       "productId": "lg",
-      "light4jVersion": "2.3.4",
-      "contractVersion": "light-gateway-java-2.3.5",
+      "contractVersion": "2.3.5",
       "configs": [
         {
-          "configName": "client",
-          "properties": [
-            "verifyHostname",
-            "tokenServerUrl"
-          ]
+          "configName": "server.yml",
+          "properties": "*"
+        },
+        {
+          "configName": "handler.yml",
+          "properties": ["enabled", "path"]
         }
       ]
     }
@@ -365,20 +389,8 @@ versions to that profile.
   "products": [
     {
       "productId": "lg",
-      "productVersion": "2.0.0",
-      "releaseReason": "product-change",
-      "artifactChanged": true,
-      "sourceChanged": true,
-      "configChanged": false,
-      "breakConfig": false,
-      "configMappingPolicy": "linkProfile",
-      "configProfileRef": {
-        "productId": "lg",
-        "contractVersion": "light-gateway-java-2.3.5"
-      },
-      "inheritFrom": {
-        "productVersion": "1.9.9"
-      }
+      "productVersion": "2.3.5",
+      "configProfileRef": "lg|2.3.5"
     }
   ]
 }
@@ -399,7 +411,7 @@ The generator takes:
 
 - optional `hostId`, product, or release-set filters for profile links
 - runtime family: `java`, `rust`, or both
-- release set or manifest path
+- manifest path, normally from `lightapi/config-profile-manifests`
 - dry-run flag
 
 For each profile entry, it resolves:
@@ -625,24 +637,28 @@ but it should still be asynchronous for large tenant counts.
 
 ## Importer Option
 
-The event importer should support a generator mode:
+The event importer supports a generator mode:
 
 ```bash
-event-importer generate-config-profiles \
-  --manifest events/releases/rust-2026-06.json \
-  --host 01964b05-552a-7c4b-9184-6857e7f3dc5f \
+java -jar target/event-importer.jar \
+  --generate-config-profiles \
+  --manifest java/lg/2.3.5/manifest.json \
+  --targetHostId 01964b05-552a-7c4b-9184-6857e7f3dc5f \
+  --adminUserId 01964b05-5532-7c79-8cde-191dcbd421b8 \
+  --output ./generated \
   --dry-run
 ```
 
 For deployment bundles, the generator can write normal JSON import files:
 
 ```text
-events/generated/08-config-profile-properties-rust-2026-06.json
-events/generated/09-config-profile-configs-rust-2026-06.json
-events/generated/10-product-version-config-profile-links-rust-2026-06.json
+generated/07-config-profiles.json
+generated/08-config-profile-properties.json
+generated/09-config-profile-configs.json
+generated/10-product-version-config-profile-links.json
 ```
 
-This is the fastest migration path because it extends the current Rust import
+This is the fastest migration path because it extends the current JSON import
 process. It also lets teams review the generated events before importing them.
 
 The importer path is best for bootstrap and local environments. The command API
@@ -659,16 +675,18 @@ Recommended release pipeline:
    or unchanged.
 3. Generate or update config/property definitions for products whose config
    contract changed.
-4. Create or reuse `ConfigProfile` rows for each config contract.
-5. Create new `ProductVersionCreatedEvent` rows for every product whose
+4. Add or update the release manifest in `lightapi/config-profile-manifests`.
+5. Validate the manifest with the repo validation workflow.
+6. Create or reuse `ConfigProfile` rows for each config contract.
+7. Create new `ProductVersionCreatedEvent` rows for every product whose
    artifact changed.
-6. Run profile and profile-link dry-run for all target hosts.
-7. Fail the release if dry-run reports unresolved product versions, profiles,
+8. Run profile and profile-link dry-run for all target hosts.
+9. Fail the release if dry-run reports unresolved product versions, profiles,
    configs, or properties.
-8. Emit profile events and product-version profile-link events.
-9. Verify `config_profile_config_t`, `config_profile_property_t`, and
+10. Emit profile events and product-version profile-link events.
+11. Verify `config_profile_config_t`, `config_profile_property_t`, and
    `product_version_config_profile_t` counts.
-10. Smoke-test `getConfigUpdateProperties` for at least one instance, API, app,
+12. Smoke-test `getConfigUpdateProperties` for at least one instance, API, app,
    and app-api target for the release.
 
 For patch releases where config does not change, the pipeline can use
@@ -757,6 +775,11 @@ Host-specific overrides are allowed through optional manifest sections:
 The default path should be shared profiles. Host overrides should be rare and
 visible in dry-run output.
 
+Host overrides should not live in the public
+`lightapi/config-profile-manifests` repository. They are tenant-specific
+operational inputs and should be kept in private deployment overlays or entered
+through the command API.
+
 If a tenant needs to remove a standard profile property, assign a different
 profile to that product version. Avoid negative host-specific overrides in the
 MVP because they make query resolution and audit history harder to reason
@@ -790,7 +813,9 @@ version has a profile link or direct config/config-property mappings.
 
 ### Phase 1: Manifest Generator for Importer
 
-- Add Java and Rust mapping manifests.
+- Create and maintain Java and Rust mapping manifests in
+  `lightapi/config-profile-manifests`.
+- Validate manifests with the repository schema and workflow.
 - Generate JSON import files for `ConfigProfile`, profile config/property
   mappings, and product-version profile links.
 - Use direct IDs in generated events.
@@ -825,8 +850,6 @@ version has a profile link or direct config/config-property mappings.
 
 ## Open Questions
 
-- Should release manifests live in `event-importer`, each product repository,
-  or a dedicated release metadata repository?
 - Should `ProductVersionCreatedEvent` optionally carry a `configProfileRef`,
   or should profile linking remain a separate release step?
 - Do we need an organization-level policy to prevent inheritance for selected
@@ -841,8 +864,9 @@ sync command for live all-host operations.
 
 The long-term target is release-time automation:
 
-- product CI generates the profile manifest from source metadata instead of
-  relying on hand-maintained JSON
+- product CI generates or validates the profile manifest in
+  `lightapi/config-profile-manifests` from source metadata instead of relying
+  on hand-maintained JSON
 - product release creates product versions
 - profile dry-run validates configs/properties once
 - profile-link dry-run validates every tenant product version
