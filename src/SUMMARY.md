@@ -52,6 +52,7 @@
   - [Tenant Migration](./design/tenant-migration.md)
   - [Product Version Config](./design/product-version-config.md)
   - [Product Version Config Mapping Automation](./design/pv-config-mapping.md)
+  - [Release Workflow](./design/release-workflow.md)
   - [Optimistic Concurrency Control](./design/optimistic-concurrency-control.md)
   - [Cascade Soft Delete](./design/cascade-soft-delete.md)
   - [Query Active Rows](./design/query-active-rows.md)
