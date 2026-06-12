@@ -1,6 +1,9 @@
 # light-portal-doc
 Light Portal Documentation
 
+- [Public documentation site](https://doc.lightapi.net/)
+- [Local portal setup guide](https://doc.lightapi.net/implementation/local-portal-setup.html)
+
 ### How to install mdbook?
 
 ```
