@@ -96,3 +96,5 @@ To see both the global and your host-specific reference tables in action:
 3. You will see two results:
    - One row with an empty (or "Global") Host ID. This is the global table.
    - One row with your specific Host ID. This is where you can add custom tags that will only appear in your `envTag` dropdown.
+
+![Table Name Filter for Environment](../../../images/ref-table-environment-filter.png)
