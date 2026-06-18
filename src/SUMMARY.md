@@ -8,6 +8,7 @@
     - [MCP Registry](./design/portal-view/mcp-registry.md)
     - [Too Many Pages/Forms](./design/portal-view/too-many-pages-forms.md)
     - [Config Update Page](./design/portal-view/config-update-page.md)
+    - [Rust Controller Logging](./design/portal-view/rust-controller-logging.md)
     - [Human Task UI](./design/portal-view/human-task-ui.md)
     - [User Filter](./design/portal-view/user-filter.md)
     - [Contextual Help Links](./design/portal-view/contextual-help-links.md)
