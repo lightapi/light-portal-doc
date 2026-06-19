@@ -42,6 +42,7 @@
   - [SID and Host Verification](./design/sid-host-verification.md)
   - [Instance File Config Phase](./design/instance-file.md)
   - [Deployment](./design/deployment.md)
+  - [Light Portal Install](./design/light-portal-install.md)
   - [Timestamp](./design/timestamp.md)
   - [Tag](./design/tag.md)
   - [UUID](./design/uuid.md)
