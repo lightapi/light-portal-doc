@@ -128,7 +128,7 @@ CREATE TABLE api_endpoint_t (
     endpoint             VARCHAR(1024) NOT NULL,  -- Tool Name
     http_method          VARCHAR(10),             -- 'call' for MCP
     endpoint_name        VARCHAR(128) NOT NULL,
-    endpoint_desc        VARCHAR(1024),
+    endpoint_desc        TEXT,
     tool_schema          TEXT,                    -- Input parameter validation
     tool_metadata        TEXT,                    -- Safety and cost metadata
     active               BOOLEAN NOT NULL DEFAULT TRUE,
