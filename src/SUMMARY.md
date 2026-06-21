@@ -79,6 +79,7 @@
   - [Pages](./help/portal-view/pages/index.md)
     - [Task Center](./help/portal-view/pages/task-center.md)
     - [Reference Table Admin](./help/portal-view/pages/ref-table-admin.md)
+    - [List Rule](./help/portal-view/pages/list-rule.md)
     - [User Session](./help/portal-view/pages/user-session.md)
     - [API Catalog](./help/portal-view/pages/api-catalog.md)
     - [Workflow Catalog](./help/portal-view/pages/workflow-catalog.md)
