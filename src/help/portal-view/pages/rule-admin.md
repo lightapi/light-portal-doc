@@ -1,6 +1,6 @@
 # Rule Admin
 
-The Rule Admin page allows administrators to create and manage YAML rules, conditions, and actions.
+The Rule Admin page allows administrators to create and manage YAML rules with CEL condition expressions and actions.
 
 For most users, they just need to pick up rules pre-defined in this page. We have defined some global rules to share with all tenants. Each tenant can create host-specific rules that can be used with the tenant.
 

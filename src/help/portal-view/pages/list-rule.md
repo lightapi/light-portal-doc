@@ -4,7 +4,7 @@ The List Rule page allows administrators to view, search, and manage YAML rules 
 
 This page is designed for users to add existing rules to the endpoint for request access control (`req-acc`) and response filter (`res-fil`).
 
-The rule setup on this page associates one or more rules with the current endpoint. These rules are invoked from either the access-control handler for API access or the mcp-router handler for MCP access to enforce fine-grained authorization by matching the user security profile with the endpoint security definitions.
+The rule setup on this page associates one or more rules with the current endpoint. These CEL-backed rules are invoked from either the access-control handler for API access or the mcp-router handler for MCP access to enforce fine-grained authorization by matching the user security profile with the endpoint security definitions.
 
 For more details on light rule and security configuration, please refer to the following resources:
 - [Light Rule](https://www.networknt.com/light-fabric/crate/light-rule.html)
