@@ -297,16 +297,27 @@ Performs an application-layer simulation (Option 1) to calculate the diff plan w
 
 #### Import Execute (Command)
 
-Executes the promotion plan, applying all changes to the target host.
+Executes supported promotion snapshots, applying changes to the target host through event sourcing.
+
+The current implementation supports **global migration snapshots** whose payload contains a top-level `tables` object. These snapshots are imported through the existing event-based global import pipeline, which converts table rows into ordered events and writes them to `event_store_t` and `outbox_message_t`.
+
+Selective entity promotion snapshots whose payload contains a top-level `entities` array are **not executable yet**. The dry-run planner can still calculate the diff plan, but `importExecute` must reject this snapshot shape until the selective entity event materializer is implemented. Returning `PLANNED` items from `importExecute` is not a valid execution result and the UI must not treat that response as a successful promotion.
 
 *   **Service:** `user`
 *   **Action:** `importExecute`
 *   **Request Data:**
     *   `targetHostId` (UUID) – The host to apply changes to.
-    *   `promotionId` (UUID, optional) – From the dry run (for same-instance tracking).
-    *   `snapshot` (Object) – The canonical snapshot.
-    *   `orphanAction` (String) – `"keep"` | `"delete"` | `"sync"`.
-*   **Response:** Execution result with per-item status (Success/Failed) and error messages.
+    *   `snapshot` (Object) – The canonical snapshot. Executable today only when it contains `tables`.
+    *   `promotionId` (UUID, optional) – Reserved for selective entity execution.
+    *   `orphanAction` (String) – Reserved for selective entity execution: `"keep"` | `"delete"` | `"sync"`.
+*   **Response:** For global snapshots, the global import result such as `{ "imported": 42, "total": 42 }`. For selective entity snapshots, a validation error until the selective execution path is implemented.
+
+Selective entity execution requires a new materialization layer:
+
+1.  Translate each dry-run `CREATE`, `UPDATE`, and optional orphan `DELETE` item into the matching domain event.
+2.  Preserve dependency order from the exported snapshot.
+3.  Write generated events through the same event-store/outbox transaction pattern used by the global import pipeline.
+4.  Return per-item execution status only after the event write succeeds or fails.
 
 ### UI Pages
 
@@ -332,7 +343,7 @@ Handles the import and execution workflow:
     *   **Changed** items (yellow) – Will be updated, with expandable field-level diffs.
     *   **Same** items (gray) – No action needed.
     *   **Orphaned** items (red) – Exist in target but not in source.
-3.  **Execute:** For orphaned items, user selects Keep/Delete/Sync via radio buttons. Clicking "Execute Promotion" applies all changes.
+3.  **Execute:** For selective entity snapshots, execution is disabled by the backend until event materialization is implemented. For global migration snapshots, the page bypasses the selective dry-run plan and calls `globalSnapshotImport` directly.
 
 #### PromotionHistory.tsx (`/app/promotion/history`)
 
@@ -345,8 +356,8 @@ Displays detailed promotion metadata (source/target hosts, status, timestamps) a
 ### Implementation Phases
 
 1.  **Phase 1 – UI Foundation:** Create promotion pages, sidebar menu entry, route registration. *(Completed)*
-2.  **Phase 2 – Backend Services:** Implement `exportSnapshot`, `importDryRun`, `importExecute` services, and `promotion_t`/`promotion_item_t` DDL.
-3.  **Phase 3 – Same-Instance Promotion:** Integrate promotion tracking tables, add "Promote to Host" flow, orphan detection.
+2.  **Phase 2 – Backend Services:** Implement `exportSnapshot`, `importDryRun`, and validation for `importExecute`. *(Partially completed: selective execution is blocked until event materialization is implemented.)*
+3.  **Phase 3 – Same-Instance Promotion:** Integrate promotion tracking tables, add "Promote to Host" flow, orphan detection, and selective event materialization.
 4.  **Phase 4 – Additional Entity Types:** Add support for `rule_t`, `schema_t`, `api_t`, `config_t` and extend the dependency resolver.
 5.  **Phase 5 – Global Migration Export:** Implement dynamic table discovery for full-database migration (see below).
 
