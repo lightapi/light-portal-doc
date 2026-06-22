@@ -358,8 +358,8 @@ Displays detailed promotion metadata (source/target hosts, status, timestamps) a
 1.  **Phase 1 – UI Foundation:** Create promotion pages, sidebar menu entry, route registration. *(Completed)*
 2.  **Phase 2 – Backend Services:** Implement `exportSnapshot`, `importDryRun`, and validation for `importExecute`. *(Partially completed: selective execution is blocked until event materialization is implemented.)*
 3.  **Phase 3 – Same-Instance Promotion:** Integrate promotion tracking tables, add "Promote to Host" flow, orphan detection, and selective event materialization.
-4.  **Phase 4 – Additional Entity Types:** Add support for `rule_t`, `schema_t`, `api_t`, `config_t` and extend the dependency resolver.
-5.  **Phase 5 – Global Migration Export:** Implement dynamic table discovery for full-database migration (see below).
+4.  **Phase 4 – Additional Entity Types:** Add selective export and dry-run support for additional entity types. *(Partially completed: `config`, `rule`, `schema`, `api`, and other entity snapshots are supported for export/dry-run; selective execution still waits on Phase 3 event materialization and dependency ordering remains entity-specific.)*
+5.  **Phase 5 – Global Migration Export:** Implement dynamic table discovery for full-database migration. *(Completed; see below.)*
 
 ---
 
@@ -496,4 +496,4 @@ The import handler performs a batch insertion of these generated events into `ev
 2.  **Phase 2 – Global Export:** Implement dynamic table discovery via JDBC metadata. *(Completed)*
 3.  **Phase 2.5 – Global Migration Step:** Implement Topological Sorting and Snapshot-to-Events conversion for CLI compatibility. *(Completed)*
 4.  **Phase 3 – Entity Promotion (Selective):** Implement recursive bundling for user-selected entities (e.g., Instance export).
-5.  **Phase 4 – Same-Instance Tracking:** Integrated `promotion_t` tracking for in-DB moves.
+5.  **Phase 4 – Same-Instance Tracking:** Integrate `promotion_t` tracking for in-DB moves. *(Not completed; history/detail handlers currently return placeholder data until the promotion tables and persistence are added.)*
