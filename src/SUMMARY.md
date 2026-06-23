@@ -34,6 +34,7 @@
   - [Reference Table](./design/reference_table.md)
   - [Authentication Authorization](./design/authentication-authorization.md)
   - [Fine-Grained Authorization](./design/fine-grained-authorization.md)
+  - [Light Portal Fine-Grained Authorization](./design/light-portal-fga.md)
   - [Claim Org Role Bootstrap](./design/claim-org-role-bootstrap.md)
   - [Master OAuth Host Tenant Login](./design/master-oauth-host-tenant-login.md)
   - [Schema Registry](./design/schema-registry.md)
