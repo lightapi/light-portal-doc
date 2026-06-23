@@ -10,6 +10,7 @@ Available page guides:
 - [Task Center](./task-center.md)
 - [User Session](./user-session.md)
 - [API Catalog](./api-catalog.md)
+- [Service Endpoint](./service-endpoint.md)
 - [Workflow Catalog](./workflow-catalog.md)
 - [Schema Catalog](./schema-catalog.md)
 - [Skill Workspace](./skill-workspace.md)

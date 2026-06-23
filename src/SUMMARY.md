@@ -83,6 +83,7 @@
     - [Rule Admin](./help/portal-view/pages/rule-admin.md)
     - [User Session](./help/portal-view/pages/user-session.md)
     - [API Catalog](./help/portal-view/pages/api-catalog.md)
+    - [Service Endpoint](./help/portal-view/pages/service-endpoint.md)
     - [Workflow Catalog](./help/portal-view/pages/workflow-catalog.md)
     - [Schema Catalog](./help/portal-view/pages/schema-catalog.md)
     - [Skill Workspace](./help/portal-view/pages/skill-workspace.md)
