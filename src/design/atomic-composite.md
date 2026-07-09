@@ -1279,8 +1279,8 @@ You'll deploy Debezium as a Kafka Connect connector. Here's a sample configurati
     "key.converter.schemas.enable": "false",
     "transforms": "unwrap,addTransactionIdHeader,timestamp_converter,outbox,extractPayload,extractKey,final_route",
     "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
-    "transforms.unwrap.drop.tombstones": "false",
-    "transforms.unwrap.delete.handling.mode": "none",
+    "transforms.unwrap.drop.tombstones": "true",
+    "transforms.unwrap.delete.handling.mode": "drop",
     "transforms.addTransactionIdHeader.type": "org.apache.kafka.connect.transforms.HeaderFrom$Value",
     "transforms.addTransactionIdHeader.fields": "transaction_id",
     "transforms.addTransactionIdHeader.headers": "transaction_id",
@@ -1350,8 +1350,8 @@ curl --location --request POST 'http://localhost:8083/connectors' \
     "transforms": "unwrap,addTransactionIdHeader,timestamp_converter,outbox,extractPayload,extractKey,final_route",
 
     "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
-    "transforms.unwrap.drop.tombstones": "false",
-    "transforms.unwrap.delete.handling.mode": "none",
+    "transforms.unwrap.drop.tombstones": "true",
+    "transforms.unwrap.delete.handling.mode": "drop",
 
     "transforms.addTransactionIdHeader.type": "org.apache.kafka.connect.transforms.HeaderFrom$Value",
     "transforms.addTransactionIdHeader.fields": "transaction_id",
