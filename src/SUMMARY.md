@@ -44,6 +44,7 @@
   - [Private Messages](./design/private-messages.md)
   - [Config Server](./design/config-server.md)
   - [SID and Host Verification](./design/sid-host-verification.md)
+  - [Instance Clone](./design/instance-clone.md)
   - [Instance File Config Phase](./design/instance-file.md)
   - [Deployment](./design/deployment.md)
   - [Light Portal Install](./design/light-portal-install.md)
