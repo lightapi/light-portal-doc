@@ -95,6 +95,7 @@
     - [OAuth Client](./help/portal-view/pages/oauth-client.md)
     - [OAuth Client Token](./help/portal-view/pages/oauth-client-token.md)
     - [Instance Admin](./help/portal-view/pages/instance-admin.md)
+    - [Clone an Instance](./help/portal-view/pages/instance-clone.md)
     - [Runtime Instance](./help/portal-view/pages/runtime-instance.md)
     - [Instance API](./help/portal-view/pages/instance-api.md)
     - [Instance API Path Prefix](./help/portal-view/pages/instance-api-path-prefix.md)
