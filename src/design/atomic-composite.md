@@ -1282,8 +1282,8 @@ You'll deploy Debezium as a Kafka Connect connector. Here's a sample configurati
     "transforms.unwrap.drop.tombstones": "true",
     "transforms.unwrap.delete.handling.mode": "drop",
     "transforms.addTransactionIdHeader.type": "org.apache.kafka.connect.transforms.HeaderFrom$Value",
-    "transforms.addTransactionIdHeader.fields": "transaction_id",
-    "transforms.addTransactionIdHeader.headers": "transaction_id",
+    "transforms.addTransactionIdHeader.fields": "transaction_id,transaction_ordinal,transaction_count",
+    "transforms.addTransactionIdHeader.headers": "transaction_id,transaction_ordinal,transaction_count",
     "transforms.addTransactionIdHeader.operation": "copy",
     "transforms.timestamp_converter.type": "org.apache.kafka.connect.transforms.TimestampConverter$Value",
     "transforms.timestamp_converter.field": "event_ts",
@@ -1354,8 +1354,8 @@ curl --location --request POST 'http://localhost:8083/connectors' \
     "transforms.unwrap.delete.handling.mode": "drop",
 
     "transforms.addTransactionIdHeader.type": "org.apache.kafka.connect.transforms.HeaderFrom$Value",
-    "transforms.addTransactionIdHeader.fields": "transaction_id",
-    "transforms.addTransactionIdHeader.headers": "transaction_id",
+    "transforms.addTransactionIdHeader.fields": "transaction_id,transaction_ordinal,transaction_count",
+    "transforms.addTransactionIdHeader.headers": "transaction_id,transaction_ordinal,transaction_count",
     "transforms.addTransactionIdHeader.operation": "copy",
 
     "transforms.timestamp_converter.type": "org.apache.kafka.connect.transforms.TimestampConverter$Value",
@@ -1507,4 +1507,3 @@ For your setup, the **Separate Kafka Streams Application (Option 3)** is general
 *   **The new Kafka Streams app's role:** It acts as a **specialized router and processor** for `ScheduleCreatedEvent`s specifically, forwarding them to the appropriate Kafka Streams pipeline (`light-schedule`).
 
 This maintains a clean, decoupled architecture where each component has a clear responsibility and leverages Kafka's native stream processing capabilities for atomic Kafka-to-Kafka operations.
-

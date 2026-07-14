@@ -80,7 +80,7 @@ planning, execution, status, authorization, and audit use one shared contract.
 | Concern | PostgreSQL processor | Kafka processor |
 | --- | --- | --- |
 | Live source | `outbox_message_t` | Debezium-derived Kafka topic |
-| Transaction identity | `outbox_message_t.transaction_id` | `transaction_id` Kafka header, with legacy key fallback |
+| Transaction identity | `outbox_message_t.transaction_id` | `transaction_id`, `transaction_ordinal`, and `transaction_count` Kafka headers; legacy key fallback is not replay evidence |
 | Source position | logical partition plus `c_offset` | Kafka topic, partition, and offset |
 | Failure destination | `dead_letter_queue` | `{topic}{deadLetterTopicExt}` |
 | Progress | `consumer_offsets` | Kafka consumer-group offsets |
@@ -523,6 +523,16 @@ If the planner cannot prove a complete scope, it falls back in this order:
 3. pause the complete projection only for an explicitly approved, bounded
    maintenance operation.
 
+The initial production implementation deliberately registers only executable
+`GRAPH_ROOT` policies. It fails closed with `UNSUPPORTED_ISOLATION` for an
+event that would require one of the fallback pauses. The control and worker
+tables, live-worker acknowledgement path, metrics, and UI vocabulary are
+forward-compatible infrastructure; planner/worker coordination for fallback
+pause execution is not enabled by the v1 registry and must not be represented
+as available in an operator plan. Enabling a non-graph policy therefore
+requires a separate implementation gate and integration test of the complete
+pause lifecycle.
+
 `event_projection_control_t` and `event_projection_worker_t` coordinate these
 fallback pauses by epoch. Only workers assigned to the affected partition or
 projection must acknowledge. Kafka workers continue heartbeats while paused so
@@ -899,10 +909,10 @@ Public failure codes include:
 
 1. The execute command atomically changes an approved request to
    `INSTALLING_BARRIER`.
-2. The coordinator acquires the canonical dependency-scope advisory locks and
-   installs the planned barrier epoch. If scoped isolation is unavailable, it
-   requests the approved partition, host, or projection pause and waits only
-   for the affected workers to acknowledge.
+2. The v1 coordinator acquires the canonical graph-root advisory locks and
+   installs the planned barrier epoch. A plan requiring partition, host, or
+   projection fallback isolation is rejected before approval; those pause
+   modes remain a gated extension as described above.
 3. The coordinator rechecks the plan hash, content fingerprints, payload
    digests, registry version, projection metadata, and isolation epoch, then
    changes the request to `RUNNING`.

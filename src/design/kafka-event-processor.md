@@ -28,11 +28,18 @@ The `transaction_id` header is added via the Debezium connector configuration:
   "transforms": "unwrap,addTransactionIdHeader,timestamp_converter,...",
   
   "transforms.addTransactionIdHeader.type": "org.apache.kafka.connect.transforms.HeaderFrom$Value",
-  "transforms.addTransactionIdHeader.fields": "transaction_id",
-  "transforms.addTransactionIdHeader.headers": "transaction_id",
+  "transforms.addTransactionIdHeader.fields": "transaction_id,transaction_ordinal,transaction_count",
+  "transforms.addTransactionIdHeader.headers": "transaction_id,transaction_ordinal,transaction_count",
   "transforms.addTransactionIdHeader.operation": "copy"
 }
 ```
+
+All three headers are mandatory when canonical capture is enabled. The command
+side writes the zero-based ordinal and complete member count into every outbox
+row in the same database transaction. The Kafka processor refuses to advance
+offsets unless the poll contains exactly ordinals `0..transaction_count-1`
+with a consistent transaction ID and count. Deploy the outbox migration and
+connector header change before enabling Kafka capture for a rollout scope.
 
 ## Processing Flow
 
