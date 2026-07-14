@@ -319,7 +319,7 @@ The event ordinal is assigned from the authoritative source order:
 The following tables are the intended logical model. Column sizes and indexes
 should follow the portal database conventions when the migration is written.
 Phase 1 implements this model in
-`portal-db/postgres/patch_20260713_event_replay.sql`, with the same replay block
+`portal-db/postgres/patch_20260713_01_event_replay.sql`, with the same replay block
 in both fresh-install DDL sources. The implementation adds the envelope-key,
 object-version, byte-accounting, fencing, retention, and trigger columns needed
 to enforce the invariants described below.
