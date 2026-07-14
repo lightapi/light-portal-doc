@@ -30,7 +30,12 @@ and current-snapshot selection across instances from
 - Compare effective typed values by default and show source-only changes
   separately.
 
-## Current Implementation
+## Pre-Implementation Baseline
+
+This section records the baseline that motivated the design. The feature has
+since been implemented; the authoritative implementation and acceptance state
+is recorded in the two linked implementation plans and their shared
+`2026-07-14-config-snapshot-live-acceptance.md` evidence record.
 
 `portal-view/src/pages/snapshot/ConfigSnapshot.tsx` renders a server-paginated
 Material React Table. It calls
@@ -226,6 +231,8 @@ Canonicalization rules are:
 8. Reject an invalid stored value for its declared type. Do not quietly coerce
    it to a string or omit it.
 9. Reject duplicate emitted keys instead of letting one overwrite another.
+10. Require `source_level` to be non-blank and single-line before inserting it
+    into a YAML comment.
 
 Map key order does not change YAML meaning, but recursive sorting prevents
 nested map insertion order from creating noisy diffs. Source comments are
@@ -321,11 +328,12 @@ The response preserves request order:
 When `yaml` is requested, each snapshot object also contains the canonical
 `yaml` string. The digest is calculated from the exact UTF-8 YAML bytes.
 
-The persistence query should join `config_snapshot_t`,
-`config_snapshot_property_t`, and `config_t`, and scope every selected id by
-`cs.host_id = ?`. It must not require `current = true`. Load all requested
-metadata and properties in bounded batch queries rather than one query per
-snapshot.
+The persistence query should join `config_snapshot_t`, `instance_t`,
+`config_snapshot_property_t`, and `config_t`, scope every selected id by
+`cs.host_id = ?`, and apply the same `InstanceAdmin` ownership predicate to
+`instance_t` for owner-scoped users. `admin` and `host-admin` retain host-wide
+scope. It must not require `current = true`. Load all requested metadata and
+properties in bounded batch queries rather than one query per snapshot.
 
 Reject the whole request if any selected snapshot is missing, belongs to
 another host, has malformed typed data, or exceeds the configured response
@@ -370,8 +378,10 @@ instance and environment metadata pinned above each column. Reject snapshots
 with different service ids in the first release; comparing unrelated services
 mostly produces missing-key noise and is better handled as separate exports.
 
-All selected snapshots must belong to the signed-in host. This is enforced by
-the server even though the list query is already host-scoped.
+All selected snapshots must belong to the signed-in host and be visible under
+the caller's effective instance ownership scope. This is enforced by the
+server even though the list query is already scoped. A hidden snapshot id and
+an unknown snapshot id both return the same unavailable response.
 
 ## `InstanceAdmin` Current-Snapshot Entry Point
 
@@ -448,6 +458,15 @@ all-or-nothing. A missing instance, missing current snapshot, multiple current
 snapshots, mixed service ids, ownership failure, or property-limit violation
 must not produce a partial set. Error responses contain ids and counts only,
 never configuration values.
+
+Stable unavailable/cardinality behavior is:
+
+- `404 CURRENT_CONFIG_SNAPSHOT_UNAVAILABLE` when an instance is missing,
+  hidden by owner scope, or has no current snapshot
+- `409 CURRENT_CONFIG_SNAPSHOT_CARDINALITY` when an instance has multiple
+  current snapshots
+- `409 CURRENT_CONFIG_SNAPSHOT_SERVICE_MISMATCH` when current snapshot and
+  instance service ids disagree
 
 Before enabling the resolver, add a partial unique index matching the intended
 identity and access path:
@@ -571,8 +590,11 @@ side-by-side representation for those counts.
 
 Snapshot values can contain credentials and other sensitive configuration.
 
-- Authorize the query with `portal.r` and validate authenticated host access
-  for every requested snapshot.
+- Enforce both authorization layers: gateway endpoint policy requires
+  `portal.r` and one of `admin`, `config-admin`, or `config-viewer`; the handler
+  then validates authenticated host access and applies `InstanceAdmin` owner
+  scope for every requested snapshot or instance. `admin` and `host-admin` are
+  the owner-scope bypass roles at the persistence layer.
 - Return `Cache-Control: no-store` through the portal query path.
 - Do not write YAML, typed values, or comparison responses to application logs.
 - Do not store selected values or YAML in `localStorage`, `sessionStorage`, task
@@ -636,6 +658,8 @@ rendered table may paginate after the full key union is known.
   window based on table size and patch-runner transaction constraints.
 - Add schema and query-plan gates proving duplicate current rows are rejected
   and the resolver lookup uses the new index.
+- Register both additive query actions in the endpoint/access-control catalog,
+  mirroring the established config-query request-access rule and config roles.
 
 ### `light-config-server`
 
@@ -757,8 +781,9 @@ output/comparison workflow can ship independently of that index.
   YAML diff.
 - The comparison clearly distinguishes value changes, missing keys, and
   source-only changes.
-- Requests cannot read snapshots from another host and no sensitive value is
-  persisted in browser storage.
+- Requests cannot read snapshots from another host or outside the caller's
+  effective instance ownership scope, and no sensitive value is persisted in
+  browser storage.
 
 ## Rollout
 
@@ -774,6 +799,15 @@ output/comparison workflow can ship independently of that index.
    verify the resolver query plan.
 7. Add `InstanceAdmin` current-snapshot resolution and selection after the
    shared comparison route, backend values API, and database gates have passed.
+8. Apply
+   `portal-db/postgres/patch_20260714_02_config_snapshot_compare_endpoints.sql`
+   to register both actions in the portal endpoint/access-control catalog, run
+   normal `syncConfigInstanceApi` for config API `LPS1120/1.0.0` on each
+   affected gateway, create and promote a new gateway configuration snapshot,
+   and restart or reload the gateway so its effective endpoint rules contain
+   both actions.
+9. Deploy the portal bundle to the actual served/mounted `dist` and verify its
+   asset hash before acceptance.
 
 The API and selection cap support four snapshots from the beginning, even if
 the UI rollout enables two first. This avoids an API redesign while still
