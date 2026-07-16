@@ -7,7 +7,8 @@ application semantics, serialization, framing, transport, and gateway routing
 are separate decisions. It covers both the Rust runtime control channel and the
 browser MCP path through `light-gateway`.
 
-- **Status:** proposed architecture; Phase 0 completed with a no-go result
+- **Status:** proposed architecture; Phase 0 completed with a no-go result and
+  the separately justified WebSocket-only Phase 1 extraction is complete
 - **Protocol baseline tested:** 2026-07-15
 - **Implementation gate:** WebTransport implementation remains blocked until a
   future Phase 0 rerun satisfies the browser, native-library, and current-draft
@@ -1887,9 +1888,10 @@ Expose the controller transport through diagnostics or a separate optional
 Phase 0 is an approval gate. Phase 1 must not begin until these artifacts are
 reviewed, the pinned compatibility tuple is recorded, and no unresolved item
 requires changing the authentication trust model, gateway topology, or wire
-profile boundaries. A failed spike keeps WebTransport disabled and redirects
-evaluation to binary WebSocket or raw QUIC without first performing the shared
-session refactor.
+profile boundaries. A failed spike keeps WebTransport disabled. A shared-session
+refactor may still proceed when it is separately justified as WebSocket
+hardening or preparation for binary WebSocket/raw QUIC evaluation, but it must
+not introduce or assume WebTransport behavior.
 
 The 2026-07-15 Phase 0 implementation produced that failed-spike result. Native
 direct and same-transport relay mechanics, current certificate reuse, bounded
@@ -1898,9 +1900,17 @@ Authorization header. The server observed the supplied profile offer, and
 stream echo/reset/close passed, but Chrome did not expose the selected protocol,
 response headers, or required reliability result. The pinned `wtransport 0.7.1`
 native client also discarded response headers, and its protocol generation did
-not implement draft 16. Production WebTransport remains disabled and Phase 1 is
-not approved on a WebTransport justification. The executable evidence and
+not implement draft 16. Production WebTransport remains disabled and Phase 1
+was not approved on a WebTransport justification. The executable evidence and
 closure decision are in `implementation/light-controller/phase0`.
+
+The separately justified WebSocket-only Phase 1 extraction completed on
+2026-07-15. It introduced bounded command admission, explicit WebSocket message
+limits, transport-neutral controller session modules, a logical-message
+`PortalRegistryClient`, a private WebSocket adapter, and shared legacy JSON
+fixtures. It did not enable WebTransport or change the Phase 0 decision. The
+closure record and executable gates are in
+`implementation/light-controller/phase1`.
 
 ### Phase 1: Extract Shared Session Behavior
 
@@ -1910,9 +1920,11 @@ closure decision are in `implementation/light-controller/phase0`.
   messages.
 - Separate wire-profile adapters from WebSocket and WebTransport session
   adapters.
-- Extract the gateway's route resolver without changing its WebSocket tunnel.
 - Keep behavior and wire output unchanged.
 - Run the complete existing WebSocket test suite.
+
+Gateway route-resolver extraction remains part of the later gateway phase; it
+was not required for the controller/client shared-session boundary.
 
 ### Phase 2: Runtime Profile Matrix
 
