@@ -7,8 +7,9 @@ application semantics, serialization, framing, transport, and gateway routing
 are separate decisions. It covers both the Rust runtime control channel and the
 browser MCP path through `light-gateway`.
 
-- **Status:** proposed architecture; Phase 0 completed with a no-go result and
-  the separately justified WebSocket-only Phase 1 extraction is complete
+- **Status:** proposed architecture; Phase 0 completed with a no-go result, the
+  separately justified WebSocket-only Phase 1 extraction is complete, and the
+  inactive shared wire-profile/conformance foundation is implemented
 - **Protocol baseline tested:** 2026-07-15
 - **Implementation gate:** WebTransport implementation remains blocked until a
   future Phase 0 rerun satisfies the browser, native-library, and current-draft
@@ -1912,6 +1913,17 @@ fixtures. It did not enable WebTransport or change the Phase 0 decision. The
 closure record and executable gates are in
 `implementation/light-controller/phase1`.
 
+The transport-independent shared wire-profile foundation completed on
+2026-07-15. `light-fabric/crates/controller-wire` now exclusively owns the
+version 1 profile tokens, framing, immutable archived roots, bounded validation,
+semantic limits, golden bytes, dependency-purity policy, and pinned `rkyv`
+feature policy. Both `portal-registry` and `controller-rs` compile and test
+owned conversion boundaries against the same fixtures. This completes
+implementation-plan Phase 2, not the broader design Phase 2 below: no listener,
+negotiation, binary WebSocket profile, or WebTransport behavior is enabled.
+The closure record and executable gates are in
+`implementation/light-controller/phase2`.
+
 ### Phase 1: Extract Shared Session Behavior
 
 - Refactor `controller-rs` runtime and MCP message handling into
@@ -1927,6 +1939,9 @@ Gateway route-resolver extraction remains part of the later gateway phase; it
 was not required for the controller/client shared-session boundary.
 
 ### Phase 2: Runtime Profile Matrix
+
+The shared crate and conformance portion is complete. Every transport-enabling
+item in this design phase remains blocked by the Phase 0 no-go.
 
 - Add the shared `controller-wire` crate and golden fixtures.
 - Add the UDP/HTTP3 listener, enabled when any controller surface enabled set
