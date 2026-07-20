@@ -13,4 +13,5 @@ Available page guides:
 - [Service Endpoint](./service-endpoint.md)
 - [Workflow Catalog](./workflow-catalog.md)
 - [Schema Catalog](./schema-catalog.md)
+- [LLM Model Control Plane](./llm-model-control-plane.md)
 - [Skill Workspace](./skill-workspace.md)
