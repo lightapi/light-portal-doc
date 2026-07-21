@@ -59,14 +59,14 @@ Optional fields include `modelVersion`, `modalities`, `operations`,
 `declaredCapabilities`, and `lifecycleStatus`.
 
 Create a catalog entry before creating a Registration that refers to its
-`modelCatalogId`.
+`modelId`.
 
 ## Registrations Tab
 
 Use Registrations to approve a catalog model for an environment, one or more
 regions, data classifications, and capability restrictions.
 
-Required create fields are `modelCatalogId` and `environment`. Use the
+Required create fields are `modelId` and `environment`. Use the
 `regions`, `dataClassifications`, and `capabilityRestrictions` fields to narrow
 where and how the registered model may be used.
 

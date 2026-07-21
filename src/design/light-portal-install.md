@@ -25,7 +25,9 @@ The install repo contains:
 - fixed R2 archive names for `hybrid-command`, `hybrid-query`, `lightapi`, and `signin` assets.
 - `README.md`, the short public usage guide.
 
-The repo should not require the user to clone `portal-config-loc`, `service-asset`, `portal-view`, `login-view`, or any service source repository. Those repos remain build and release inputs. `light-portal-install` consumes released images and released asset bundles.
+The repo should not require the user to clone `portal-config-loc`, `portal-view`,
+`login-view`, or any service source repository. `light-portal-install` consumes
+released images and released asset bundles.
 
 ## Runtime Shape
 
@@ -146,9 +148,13 @@ install.sh uninstall
 
 ## Static Asset Distribution
 
-The current `service-asset` GitHub repository is useful as a build artifact repository for developers, but it is not ideal as the long-term public CDN for local installers. Released static content and install scripts should move to Cloudflare R2 as the long-term artifact channel, with fixed archive objects, checksums, and rollback.
+The former build-artifact repository has been retired. Released static content
+and install scripts use Cloudflare R2 as the artifact channel, with fixed
+archive objects, checksums, and rollback.
 
-`update-asset.sh --upload-r2` currently uploads refreshed service assets to bucket `lightapi`. Directory assets are compressed before upload. The default object paths are:
+`update-asset.sh --upload-r2` stages refreshed release assets under
+`.release-state/assets` and uploads them to bucket `lightapi`. Directory assets
+are compressed before upload. The default object paths are:
 
 ```text
 hybrid-command.zip
@@ -170,7 +176,9 @@ docker-images.env
 
 The install repo should treat R2 as an artifact origin, not as the source of truth. Source of truth remains the service and UI repos plus the release pipeline. The release pipeline publishes immutable versioned objects to R2.
 
-Once the static bundles, scripts, generated manifests, and release asset publishing are fully moved to R2, the `service-asset` repository can be removed. During migration, it can remain as a staging or compatibility source until the install pipeline no longer depends on it.
+The static bundles, scripts, generated manifests, and release asset publishing
+are now fully served through R2; release generation uses only transient local
+staging under `.release-state/assets`.
 
 Current object layout:
 
@@ -238,10 +246,10 @@ The smoke test should run from an empty install directory and verify:
 - Use the local OAuth authorization code flow with `login-view`, matching `portal-config-loc/all-in-lt` and `portal-config-dev`.
 - Use the existing long-lived local demo tokens in the first version to keep the installer simple.
 - Move static content, install scripts, generated manifests, and release bundles to Cloudflare R2 for long-term flexibility.
-- Remove the `service-asset` repository after the R2-based release pipeline fully replaces it.
+- Keep release generation and deployment independent of artifact repositories.
 - Keep Docker Compose as the only container runtime dependency; use `curl` for R2 downloads, not AWS CLI.
 - Use fixed archive names for the current R2 object set until the release pipeline publishes a richer manifest automatically.
 
 ## Decision
 
-Create `light-portal-install` as the public local install repo with Docker Compose as the only container runtime dependency. Use the Rust `all-in-lt` service topology, including `light-agent` and the demo APIs, but package it as checked-in runtime config plus R2-downloaded service jars, SPA assets, `events.json`, and `docker-images.env`. Keep the local OAuth authorization code flow through `login-view` and use existing long-lived local demo tokens for the first version. Move static install artifacts from GitHub repo distribution to Cloudflare R2 behind a custom domain, download the fixed asset archives with `curl`, extract them with `unzip`, and remove `service-asset` after the R2 pipeline fully replaces it.
+Create `light-portal-install` as the public local install repo with Docker Compose as the only container runtime dependency. Use the Rust `all-in-lt` service topology, including `light-agent` and the demo APIs, but package it as checked-in runtime config plus R2-downloaded service jars, SPA assets, `events.json`, and `docker-images.env`. Keep the local OAuth authorization code flow through `login-view` and use existing long-lived local demo tokens for the first version. Publish static install artifacts to Cloudflare R2 behind a custom domain, download the fixed asset archives with `curl`, and extract them with `unzip`.
