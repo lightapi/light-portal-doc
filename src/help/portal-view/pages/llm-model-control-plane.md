@@ -56,7 +56,14 @@ Required create fields:
 - `outputTokenLimit`
 
 Optional fields include `modelVersion`, `modalities`, `operations`,
-`declaredCapabilities`, and `lifecycleStatus`.
+`declaredCapabilities`, `lifecycleStatus`, `categoryIds`, and `tagIds`.
+
+The Create and Update forms load active global and host-specific categories and
+tags whose entity type is `llm_model`. The selected identifiers are carried in
+the `LlmModelCreatedEvent` or `LlmModelUpdatedEvent`; the Portal projection
+updates `llm_model_t`, `entity_category_t`, and `entity_tag_t` in one database
+transaction. Taxonomy identifiers from another host, another entity type, or
+an inactive taxonomy row are rejected before an event is emitted.
 
 Create a catalog entry before creating a Registration that refers to its
 `modelId`.
@@ -198,7 +205,7 @@ Register and authorize these actions for the interactive page:
 
 | Page or tab | Query action | Command actions |
 | --- | --- | --- |
-| Catalog | `getLlmModelCatalog` | `createLlmModelCatalog`, `updateLlmModelCatalog`, `deleteLlmModelCatalog` |
+| Models | `getLlmModel` | `createLlmModel`, `updateLlmModel`, `deleteLlmModel` |
 | Registrations | `getLlmModelRegistration` | `createLlmModelRegistration`, `updateLlmModelRegistration`, `deleteLlmModelRegistration` |
 | Accounts | `getLlmProviderAccount` | `createLlmProviderAccount`, `updateLlmProviderAccount`, `deleteLlmProviderAccount` |
 | Deployments | `getLlmProviderDeployment` | `createLlmProviderDeployment`, `updateLlmProviderDeployment`, `deleteLlmProviderDeployment`, `validateLlmProviderDeployment`, `runLlmProviderConformance` |
