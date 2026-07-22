@@ -94,6 +94,7 @@
     - [Workflow Catalog](./help/portal-view/pages/workflow-catalog.md)
     - [Schema Catalog](./help/portal-view/pages/schema-catalog.md)
     - [LLM Model Control Plane](./help/portal-view/pages/llm-model-control-plane.md)
+    - [Create LLM Model](./help/portal-view/pages/create-llm-model.md)
     - [Skill Workspace](./help/portal-view/pages/skill-workspace.md)
     - [API Admin](./help/portal-view/pages/api-admin.md)
     - [API Detail](./help/portal-view/pages/api-detail.md)
