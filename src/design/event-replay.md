@@ -191,6 +191,15 @@ The validation registry is shared by command append, live projection, failure
 capture, planning, and replay. A handler must not interpret an event as one
 policy during live processing and another policy during replay.
 
+Every appended event records the exact registry and repair-schema version used
+to validate it. Later live projection, capture, planning, repair, and replay use
+that pinned version; a deployment may add a new version but must not remove a
+version while an event, open failure, repair, or plan references it. Unknown
+registry entries fail closed on portal/internal append. An external Kafka event
+with an unknown entry is captured as diagnostic, non-executable evidence rather
+than interpreted under the current default. This prevents a registry edit from
+retroactively changing the meaning of already-committed events.
+
 ### Projection handler contract
 
 Replayable projection handlers must:
@@ -202,8 +211,11 @@ Replayable projection handlers must:
   other non-transactional external side effect;
 - produce the same projection outcome in `LIVE` and `REPLAY` modes.
 
-An event whose handler cannot satisfy this contract belongs in
-`excludedEventTypes`.
+An unordered event whose handler cannot satisfy this contract belongs in
+`excludedEventTypes`. An aggregate- or graph-ordered handler cannot be excluded:
+doing so would create a projection gap that cannot be replayed or safely waived.
+Such a handler must be made transactionally idempotent, normally by moving its
+external effect behind an outbox, before it can carry ordering metadata.
 
 ## Replay Eligibility Policy
 
@@ -227,6 +239,11 @@ guard; it then derives `AGGREGATE_VERSION` without a dedicated allowlist entry.
 
 An exclusion is an exact event-type match. Unknown patterns, substrings, and
 wildcards are not accepted because they make policy review ambiguous.
+Configuration reload also rejects an exclusion whose registered policy is
+`GRAPH_ROOT` or `AGGREGATE_VERSION`. Registry validation rejects an ordered
+`NOT_REPLAYABLE` policy for the same reason. Exclusion is therefore available
+only for transaction-only or explicitly unordered events and cannot brick an
+ordered scope.
 
 ## Minimal Configuration
 
@@ -282,10 +299,11 @@ timestamp, and change evidence. Pausing:
 - does not delete or alter durable replay state;
 - does not require a service restart.
 
-Approved or already-scheduled requests remain durable while paused. An in-flight
-transaction finishes or rolls back under its existing database fence. Changing
-`enabled` back to `true` and pushing the configuration resumes worker claims and
-queued approved work. Removing gateway permission may prevent new operator
+Scheduled requests remain durable while paused; approved but unscheduled plans
+remain available only until their immutable expiry. An in-flight transaction
+finishes or rolls back under its existing database fence. Changing `enabled`
+back to `true` and pushing the configuration resumes worker claims and queued,
+non-expired work. Removing gateway permission may prevent new operator
 requests, but it is not a substitute for pausing an already-approved worker
 queue.
 
@@ -295,9 +313,13 @@ before every execute transition. The wake-up dispatcher and claimant read the
 current value before starting or claiming work rather than retaining only the
 startup snapshot. A transition from `false` to `true` triggers an immediate
 recovery scan for queued approved work. The effective execution state is
-exposed through health/status so an operator can verify that the push reached
-every replica. A multi-instance pause is complete only after all target
-instances report `enabled=false`.
+exposed through health/status together with the config-server version or
+generation, reload timestamp, and process instance ID. The deployment health
+aggregator reports the expected replicas, their effective values and
+generations, and whether they agree. A multi-instance pause is complete only
+when that single fleet view reports every expected command/query replica at the
+same pushed generation with `enabled=false`; missing or stale replicas keep the
+pause state unconfirmed.
 
 ## Shared Projection Transaction Executor
 
@@ -368,6 +390,13 @@ When a complete Kafka projection transaction fails:
 If canonical persistence fails, the source offset is not committed and Kafka
 redelivers the records. Capture is idempotent by content fingerprint.
 
+This is intentionally an at-least-once boundary across PostgreSQL persistence
+and Kafka offset commit, not a distributed transaction. PostgreSQL capture
+must commit first; Kafka may redeliver after a crash, and the deterministic
+fingerprint must collapse that delivery into the existing failure. Reversing
+or parallelizing this order is forbidden because it can lose the only durable
+replay payload.
+
 External Kafka producers that omit transaction count/order or required event
 metadata are rejected as executable replay candidates. The system does not
 guess transaction boundaries.
@@ -399,15 +428,31 @@ transaction identity, ordered event IDs, and ordered payload digests. A
 redelivery at a different source offset observes the same logical failure
 rather than creating another candidate.
 
-An ordered failure blocks new commands for the affected aggregate or graph
-scope until exact replay or repair restores projection continuity. This
-prevents later versions from accumulating behind a known poison event. Before
-classification, ordinary commands return `AGGREGATE_PROJECTION_BLOCKED` with a
-safe failure reference. Once a validated repair proposal classifies the failure
-as invalid data, they return `AGGREGATE_REPAIR_REQUIRED`; the operator uses the
-repair flow instead of resubmitting through the stale projection UI. Waiver may
-close the operator action for diagnostic or unordered failures, but it does not
-unblock an ordered scope whose projection metadata still has a gap.
+Once an ordered failure is canonically captured, new commands for the affected
+aggregate or graph scope are blocked until exact replay or repair restores
+projection continuity. This bounds further accumulation behind a known poison
+event, but it cannot guarantee that `N+1` is never appended: projection and
+capture are asynchronous, so commands may append during the interval between
+the original append and committed failure capture. The block is therefore a
+prompt, eventually-visible guard after capture, not a synchronous projection
+cursor.
+
+Before classification, blocked commands return
+`AGGREGATE_PROJECTION_BLOCKED` with a safe failure reference. Once a validated
+repair proposal classifies the failure as invalid data, they return
+`AGGREGATE_REPAIR_REQUIRED`; the operator uses the repair flow instead of
+resubmitting through the stale projection UI. Waiver may close the operator
+action for diagnostic or unordered failures, but it does not unblock an
+ordered scope whose projection metadata still has a gap.
+
+This is a deliberate consistency-over-availability decision. One failed
+ordered transaction can deny commands for that scope until a fix and exact
+replay or an approved repair succeeds. There is no generic break-glass that
+advances ordering metadata without applying the missing projection. Health and
+alerts report blocked-scope count, age, host, projection, and safe failure ID;
+crossing the reviewed duration threshold is an operator incident. The existing
+barrier release can recover worker isolation but cannot pretend an ordered gap
+is resolved or make later versions safe.
 
 `notification_t` is the latest user-facing status, not the replay ledger. The
 candidate APIs read canonical failure tables only.
@@ -417,16 +462,26 @@ candidate APIs read canonical failure tables only.
 Application-level encryption is not required for replay correctness and is not
 mandatory in the early-development design.
 
-PostgreSQL deployments may retain a durable reference to the original
-`event_store_t` or `outbox_message_t` payload, or copy the original payload into
-the canonical event member. Kafka deployments persist the original value in
-the canonical member because Kafka retention cannot be assumed to preserve the
-only replay source.
+Canonical and repaired payloads are stored as immutable bytes (`BYTEA` for the
+plain database representation, or ciphertext/object bytes for optional secure
+representations). The SHA-256 digest is computed over exactly those stored
+bytes. Replay verifies and parses those same bytes; it never recomputes a digest
+from a JSONB value or re-serialized object.
+
+`event_store_t` and `outbox_message_t` currently store JSONB, which normalizes
+representation and is not a stable raw-byte archive. A canonical failure may
+therefore reference those rows for identity and audit, but not as the sole
+digest-bound payload unless a future schema also stores the versioned canonical
+bytes. For current PostgreSQL capture, serialize through the versioned canonical
+JSON encoder once and copy the resulting bytes into the canonical member before
+source progress commits. Kafka capture stores the received value bytes. Repair
+creation likewise materializes and stores corrected canonical bytes once.
 
 In either case:
 
 - the payload is immutable after capture;
-- a SHA-256 digest is stored and verified before execution;
+- a SHA-256 digest over the stored bytes is stored and verified before
+  execution;
 - the UI, list APIs, logs, metrics, and audit records never expose the payload,
   Kafka key, headers, or event JSON;
 - database permissions restrict direct access;
@@ -477,6 +532,15 @@ schema-approved business fields, applies field-level redaction, and revalidates
 the complete corrected transaction with the same schema and domain validators
 used by command append. Envelope, identity, authorization, and ordering fields
 are server controlled.
+
+Every event policy explicitly declares one repair disposition:
+`SCHEMA_REPAIR`, `FIX_AND_EXACT_REPLAY_ONLY`, or `NOT_REPAIRABLE_UNORDERED`.
+`SCHEMA_REPAIR` names a versioned repair schema and the registry coverage gate
+requires that schema to exist. `FIX_AND_EXACT_REPLAY_ONLY` is allowed for an
+ordered event only as an explicit decision: invalid external data keeps the
+scope blocked until a deployment makes the original event processable or adds
+a new repair-schema version. `NOT_REPAIRABLE_UNORDERED` cannot be used for an
+ordered policy. There is no implicit empty repair schema.
 
 The proposal stores both payload digests and a bounded audit summary of changed
 field names. Payload values do not appear in audit messages, logs, metrics, or
@@ -539,6 +603,12 @@ Execution rejects a stale plan when failure content, dependency state,
 projection versions, repair approval, schema version, or payload digests change
 after planning. The planner cannot accept inline corrected data.
 
+Plan expiry continues after approval. `APPROVED` may transition to `EXPIRED`,
+and execute compares the current time with the immutable `expiresAt` before
+scheduling. Pausing execution does not extend the TTL; an expired approved plan
+requires a new plan and approval instead of executing unexpectedly after a long
+pause.
+
 ## Approval and Authorization
 
 Light Gateway is the role-based authorization boundary for all replay service
@@ -551,6 +621,11 @@ The minimum authorization model is one authorized role and two distinct users:
 - user A creates the replay plan;
 - user B, authorized for the same host, approves the exact plan hash;
 - an authorized user requests execution after approval.
+
+The early-development deployment therefore assumes that two test identities
+can be created in the host. There is no single-user or development-mode bypass:
+such a bypass would make the same artifact behave differently when promoted and
+would weaken the audit evidence this feature exists to provide.
 
 Existing `admin` or `host-admin` roles may be assigned to every replay endpoint,
 or a deployment may create one dedicated role. `host-admin` remains host
@@ -582,6 +657,25 @@ Replay remains in the existing `user-query` and `user-command` services:
 
 All request bodies are host-scoped and bounded. Host and actor identity come
 from trusted token/audit context, not caller-supplied authorization fields.
+The approve-repair command accepts `APPROVE` or `REJECT`. `CANCELLED` is a
+system transition when the target failure reaches another terminal outcome;
+there is no separate repair-cancel endpoint, so the public contract remains
+exactly twelve endpoints.
+
+Waiver remains a two-person operation without adding a thirteenth endpoint.
+The requester first calls `waiveEventReplayFailure` with the exact failure IDs;
+the response is `AWAITING_APPROVAL` and includes a `waiverRequestId` plus the
+computed downstream impact. A different user approves by calling the same
+endpoint with that `waiverRequestId`, the exact failure IDs, and the expected
+downstream blocked failure IDs. Neither step advances projection metadata.
+
+V2 inheritance is closed, not catch-all. Only sections named in
+`inheritsFrom.inheritedSections` carry forward from v1. The shared LIVE/REPLAY
+execution modes, validation-mode semantics, Kafka DLQ evidence contract,
+replay policies, and failure/barrier/audit state remain inherited. V1
+`featureGates`, mandatory `encryption`, required `objectStore`, operator-facing
+`limits`, and fixed `retentionDays` are explicitly superseded and must not be
+merged into v2.
 
 ## Isolation and Execution
 
@@ -593,6 +687,15 @@ Preferred barriers are:
 - `AGGREGATE` for aggregate-version events;
 - `TRANSACTION_ONLY` isolation when the transaction has no stronger ordering
   scope.
+
+A complete transaction may touch several aggregates or graph roots. Planning
+derives the union of every member's ordering scopes, checks dependency
+continuity for each scope, sorts the lock keys canonically, and acquires all
+scope locks before executing any member. A gap or exclusion in one scope makes
+the whole transaction non-executable; replay never applies the transaction to
+only the unaffected scopes. Live work intersecting any member scope is deferred
+as the same complete transaction. Canonical lock ordering prevents two
+cross-scope transactions from deadlocking each other.
 
 The worker installs a fenced barrier, waits for current work in that scope to
 finish, and then applies the approved items through the shared executor. Live
@@ -626,6 +729,15 @@ that claims durable requests through the existing `SKIP LOCKED`, fencing, and
 lease protocol. Several replicas may wake for the same notification, but only
 one can claim a request.
 
+`LISTEN` requires session affinity. The listener connection must reach
+PostgreSQL directly or through a session-pooling endpoint; PgBouncer transaction
+or statement pooling is unsupported for this connection even when ordinary
+queries use it. Startup sends a uniquely identified self-test notification and
+requires the listener to observe it within a bounded interval. Failure marks
+listener health degraded and reports the connection/pool mode; the 60-second
+scan preserves correctness but must not mask a permanently broken notification
+path.
+
 PostgreSQL notifications are not durable. On startup, after listener reconnect,
 and once every 60 seconds while execution is enabled, each replica performs a
 recovery scan for an executable request. The 60-second interval is a reviewed
@@ -648,7 +760,7 @@ PLANNING -> READY -> AWAITING_APPROVAL -> APPROVED
          -> INSTALLING_BARRIER -> RUNNING -> SUCCEEDED
                                         \-> FAILED
 READY/AWAITING_APPROVAL/APPROVED -> CANCELLED
-READY/AWAITING_APPROVAL -> EXPIRED
+READY/AWAITING_APPROVAL/APPROVED -> EXPIRED
 ```
 
 Attempts are append-only. Success resolves the canonical failure in the same
@@ -695,10 +807,11 @@ schema.
 - **External Kafka transaction is incomplete:** do not create an executable
   candidate and do not commit the source offset when canonical evidence cannot
   be persisted safely.
-- **Excluded event type:** retain diagnostic failure metadata and report
-  `EVENT_NOT_REPLAYABLE` during planning.
+- **Excluded unordered event type:** retain diagnostic failure metadata and
+  report `EVENT_NOT_REPLAYABLE` during planning. Reject ordered exclusions at
+  policy/configuration validation.
 - **Payload missing or digest mismatch:** reject planning or execution with
-  `PAYLOAD_UNAVAILABLE` or `PAYLOAD_MISMATCH`.
+  `PAYLOAD_UNAVAILABLE` or `PAYLOAD_DIGEST_MISMATCH`.
 - **Dependency gap:** report the exact missing aggregate version, graph
   revision, or transaction and keep the plan non-executable.
 - **Worker crashes before commit:** database rollback leaves the item pending;
@@ -746,6 +859,9 @@ Recommended bounded-cardinality metrics are:
 - replay transaction and event counts;
 - planning, approval-wait, execution, and barrier duration;
 - stale plans, dependency gaps, excluded events, and payload mismatches;
+- blocked ordered scopes by age bucket and safe failure code;
+- capture rate, stored payload bytes, capacity-watermark state, and source
+  backpressure activations;
 - active barriers, deferred transactions, quarantined scopes, and abandoned
   attempts;
 - worker heartbeat and claim failures;
@@ -755,6 +871,14 @@ Recommended bounded-cardinality metrics are:
 Logs include request ID, failure ID, projection, consumer group, attempt,
 counts, and safe result code. They exclude payloads and unbounded exception
 messages.
+
+Always-on capture uses reviewed internal soft/hard capacity defaults even
+though they are not development-facing configuration. A failure storm crossing
+the soft threshold raises health/alerts. At the hard threshold, the affected
+source stops before advancing past a failure whose replay bytes cannot be
+stored; it does not discard payloads or silently downgrade to legacy DLQ-only
+behavior. Blocked-scope age and failure-rate alerts make the resulting
+availability impact visible during a bad deployment.
 
 ## Deployment Behavior
 
@@ -767,6 +891,17 @@ schema and updated services are present:
 3. `hybrid-command` accepts plan and state-transition commands;
 4. new failed transactions appear in Event Admin;
 5. gateway endpoint roles determine who may operate them.
+
+`user-command` and `user-query` are source repositories/modules;
+`hybrid-command` and `hybrid-query` are their deployed service bundles. This
+document uses the module names for code ownership and the hybrid names for
+runtime instances.
+
+Deployment order remains schema, shared `light-portal` artifacts,
+`hybrid-command`, then `hybrid-query`. Command-side schema validation is active
+when command deploys, but the open-failure scope block is inert until the query
+deployment is capturing canonical failures. Operators must not claim the block
+is fleet-effective until capture health is green on every query replica.
 
 Repair tables are required replay history, not an optional UI feature. Startup
 must verify them together with the canonical failure and replay tables.
@@ -802,6 +937,15 @@ separately.
 - Prove `event_store_t` and `outbox_message_t` commit atomically.
 - Prove a newly registered projection handler declares or derives a replay
   policy and satisfies the idempotency contract.
+- Prove every policy declares a repair disposition and every `SCHEMA_REPAIR`
+  policy resolves to a versioned schema.
+- Prove a pinned registry/schema version remains usable for an already-appended
+  event after a newer version is deployed, and referenced versions cannot be
+  removed.
+- Reject ordered `NOT_REPLAYABLE` policies and configuration that excludes a
+  graph- or aggregate-ordered event.
+- Smoke-test registry misconfiguration and prove portal/internal appends fail
+  closed without reserving offsets or writing partial rows.
 
 ### Failure capture
 
@@ -810,6 +954,11 @@ separately.
 - Fail canonical persistence and prove PostgreSQL or Kafka source progress does
   not advance.
 - Redeliver the same transaction and verify idempotent failure observation.
+- Crash after PostgreSQL Kafka-failure capture commits but before Kafka offset
+  commit; verify redelivery resolves to the same fingerprint and failure row.
+- Round-trip equivalent JSON through JSONB with different key ordering and
+  whitespace; verify replay still hashes the unchanged canonical `BYTEA`, not
+  the re-serialized JSONB.
 - Verify historical legacy DLQ rows are ignored by candidate queries.
 
 ### Policy and planning
@@ -817,18 +966,23 @@ separately.
 - Verify graph events derive `GRAPH_ROOT`.
 - Verify events such as `UserDeletedEvent` derive `AGGREGATE_VERSION`.
 - Verify ordinary complete unordered transactions derive `TRANSACTION_ONLY`.
-- Verify an exact excluded event type is rejected as `EVENT_NOT_REPLAYABLE`.
+- Verify an exact excluded unordered event type is rejected as
+  `EVENT_NOT_REPLAYABLE`, and ordered exclusions are rejected at reload.
 - Select one member and verify the complete transaction is planned.
 - Verify dependency closure, deterministic order, stale-plan rejection, and
   payload-digest enforcement.
+- Approve a plan, let its immutable TTL expire, and verify execute rejects it;
+  pausing execution must not extend the TTL.
 - Verify inline corrected data is rejected and only an approved immutable
   repair ID can change the materialized replay input.
 
 ### Repair
 
 - Fail an aggregate event at version `N` because of invalid data while its
-  projection remains at `N-1`; verify ordinary submission is blocked with
-  `AGGREGATE_REPAIR_REQUIRED` instead of appending `N+1`.
+  projection remains at `N-1`; after canonical capture commits, verify ordinary
+  submission is blocked with `AGGREGATE_REPAIR_REQUIRED`. Separately race a
+  command with asynchronous capture and document that an `N+1` append may win
+  before the block becomes visible.
 - Verify a repair cannot change envelope, identity, transaction membership,
   aggregate version, graph revision, or fields absent from the repair schema.
 - Verify original and corrected digests, changed field names, reason,
@@ -850,6 +1004,9 @@ separately.
 - Verify requester/approver separation and plan-hash binding.
 - Verify unrelated scopes continue while a graph or aggregate barrier is
   active.
+- Replay a complete transaction spanning multiple aggregate/root scopes;
+  verify canonical lock ordering and that a gap in one scope prevents every
+  member from executing.
 - Verify deferred work drains in source order.
 - Kill a worker before and after commit and prove one committed outcome.
 - Verify an execute commit emits `event_replay_ready`, wakes the listener, and
@@ -861,12 +1018,19 @@ separately.
 - Leave the system idle and verify there is no one-second claim loop and no more
   than one scheduled recovery query per minute per replica.
 - Push `event-replay.enabled=false` and verify every command/query instance
-  reports the effective value without restart.
+  reports the effective value, config generation, reload timestamp, and
+  instance ID without restart; verify the fleet aggregator refuses to confirm
+  pause while a replica is missing or stale.
 - Verify the execute endpoint returns `REPLAY_EXECUTION_PAUSED` and workers stop
   new claims without stopping capture, planning, approval, status, or an
   in-flight transaction.
 - Push `event-replay.enabled=true` and verify queued approved work resumes
   immediately without waiting for the periodic scan or duplicating an attempt.
+- Run the listener through a direct/session-pooled connection and verify the
+  startup self-test. Route it through transaction pooling and verify health is
+  degraded while the recovery scan still preserves correctness.
+- Cross the internal capture soft and hard watermarks; verify alerting and that
+  source progress stops before an uncaptured replay payload is lost.
 
 ### Security and UI
 
@@ -886,7 +1050,7 @@ core replay contract:
 - application-level envelope encryption and key rotation;
 - immutable object storage and payload lifecycle policies;
 - configurable retention and legal holds;
-- failure-storm capacity controls;
+- operator tuning of the mandatory baseline failure-storm capacity controls;
 - staged rollout and canary scopes for an existing production deployment;
 - legacy migration tooling if historical replay becomes a requirement;
 - rollback dry-run support for handlers proven safe for transactional dry run;
