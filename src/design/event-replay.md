@@ -463,10 +463,9 @@ Application-level encryption is not required for replay correctness and is not
 mandatory in the early-development design.
 
 Canonical and repaired payloads are stored as immutable bytes (`BYTEA` for the
-plain database representation, or ciphertext/object bytes for optional secure
-representations). The SHA-256 digest is computed over exactly those stored
-bytes. Replay verifies and parses those same bytes; it never recomputes a digest
-from a JSONB value or re-serialized object.
+plain database representation). The SHA-256 content digest is computed over
+exactly those stored canonical bytes. Replay verifies and parses those same
+bytes; it never recomputes a digest from a JSONB value or re-serialized object.
 
 `event_store_t` and `outbox_message_t` currently store JSONB, which normalizes
 representation and is not a stable raw-byte archive. A canonical failure may
@@ -484,7 +483,10 @@ In either case:
   execution;
 - the UI, list APIs, logs, metrics, and audit records never expose the payload,
   Kafka key, headers, or event JSON;
-- database permissions restrict direct access;
+- the baseline schema revokes payload-column access from `PUBLIC`; production
+  deployments use dedicated non-owner projection/replay roles with explicit
+  column-scoped grants because owners and explicit table grants bypass that
+  baseline;
 - normal database and volume encryption at rest protect the development
   deployment.
 
@@ -492,7 +494,10 @@ Optional envelope encryption or object storage may be added for production
 when retention, PII, regulatory, or storage requirements justify it. Enabling
 that option must not change planning, fingerprints, ordering, or projection
 behavior, and its key configuration must not be required for ordinary
-development startup.
+development startup. A secure representation must retain the stable digest of
+the canonical plaintext bytes separately from any digest of randomized
+ciphertext or object-storage bytes; ciphertext digests are storage-integrity
+evidence and must never define the corrected transaction fingerprint.
 
 ## Repair Model
 
@@ -843,8 +848,9 @@ schema.
   caller-controlled envelope, tenant, identity, or ordering metadata.
 - Payloads, keys, headers, event JSON, and direct storage locations never
   appear in API lists, browser state, logs, metrics, or audit details.
-- Database permissions restrict canonical payload access to the projection and
-  replay services.
+- Dedicated non-owner database roles and column-scoped grants restrict canonical
+  payload access to the projection and replay services; revoking `PUBLIC` alone
+  is only the schema baseline.
 - Application-level encryption is an optional production hardening control,
   not a prerequisite for development replay.
 
