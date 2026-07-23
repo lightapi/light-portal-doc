@@ -311,9 +311,14 @@ queue.
 the cached `event-replay` document, and command handlers read the current value
 before every execute transition. The wake-up dispatcher and claimant read the
 current value before starting or claiming work rather than retaining only the
-startup snapshot. A transition from `false` to `true` triggers an immediate
-recovery scan for queued approved work. The effective execution state is
-exposed through health/status together with the config-server version or
+startup snapshot. Like `AuditConfig`, it compares the cached configuration-map
+identity on each `load()`/`current()` access and rebuilds its immutable snapshot
+after `ConfigReloadHandler` clears the cache. No replay-specific callback or
+light-4j framework change is required. A transition from `false` to `true`
+schedules a drain when it is observed by the next notification, command/status
+read, or periodic recovery scan. With no other activity, queued approved work
+resumes within the 60-second recovery interval. The effective execution state
+is exposed through health/status together with the config-server version or
 generation, reload timestamp, and process instance ID. The deployment health
 aggregator reports the expected replicas, their effective values and
 generations, and whether they agree. A multi-instance pause is complete only
@@ -743,14 +748,15 @@ PostgreSQL notification is delivered only after commit, so a listener cannot
 wake for work that later rolls back. The notification is only a wake-up hint;
 the durable request row remains the source of truth.
 
-Config reload has its own active callback into the replay dispatcher. That
-callback reloads `EventReplayConfig` and schedules a drain on a
-`false -> true` transition. It must not rely on the blocked PostgreSQL listener
-or claimant to call `current()`: once the one-second R2 recovery loop is
-removed, neither may observe a config push until an independent event arrives.
-The `light-4j` config-reload handler invokes the registered module's optional
-public static `reload()` callback immediately after clearing its config cache;
-modules without that callback retain lazy reload behavior.
+Replay configuration follows the standard light-4j lazy reload contract used by
+`AuditConfig`: `ConfigReloadHandler` clears the registered module's cached
+document, and the next `EventReplayConfig.current()` observes the new map
+identity and rebuilds the configuration. A replay notification observes the new
+value immediately through `requestDrain`; when no notification or request
+arrives, the 60-second recovery scan is the bounded config-observation path.
+An observed `false -> true` transition schedules a coalesced drain. This avoids
+both a one-second claim loop and a replay-specific change to the shared
+light-4j config-reload framework.
 
 Each `hybrid-query` replica uses a lightweight virtual thread blocked on
 `LISTEN event_replay_ready`. It does not run a one-second claim loop. The
@@ -788,12 +794,11 @@ query per minute while preserving immediate normal execution.
 
 While `event-replay.enabled=false`, notifications may still wake the listener,
 but `requestDrain` intentionally drops those wake-up hints and no drain task may
-claim work. Durable request rows are not dropped. Changing it back to `true`
-triggers an
-immediate recovery scan, so queued approved work does not wait for the periodic
-fallback. Kafka deployments use the same PostgreSQL replay control plane and
-therefore use this wake-up mechanism as well; it is independent of the live
-Pub/Sub source.
+claim work. Durable request rows are not dropped. Changing it back to `true` is
+observed by the next notification or other config access, or within 60 seconds
+by the periodic recovery scan. Kafka deployments use the same PostgreSQL replay
+control plane and therefore use this wake-up mechanism as well; it is
+independent of the live Pub/Sub source.
 
 ### Replay worker operational status
 
