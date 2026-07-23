@@ -708,6 +708,24 @@ transactions intersecting the barrier are deferred as complete transactions;
 unrelated scopes continue normally. After repair, deferred transactions drain
 in source order before the barrier is removed.
 
+### R2 transitional plain-payload limitation
+
+The preceding paragraph is the target isolation contract, but R2 does not yet
+fully provide it for the default `DATABASE_PLAIN` codec. The legacy deferred
+table stores only encrypted/object representations. R2 therefore returns
+`PAUSED` when a live transaction intersects an active replay barrier under the
+plain codec, holds the source position, and retries after barrier release. This
+preserves ordering and prevents payload loss, but it creates a temporary
+head-of-line stall: unrelated transactions sequenced later on that source do
+not advance even when their scopes do not intersect the barrier. The legacy
+encrypted codec still uses durable `DEFERRED` work and can advance the source.
+
+This limitation is accepted only for the early R2 development phase. Repair
+execution adds an exact-byte plain deferred representation, digest and
+retention rules, then restores `DEFERRED` behavior before cross-repository
+qualification. Tests must pin both the transitional behavior and the restored
+target so the general goal that unrelated scopes continue is not weakened.
+
 Replay requests use row locks, monotonic fencing tokens, leases, and advisory
 scope locks. A lease provides liveness and abandoned-work recovery; it never
 overrides a database lock or permits two workers to execute the same item.
@@ -724,6 +742,12 @@ execute command calls `pg_notify('event_replay_ready', replayRequestId)`. A
 PostgreSQL notification is delivered only after commit, so a listener cannot
 wake for work that later rolls back. The notification is only a wake-up hint;
 the durable request row remains the source of truth.
+
+Config reload has its own active callback into the replay dispatcher. That
+callback reloads `EventReplayConfig` and schedules a drain on a
+`false -> true` transition. It must not rely on the blocked PostgreSQL listener
+or claimant to call `current()`: once the one-second R2 recovery loop is
+removed, neither may observe a config push until an independent event arrives.
 
 Each `hybrid-query` replica uses a lightweight virtual thread blocked on
 `LISTEN event_replay_ready`. It does not run a one-second claim loop. The
@@ -1005,6 +1029,10 @@ separately.
 
 ### Execution and concurrency
 
+- In the R2 compatibility window, verify an intersecting barrier produces
+  `PAUSED` for `DATABASE_PLAIN` and `DEFERRED` for the legacy encrypted codec;
+  do not claim unrelated-scope concurrency for the plain path until its deferred
+  representation lands.
 - Process the same transaction through `LIVE` and `REPLAY` and compare every
   projection and ordering row.
 - Verify requester/approver separation and plan-hash binding.
