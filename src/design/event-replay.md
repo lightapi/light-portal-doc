@@ -219,6 +219,48 @@ external effect behind an outbox, before it can carry ordering metadata.
 
 ## Replay Eligibility Policy
 
+### Shared append-validation registry
+
+Every portal or internal append is validated against the exact event type and
+event schema version in `event-replay-policy-v2`. The registry declares the
+transaction/order policy, dependency metadata, data validator, replay policy,
+repair disposition and optional repair-schema version. It is code-owned and
+versioned; it is not another operator switch in `event-replay.yml`.
+
+The common append boundary validates the complete transaction before reserving
+an outbox offset or inserting event, outbox, or notification rows. Interactive
+commands, graph/clone operations, global snapshot imports, and scheduler
+commands all use this boundary. A successful append pins `eventschema` and
+`replaypolicy` CloudEvent extensions, plus `repairschema` when applicable, and
+persists those versions in `event_store_t` and `outbox_message_t`. Canonical
+failure capture copies the pins into the failure transaction and member rows so
+planning and replay load the referenced version instead of reinterpreting an
+old event with the latest registry.
+
+Unknown portal/internal event types, malformed transactions, mixed host/user
+identity, non-contiguous member order, invalid aggregate or graph metadata, and
+schema-invalid data fail closed and commit no append-side writes. An unknown or
+structurally invalid external Kafka event can be retained as diagnostic failure
+evidence, but it is marked non-executable and cannot become a replay candidate.
+
+`PORTAL_OBJECT_V1` is the shared baseline validator for current event schema
+version 1: it proves the CloudEvent data is a parseable JSON object and combines
+that with the registered envelope, identity, ordering, dependency, and size
+checks. It does not duplicate every command handler's required-field and domain
+rules. Those rules still run before ordinary command event construction. Any
+event declared `SCHEMA_REPAIR` must instead name a concrete typed repair/data
+schema; R9 qualification rejects a repairable event that still relies only on
+the structural baseline. This distinction prevents the baseline name from being
+misread as complete per-event domain validation.
+
+The Kafka consumer invokes the same external validation before live projection.
+A registered, valid portal event remains executable. A structurally valid but
+unknown or excluded event is captured as canonical diagnostic evidence whose
+policy rejects planning. A malformed member makes the complete transaction
+non-executable; it is recorded through the bounded failure notification and
+configured legacy diagnostic path without creating a canonical replay
+candidate, and its offset may then advance rather than poison-loop forever.
+
 The default policy is derived from validated metadata:
 
 | Event evidence | Derived policy | Behavior |
@@ -458,6 +500,17 @@ alerts report blocked-scope count, age, host, projection, and safe failure ID;
 crossing the reviewed duration threshold is an operator incident. The existing
 barrier release can recover worker isolation but cannot pretend an ordered gap
 is resolved or make later versions safe.
+
+The command guard reads normalized `OPEN` rows in
+`event_failure_scope_t` using the partial command-path index. It matches host
+plus `AGGREGATE` (`aggregateType:aggregateId`) or `GRAPH_ROOT` scope, so another
+host, aggregate, or root continues normally. Before a repair proposal it returns
+`AGGREGATE_PROJECTION_BLOCKED`; once a validated proposal is awaiting approval
+or approved it returns `AGGREGATE_REPAIR_REQUIRED`. The administrative replay
+status reports the blocked-scope count, oldest blocked timestamp and age. The
+reviewed code default is 900 seconds; an oldest blocked scope at or above that
+age sets `blockedScopeIncident=true`. This threshold is intentionally an
+internal runtime default, not additional development configuration.
 
 `notification_t` is the latest user-facing status, not the replay ledger. The
 candidate APIs read canonical failure tables only.
