@@ -1034,6 +1034,13 @@ event-ID-keyed `PER_EVENT_FIELDS`. The server still validates the pinned event
 policy, schema version, change shape, and every field; the UI schema is not a
 security boundary.
 
+The form identifies which event type and how many transaction members are
+editable. All other members remain byte-identical while still participating in
+the complete transaction replay. If more than one form definition matches a
+mixed transaction, Event Admin fails closed instead of choosing by catalog
+order; the operator must use a server-supported unambiguous repair schema or
+fix the processor and replay the original transaction.
+
 After creation, the browser discards replacement values and displays metadata
 only: repair state, changed field names, original/corrected transaction
 fingerprints, per-member original/corrected digests, reason, requester,
