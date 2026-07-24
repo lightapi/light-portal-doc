@@ -814,8 +814,8 @@ in source order before the barrier is removed.
 R6 closes the temporary R2 plain-codec limitation. The deferred table now has
 an exact-byte `payload_plain` representation whose SHA-256 digest and byte count
 are database constrained. A live transaction intersecting an active barrier is
-durably recorded as `DEFERRED` before its source position advances, whether the
-runtime uses `DATABASE_PLAIN` or the legacy encrypted codec. Unrelated later
+durably recorded as `DEFERRED` in the supported `DATABASE_PLAIN`
+representation before its source position advances. Unrelated later
 transactions can therefore continue, while deferred work still drains in
 source order before barrier release. Deferred bytes are immutable and direct
 column access is restricted in the same way as canonical plain failure bytes.
@@ -1201,6 +1201,32 @@ There is no rollout table, rollout stage, source/host allowlist, legacy
 backfill job, or requirement to enable capture, planning, and execution
 separately.
 
+The R8 convergence migration removes the former rollout-audit and legacy
+backfill checkpoint/issue tables from upgraded databases and fresh-install
+DDL. The old dated Phase 11 migration remains in source as historical evidence
+only; it is followed by the repeatable R8 removal migration and is not a
+supported runtime or installation surface. The compiled runtime likewise has
+no backfill entry point, rollout model, change-ticket check, PKCS12 key
+provider, encrypted payload codec, object-store client, or configurable worker
+identity. Existing encrypted/object payload columns remain schema history, but
+the runtime accepts only exact-byte `DATABASE_PLAIN` payloads. Those columns
+are retained solely as a non-destructive upgrade and rollback boundary; they
+are not a reserved or advertised future storage mode, and rows using
+`DATABASE` or `OBJECT` are not executable by the R8 runtime. During R9,
+deployment qualification must count every historical non-plain row. A later
+destructive migration may remove the columns and dead constraint branches only
+after that count is zero across every deployment and the pre-R8 rollback window
+has closed.
+
+External Kafka DLQ compatibility remains available independently of replay
+execution. Kafka-source failures still publish through the normally configured
+Kafka producer to the code-owned topic template, retry, age, and acknowledgement
+defaults in `EventReplayRuntimePolicy.KafkaDlq`; no retired replay rollout,
+encryption, or object-store property controls it. PostgreSQL `dead_letter_queue`
+diagnostics and notification status also remain. The disabled durable external
+publication-outbox experiment is not required for canonical replay correctness;
+canonical capture remains authoritative.
+
 ## Validation Plan
 
 ### Append validation
@@ -1276,10 +1302,8 @@ separately.
 
 ### Execution and concurrency
 
-- In the R2 compatibility window, verify an intersecting barrier produces
-  `PAUSED` for `DATABASE_PLAIN` and `DEFERRED` for the legacy encrypted codec;
-  do not claim unrelated-scope concurrency for the plain path until its deferred
-  representation lands.
+- Verify an intersecting barrier is durably `DEFERRED` with exact plain bytes
+  before source progress and drains in source order after barrier release.
 - Process the same transaction through `LIVE` and `REPLAY` and compare every
   projection and ordering row.
 - Verify requester/approver separation and plan-hash binding.
