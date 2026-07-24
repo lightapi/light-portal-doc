@@ -596,6 +596,26 @@ the complete corrected transaction with the same schema and domain validators
 used by command append. Envelope, identity, authorization, and ordering fields
 are server controlled.
 
+The repair command requires an explicit `changeShape` discriminator. With
+`SINGLE_EVENT_FIELDS`, `changes` is `{field: value}` and the complete
+transaction must have exactly one member for the requested repair schema. With
+`PER_EVENT_FIELDS`, `changes` is keyed by immutable event ID and each value is
+that member's typed field object. The server never infers event scoping from
+whether a business-field value happens to be an object. This is not a raw JSON
+editor: every event ID must belong to the target transaction, every field must
+be declared by the pinned repair schema, and the server reconstructs the
+complete CloudEvent from its immutable canonical envelope. The metadata query
+returns event IDs, ordinals, digests, changed field names, actors, and lifecycle
+timestamps, but no original or corrected payload values.
+
+R5 delivers the complete persistence, fingerprint, approval, and API framework,
+but its only executable repair-schema implementation is the isolated contract
+fixture (`event-replay-contract-fixture-repair-v1`). No production portal event
+is repairable merely because this framework exists. Concrete per-event typed
+schemas and validators are added to the versioned registry and proven through
+the UI/API flow by the R9 qualification gate; until then, non-fixture schema
+requests fail closed with `REPAIR_SCHEMA_VALIDATION_FAILED`.
+
 Every event policy explicitly declares one repair disposition:
 `SCHEMA_REPAIR`, `FIX_AND_EXACT_REPLAY_ONLY`, or `NOT_REPAIRABLE_UNORDERED`.
 `SCHEMA_REPAIR` names a versioned repair schema and the registry coverage gate
@@ -609,12 +629,27 @@ The proposal stores both payload digests and a bounded audit summary of changed
 field names. Payload values do not appear in audit messages, logs, metrics, or
 ordinary replay APIs. The requester cannot approve the repair.
 
+Approval and rejection use one command endpoint with an explicit `APPROVE` or
+`REJECT` decision and an expected corrected-transaction fingerprint. The
+provider locks the immutable proposal and performs a compare-and-set from
+`AWAITING_APPROVAL`; approval records the independent reviewer, while rejection
+is terminal. There is no caller cancellation endpoint. A waiver or other valid
+terminal resolution cancels any `AWAITING_APPROVAL` or `APPROVED` repair in the
+same database transaction, and later repair reads reconcile a proposal if they
+observe that its target failure is already terminal.
+
 ### Repair planning and execution
 
 An approved repair is input to the planner, not output from it. A repair plan
 binds the repair ID, approval, original fingerprint, corrected fingerprint,
 schema version, dependency closure, and projection preconditions into the plan
 hash. Any change makes the plan stale.
+
+The R5 `loadApproved` result is a verified snapshot for planning integration,
+not execution authority. R6 execution must lock the repair and target failure
+in the canonical failure-then-repair order, recheck both lifecycle states, and
+reverify original/corrected fingerprints and stored digests in the execution
+transaction before applying corrected bytes.
 
 The replay worker installs the normal scope barrier and materializes the
 corrected transaction using the original immutable envelope plus the approved
