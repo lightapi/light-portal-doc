@@ -489,8 +489,9 @@ Before classification, blocked commands return
 repair proposal classifies the failure as invalid data, they return
 `AGGREGATE_REPAIR_REQUIRED`; the operator uses the repair flow instead of
 resubmitting through the stale projection UI. Waiver may close the operator
-action for diagnostic or unordered failures, but it does not unblock an
-ordered scope whose projection metadata still has a gap.
+action for diagnostic or unordered failures. A failure with an open
+`AGGREGATE` or `GRAPH_ROOT` scope is rejected with `INVALID_REPLAY_STATE`; it
+must be exact-replayed or repaired so the ordered projection gap is closed.
 
 This is a deliberate consistency-over-availability decision. One failed
 ordered transaction can deny commands for that scope until a fix and exact
@@ -671,6 +672,17 @@ approved repair record and verify both fingerprints. A deployment that loses
 the repair tables cannot deterministically rebuild repaired projections and
 must fail closed rather than fall back to the poison payload.
 
+The shared canonical repair resolver accepts both the initial `APPROVED`
+materialization and an `APPLIED` materialization bound by
+`resolved_by_repair_id`. Exact replay of an already repaired failure binds the
+applied repair ID and fingerprints into a new immutable plan, revalidates the
+original and corrected digests under the normal execution locks, and leaves the
+terminal repair/failure lifecycle unchanged after projection. Original failure
+members referenced by an applied repair are exempt from payload and failure
+metadata retention so unchanged transaction members remain available to this
+resolver. A future rebuild must call this same resolver rather than create a
+parallel correction mechanism.
+
 ## Planning
 
 The UI selects canonical failure transaction IDs. Selecting one member always
@@ -766,6 +778,11 @@ the response is `AWAITING_APPROVAL` and includes a `waiverRequestId` plus the
 computed downstream impact. A different user approves by calling the same
 endpoint with that `waiverRequestId`, the exact failure IDs, and the expected
 downstream blocked failure IDs. Neither step advances projection metadata.
+
+This is an intentional v2 narrowing of the former waiver surface. Deployments
+upgrading from v1 must not expect previously permitted ordered-failure waivers
+to remain available: any still-open ordered failure now requires exact replay
+or an approved repair.
 
 V2 inheritance is closed, not catch-all. Only sections named in
 `inheritsFrom.inheritedSections` carry forward from v1. The shared LIVE/REPLAY
@@ -1147,9 +1164,13 @@ schema.
   caller-controlled envelope, tenant, identity, or ordering metadata.
 - Payloads, keys, headers, event JSON, and direct storage locations never
   appear in API lists, browser state, logs, metrics, or audit details.
-- Dedicated non-owner database roles and column-scoped grants restrict canonical
-  payload access to the projection and replay services; revoking `PUBLIC` alone
-  is only the schema baseline.
+- Canonical schema and upgrade assets revoke every plain payload column from
+  `PUBLIC`. This is the current repository-managed baseline; table owners and
+  roles with explicit table grants remain privileged.
+- Dedicated non-owner database roles and column-scoped grants are production
+  hardening, not part of the early-development activation contract. A
+  production deployment that requires database-level service separation must
+  provision those roles and credentials outside this schema before promotion.
 - Application-level encryption is an optional production hardening control,
   not a prerequisite for development replay.
 
@@ -1415,6 +1436,7 @@ core replay contract:
 - application-level envelope encryption and key rotation;
 - immutable object storage and payload lifecycle policies;
 - configurable retention and legal holds;
+- deployment-specific non-owner database roles and column-scoped payload grants;
 - operator tuning of the mandatory baseline failure-storm capacity controls;
 - staged rollout and canary scopes for an existing production deployment;
 - legacy migration tooling if historical replay becomes a requirement;
