@@ -1041,6 +1041,34 @@ mixed transaction, Event Admin fails closed instead of choosing by catalog
 order; the operator must use a server-supported unambiguous repair schema or
 fix the processor and replay the original transaction.
 
+The initial supported product contract deliberately permits exactly one repair
+schema version per failed transaction. `UserUpdatedEvent` schema version `1`
+is the first deployed typed-repair policy and binds `USER_UPDATED_V1` to
+`user-updated-repair-v1`. A transaction may contain multiple compatible
+members and use `PER_EVENT_FIELDS`; members with a non-repair disposition
+remain byte-identical. If members resolve to two different `SCHEMA_REPAIR`
+versions, both the provider and UI reject the proposal with
+`REPAIR_SCHEMA_VALIDATION_FAILED`. Supporting that case later requires a
+versioned multi-schema contract, approval fingerprint, persistence model,
+executor, and UI; catalog order is never a selection rule.
+
+`USER_UPDATED_V1` append validation mirrors the already-published
+`user-command` `updateUserByIdRequest` schema; it must not add UUID, length, or
+`userType` restrictions that the command contract does not enforce. The repair
+schema may be narrower for operator-entered replacement values and currently
+limits `userType` to `C` or `E` plus the documented per-field lengths. Email,
+entity ID, user ID, and host ID are deliberately not editable repair fields.
+Corruption in those identity-adjacent values is not a schema-repair case: the
+source must be corrected through an authorized domain workflow or quarantined
+for explicit reconciliation.
+
+`PORTAL_OBJECT_V1` is intentionally only a structural JSON-object validator.
+It cannot qualify an event for typed repair. Every deployed `SCHEMA_REPAIR`
+entry must instead name a concrete data validator, a concrete repair schema,
+an exact editable-field set, and a matching schema-driven `Forms.json` entry.
+The synthetic contract fixture remains in contract and test resources only; it
+is absent from runtime policy and form catalogs.
+
 After creation, the browser discards replacement values and displays metadata
 only: repair state, changed field names, original/corrected transaction
 fingerprints, per-member original/corrected digests, reason, requester,
@@ -1346,6 +1374,38 @@ canonical capture remains authoritative.
   browser, log, metric, or audit record.
 - Verify legacy DLQ notifications and canonical candidates have unambiguous UI
   wording.
+
+## Qualification and Deployment
+
+Deploy in dependency order: `portal-db`, `light-portal`, `user-command`,
+`user-query`, gateway endpoint policy, `portal-view`, and finally the config
+mirrors. Run the R9 gate against a disposable PostgreSQL database before each
+environment promotion. The gate composes R0-R8, exercises the database and
+Kafka-source semantic paths, verifies the real repair policy and UI form, and
+builds the command, query, UI, and documentation artifacts.
+
+Before promotion, run the read-only storage inventory against every target
+database. `DATABASE_PLAIN` and tombstoned `DELETED` failure rows are supported;
+deferred and corrected repair rows must be `DATABASE_PLAIN`. Any historical
+`DATABASE` or `OBJECT` row is recorded as non-executable rollback-boundary
+evidence. The inventory exits non-zero when such a row exists, does not rewrite
+it automatically, and the legacy columns must not be dropped until the count
+is zero everywhere and the pre-R8 rollback window is closed.
+
+For PostgreSQL pub/sub, qualification proves capture, planning, approval,
+barrier installation, repair-aware execution, resolution, and deferred drain.
+For Kafka pub/sub, it additionally proves validation before projection,
+canonical capture before source-offset commit, idempotent redelivery, retained
+source coordinates, no live-topic republish, and no consumer-offset rewind.
+Gateway rules remain deployment-defined independently for all twelve replay
+endpoints, with two distinct authenticated users used for repair approval and
+replay-plan approval.
+
+The deployable evidence and exact commands are maintained in the R9
+qualification record under the implementation repository. `/adm/event-replay/status`
+is polled on every query replica after deployment to confirm listener health,
+effective execution state, config generation, reload timestamp, and instance
+identity; a missing or stale replica never confirms a fleet pause.
 
 ## Future Production Hardening
 
