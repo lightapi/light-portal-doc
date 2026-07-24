@@ -795,29 +795,30 @@ only the unaffected scopes. Live work intersecting any member scope is deferred
 as the same complete transaction. Canonical lock ordering prevents two
 cross-scope transactions from deadlocking each other.
 
+Aggregate ordered-scope keys have one canonical encoding:
+`aggregateType + ":" + aggregateId`. Append validation uses the CloudEvent
+subject as `aggregateId`; canonical capture persists that same subject as
+`event_failure_event_t.aggregate_id`. Capture, dependency extraction, planning,
+barrier installation, and execution all call the shared encoder rather than
+reconstructing the key independently. This keeps the command guard and replay
+barrier byte-identical for the same aggregate.
+
 The worker installs a fenced barrier, waits for current work in that scope to
 finish, and then applies the approved items through the shared executor. Live
 transactions intersecting the barrier are deferred as complete transactions;
 unrelated scopes continue normally. After repair, deferred transactions drain
 in source order before the barrier is removed.
 
-### R2 transitional plain-payload limitation
+### Plain-payload deferred isolation
 
-The preceding paragraph is the target isolation contract, but R2 does not yet
-fully provide it for the default `DATABASE_PLAIN` codec. The legacy deferred
-table stores only encrypted/object representations. R2 therefore returns
-`PAUSED` when a live transaction intersects an active replay barrier under the
-plain codec, holds the source position, and retries after barrier release. This
-preserves ordering and prevents payload loss, but it creates a temporary
-head-of-line stall: unrelated transactions sequenced later on that source do
-not advance even when their scopes do not intersect the barrier. The legacy
-encrypted codec still uses durable `DEFERRED` work and can advance the source.
-
-This limitation is accepted only for the early R2 development phase. Repair
-execution adds an exact-byte plain deferred representation, digest and
-retention rules, then restores `DEFERRED` behavior before cross-repository
-qualification. Tests must pin both the transitional behavior and the restored
-target so the general goal that unrelated scopes continue is not weakened.
+R6 closes the temporary R2 plain-codec limitation. The deferred table now has
+an exact-byte `payload_plain` representation whose SHA-256 digest and byte count
+are database constrained. A live transaction intersecting an active barrier is
+durably recorded as `DEFERRED` before its source position advances, whether the
+runtime uses `DATABASE_PLAIN` or the legacy encrypted codec. Unrelated later
+transactions can therefore continue, while deferred work still drains in
+source order before barrier release. Deferred bytes are immutable and direct
+column access is restricted in the same way as canonical plain failure bytes.
 
 Replay requests use row locks, monotonic fencing tokens, leases, and advisory
 scope locks. A lease provides liveness and abandoned-work recovery; it never
