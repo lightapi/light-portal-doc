@@ -1015,6 +1015,51 @@ A legacy notification may remain visible in the lower notification table but
 must not be described as replayable. The empty candidate state explains that
 only newly captured canonical failures appear there.
 
+### Event Admin repair interaction
+
+Event Admin presents two intentionally separate recovery paths. **Replay
+original** creates an exact/dependency replay plan after a processor defect is
+fixed. **Repair** creates an append-only amendment when replaying the persisted
+business data unchanged would fail again. Selecting Repair always identifies
+the complete failed transaction as the unit; the form may correct one or more
+members but cannot split transaction membership.
+
+Repair forms are event-type and schema-version entries in `Forms.json`. Each
+entry mirrors the server repair schema and exposes only its declared business
+fields. The UI does not request original field values, so replacement inputs
+start blank. It has no generic JSON editor and cannot edit CloudEvent envelope,
+identity, ordering, key, header, or storage fields. A single repairable member
+uses `SINGLE_EVENT_FIELDS`; multiple compatible members use explicit
+event-ID-keyed `PER_EVENT_FIELDS`. The server still validates the pinned event
+policy, schema version, change shape, and every field; the UI schema is not a
+security boundary.
+
+After creation, the browser discards replacement values and displays metadata
+only: repair state, changed field names, original/corrected transaction
+fingerprints, per-member original/corrected digests, reason, requester,
+reviewer/approver, timestamps, and linked replay request. `repairId` is a
+host-scoped URL/local-state key so a second user can open the proposal. The
+repair query resolves the latest linked replay request and status from durable
+plan-item metadata; linkage never depends solely on one browser's state. The
+requester is shown that another authorized user must approve or reject it, but
+the UI never interprets role names. Gateway endpoint policy plus backend host,
+actor, fingerprint, state, and requester-not-approver checks authorize every
+operation.
+
+Repair approval and replay-plan approval are independent. Only an `APPROVED`
+repair can create a repair-bound replay plan; the resulting immutable plan hash
+must then be approved through the normal replay workflow before execution.
+`CANCELLED`, `REJECTED`, `STALE_PLAN`, and
+`REPAIR_FINGERPRINT_MISMATCH` are terminal for the displayed artifact and tell
+the operator to refresh/re-plan rather than blindly retry.
+
+When a replay reports `SUCCEEDED` with `projectionCommitted=true`, Event Admin
+refreshes canonical candidates, repair metadata, and the legacy notification
+table. It also emits `portal:event-replay-applied` with only `hostId`,
+`replayRequestId`, and optional `repairId`; a mounted business view uses that
+event to invalidate and reload its projection query. No payload or changed
+field value is included in the event.
+
 Raw payloads, complete event JSON, Kafka keys, headers, and database payload
 references are never returned to the browser. A repair endpoint may return only
 the explicitly authorized and redacted business fields declared by the repair
