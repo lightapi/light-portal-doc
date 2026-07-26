@@ -844,7 +844,7 @@ They do not and cannot prevent two distinct strings from hashing to the same
 `BIGINT`; that is handled by cross-domain deduplication below.
 
 ```text
-aggregate:   "eiu:v1:agg\x1F"  || aggregate_type || "\x1F" || aggregate_id
+aggregate:   "eiu:v1:agg\x1F"  || aggregate_id
 identity:    "eiu:v1:sid\x1F"  || scope_type || "\x1F" || scope_id || "\x1F"
                                 || aggregate_type || "\x1F"
                                 || identity_schema_version || "\x1F"
@@ -856,6 +856,12 @@ idempotency: "eiu:v1:idem\x1F" || scope_type || "\x1F" || scope_id || "\x1F"
 
 The encoding rules are exact, because two implementations that serialize
 differently do not share a lock:
+
+- The aggregate lock follows the current event-store stream key and
+  `UNIQUE (aggregate_id, aggregate_version)` constraint, so it deliberately
+  excludes `aggregate_type`. Two candidate births with the same aggregate ID
+  must serialize on one lock even if their declared types differ. Changing the
+  event-store stream key requires a coordinated lock-format migration.
 
 - UTF-8, no normalization, no case folding — the canonical identity was already
   normalized before hashing.
