@@ -53,6 +53,7 @@
   - [Timestamp](./design/timestamp.md)
   - [Tag](./design/tag.md)
   - [UUID](./design/uuid.md)
+  - [Entity Creation Uniqueness](./design/entity-creation-uniqueness.md)
   - [Composit key vs Surrogate UUID key](./design/composite-surrogate.md)
   - [Atomic Events vs Composite Events](./design/atomic-composite.md)
   - [Database Concurrency](./design/database-concurrency.md)
