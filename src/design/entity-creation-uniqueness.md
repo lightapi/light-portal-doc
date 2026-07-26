@@ -2,9 +2,9 @@
 
 ## Status
 
-Implemented through Phase 3 for Role/Rule stream births, Category/Tag semantic
-identity, and Category/Tag client retries. Later aggregate groups, lifecycle
-alignment, historical backfill, and full enforcement remain phased work for
+Implemented through Phase 4 for Role/Rule stream births and Category/Tag semantic
+identity, client retries, projection behavior, and lifecycle alignment. Later
+aggregate groups, historical backfill, and full enforcement remain phased work for
 [light-portal issue 691](https://github.com/lightapi/light-portal/issues/691).
 
 ## Executive Decision
@@ -416,7 +416,11 @@ CREATE TABLE entity_aggregate_t (
     created_ts       TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
     retired_ts       TIMESTAMPTZ,
     PRIMARY KEY (aggregate_type, aggregate_id),
-    CHECK (entity_status IN ('ACTIVE', 'RETIRED'))
+    CHECK (entity_status IN ('ACTIVE', 'RETIRED')),
+    CHECK (
+        (entity_status = 'ACTIVE' AND retired_ts IS NULL)
+        OR (entity_status = 'RETIRED' AND retired_ts IS NOT NULL)
+    )
 );
 
 CREATE TABLE entity_identity_t (
@@ -440,7 +444,11 @@ CREATE TABLE entity_identity_t (
     ),
     FOREIGN KEY (aggregate_type, aggregate_id)
         REFERENCES entity_aggregate_t (aggregate_type, aggregate_id),
-    CHECK (binding_status IN ('CURRENT', 'ALIAS'))
+    CHECK (binding_status IN ('CURRENT', 'ALIAS')),
+    CHECK (
+        (binding_status = 'CURRENT' AND demoted_ts IS NULL)
+        OR (binding_status = 'ALIAS' AND demoted_ts IS NOT NULL)
+    )
 );
 
 CREATE UNIQUE INDEX entity_identity_current_aggregate_version_uk
@@ -1003,10 +1011,11 @@ idempotency key, API clients, and concurrent users.
 
 A delete does not erase the entity's history or release its creation identity.
 The default `NEVER` reuse policy keeps every identity row reserved. Delete sets
-`entity_status` to `RETIRED` on the single `entity_aggregate_t` row and leaves all
-bindings unchanged; restore sets it back to `ACTIVE`. Because lifecycle lives in
-one place, both operations are correct however many aliases and schema versions
-the aggregate has accumulated.
+`entity_status` to `RETIRED` and records `retired_ts` on the single
+`entity_aggregate_t` row while leaving every binding unchanged. Restore sets the
+owner back to `ACTIVE` and clears `retired_ts`. Because lifecycle lives in one
+place, both operations are correct however many aliases and schema versions the
+aggregate has accumulated.
 
 Reactivating a soft-deleted entity must use an explicit restore/reactivate command
 and a `*RestoredEvent` or `*ReactivatedEvent` at the next aggregate version. It must
@@ -1056,9 +1065,10 @@ identity:
 
 An aggregate may reclaim *its own* alias during a version-checked rename. Renaming
 `A` to `B` and back to `A` flips the `A` row's binding from `ALIAS` to `CURRENT`
-and demotes `B` to `ALIAS`, both in one transaction, gated by the aggregate's
-expected version. This is safe because the reclaiming aggregate is the same one
-that created the alias, so no impersonation is possible. Another aggregate may
+and clears its `demoted_ts`; it demotes `B` to `ALIAS` and records `demoted_ts`,
+both in one transaction gated by the aggregate's expected version. This is safe
+because the reclaiming aggregate is the same one that created the alias, so no
+impersonation is possible. Another aggregate may
 never claim an alias: a reservation row belongs to exactly one `aggregate_id`, so
 a different aggregate's create simply collides with the existing row and is
 rejected.
@@ -1274,9 +1284,23 @@ fail closed until their durable result-reference contract is defined.
 
 ### Phase 4: Projection And Lifecycle Alignment
 
+Implemented for the currently enforced Category and Tag semantic-identity groups.
+`UpdatedEvent`, `DeletedEvent`, and explicit `RestoredEvent` transitions now run
+through the same database transaction and globally sorted advisory-lock set as
+stream and identity creation. A lifecycle mutation requires the client's expected
+aggregate version, a materialized owner row, and a next-version event before any
+nonce, graph revision, event, outbox, owner, or binding change occurs. Remaining
+`REVIEW_PENDING` aggregate groups stay outside semantic enforcement until Phase 5
+inventory, review, and materialization.
+
+Lifecycle request schemas do not require a request-body `hostId`. Tenant scope is
+derived from authenticated command context; a global Category or Tag request is
+identified by the qualified gateway scope decision and `globalFlag`, while the UI
+omits the null host returned for global query rows.
+
 - Replace create-as-reactivate behavior with explicit restore/reactivate events.
-- Complete permanent-failure enforcement for the remaining aggregate groups.
-  Detection and alerting already landed in Phase 1.
+- Keep permanent-failure detection and alerting for remaining aggregate groups;
+  their reject-mode migration remains gated on Phase 5 review and materialization.
 - Add registry-to-DDL conformance tests for semantic unique constraints.
 - Define explicit identity transfer/release behavior for mutable unique fields.
 - Resolve identity collisions through the owner row once delete/restore is
