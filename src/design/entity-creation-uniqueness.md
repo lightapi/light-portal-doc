@@ -605,6 +605,25 @@ ddl.sql
   -> enable uniqueness enforcement
 ```
 
+That sequence is the Phase 5 target contract, not a capability of the legacy
+bootstrap fixture today. The current `event-importer/events.json` birth events do
+not carry the trusted `commandkind` and `entityscope` extensions required by the
+Phase 2 guard, and the importer must not guess whether historical Category or Tag
+events were tenant-local or global. Therefore a newly created database populated
+from that fixture is treated exactly like an existing database: keep create
+traffic fenced, import the events, run the Phase 5 scope-provenance preflight and
+versioned backfill, verify the completion record, and only then enable reject
+mode. Only an empty database that imports no historical identity-protected events
+may enable Phase 2 writers immediately.
+
+Phase 5 records materialization completion per aggregate group. The record is
+bound to the covered event range or high-water mark and input digest, creation-
+policy registry version, normalizer version, expected owner/binding counts, and
+verification digest. Deployment refuses reject mode without a matching completion
+record. A non-zero reservation count is not an acceptable substitute: a partial
+import or failed backfill can produce rows while still leaving older identities
+unprotected.
+
 Preflight is required even when the destination is expected to be empty. It must
 report duplicate streams, semantic-identity conflicts, unsupported policy or
 normalizer versions, and invalid scope provenance before the first write. This
@@ -1245,6 +1264,9 @@ This phase directly resolves the reported `ERR11645` path.
   Detection and alerting already landed in Phase 1.
 - Add registry-to-DDL conformance tests for semantic unique constraints.
 - Define explicit identity transfer/release behavior for mutable unique fields.
+- Resolve identity collisions through the owner row once delete/restore is
+  implemented: an `ACTIVE` owner, including a former-name alias, returns
+  `ENTITY_ALREADY_EXISTS`; a `RETIRED` owner returns `ENTITY_RETIRED`.
 
 ### Phase 5: Backfill And Enforce
 
@@ -1262,6 +1284,9 @@ This phase directly resolves the reported `ERR11645` path.
 - Require event history or a validated identity-reservation manifest for
   snapshot-only promotion of identity-protected aggregate groups.
 - Operate first in report-only mode, then reject mode by aggregate group.
+- Persist the verified per-group materialization completion record and make the
+  deployment gate reject Category/Tag create traffic until its event coverage,
+  registry/normalizer versions, expected counts, and digest match.
 - Reject deployment when a new birth event lacks a reviewed creation policy.
 - Follow the dual-write or drain protocol for any normalizer-version migration,
   and re-verify the backfill after the last old-version writer exits.
