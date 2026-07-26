@@ -2,9 +2,10 @@
 
 ## Status
 
-Implemented through Phase 4 for Role/Rule stream births and Category/Tag semantic
-identity, client retries, projection behavior, and lifecycle alignment. Later
-aggregate groups, historical backfill, and full enforcement remain phased work for
+Implemented through Phase 5 for Role/Rule stream births and Category/Tag semantic
+identity, client retries, lifecycle alignment, verified historical materialization,
+snapshot/import guards, and policy-aware retry-ledger cleanup. Later aggregate
+groups remain review and migration work for
 [light-portal issue 691](https://github.com/lightapi/light-portal/issues/691).
 
 ## Executive Decision
@@ -1332,8 +1333,8 @@ omits the null host returned for global query rows.
 - Add policy-aware idempotency-ledger cleanup and bounded age/cardinality
   telemetry. Treat each registry duration as a minimum retention requirement,
   never as one global TTL, and require this worker before enabling a public
-  `ALLOW_MULTIPLE` create endpoint. Until it lands, retaining rows indefinitely
-  is the safe Phase 3 behavior.
+  `ALLOW_MULTIPLE` create endpoint. Phase 5 implements this in the operational
+  cleanup worker; deployments that disable it must not enable such an endpoint.
 
 ## Test Matrix
 
