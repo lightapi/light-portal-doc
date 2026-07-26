@@ -2,7 +2,10 @@
 
 ## Status
 
-Proposed design for [light-portal issue 691](https://github.com/lightapi/light-portal/issues/691).
+Implemented through Phase 3 for Role/Rule stream births, Category/Tag semantic
+identity, and Category/Tag client retries. Later aggregate groups, lifecycle
+alignment, historical backfill, and full enforcement remain phased work for
+[light-portal issue 691](https://github.com/lightapi/light-portal/issues/691).
 
 ## Executive Decision
 
@@ -1242,6 +1245,14 @@ This phase directly resolves the reported `ERR11645` path.
 
 ### Phase 3: Idempotent Client Retries
 
+The initial implementation enables the public retry contract only for Category
+and Tag. Both are single-event creates whose original success response can be
+reconstructed from the ledger's aggregate ID after UUID enrichment runs again.
+The append-side ledger and lock implementation is generic for any single-event
+`CREATE`, but another handler must explicitly declare its replay aggregate-ID
+field before accepting `Idempotency-Key`. Multi-event create responses remain
+fail closed until their durable result-reference contract is defined.
+
 - Add `command_idempotency_t`.
 - Define and version the request fingerprint over validated client intent plus
   trusted scope, excluding enrichment output. Prove a retry whose enrichment
@@ -1253,6 +1264,10 @@ This phase directly resolves the reported `ERR11645` path.
   expand/contract order, and gate the N+1 write switch on old readers being
   drained.
 - Accept and propagate a standard create idempotency key.
+- Advertise idempotency support per logical endpoint. An unmigrated handler must
+  reject `Idempotency-Key` instead of silently performing a non-idempotent create;
+  multi-event creates remain unsupported until their durable replay result is
+  defined.
 - Update `portal-view` create forms to reuse one key per submission attempt.
 - Return the original success for an exact retry and a conflict for key reuse with
   a different request hash.
@@ -1290,6 +1305,11 @@ This phase directly resolves the reported `ERR11645` path.
 - Reject deployment when a new birth event lacks a reviewed creation policy.
 - Follow the dual-write or drain protocol for any normalizer-version migration,
   and re-verify the backfill after the last old-version writer exits.
+- Add policy-aware idempotency-ledger cleanup and bounded age/cardinality
+  telemetry. Treat each registry duration as a minimum retention requirement,
+  never as one global TTL, and require this worker before enabling a public
+  `ALLOW_MULTIPLE` create endpoint. Until it lands, retaining rows indefinitely
+  is the safe Phase 3 behavior.
 
 ## Test Matrix
 
@@ -1445,6 +1465,9 @@ The design is implemented when:
     or fails before appending its event or deleting any binding.
 27. Identities that reference scoped catalog values encode the resolved scope and
     normalized value, and a resolution-rule change uses normalizer migration.
+28. Idempotency-ledger cleanup honors each policy's minimum retention, exposes
+    bounded age/cardinality telemetry, and is deployed before any public
+    `ALLOW_MULTIPLE` create endpoint is enabled.
 
 ## Settled Decisions
 
