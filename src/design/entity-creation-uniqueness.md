@@ -7,6 +7,9 @@ identity, client retries, lifecycle alignment, verified historical materializati
 snapshot/import guards, and policy-aware retry-ledger cleanup. Later aggregate
 groups remain review and migration work for
 [light-portal issue 691](https://github.com/lightapi/light-portal/issues/691).
+The frozen inventory contains 122 birth events; only eight have reviewed scope and
+identity shapes, and only Category/Tag currently have semantic-identity
+reservations. Phase 5 closure is therefore scoped, not program-wide completion.
 
 ## Executive Decision
 
@@ -628,6 +631,14 @@ versioned backfill, verify the completion record, and only then enable reject
 mode. Only an empty database that imports no historical identity-protected events
 may enable Phase 2 writers immediately.
 
+The guarded snapshot importer is intentionally **not** a bootstrap bypass. It
+requires a matching destination materialization watermark and returns
+`503 ENTITY_MATERIALIZATION_INCOMPLETE` when it is absent. Fresh legacy-history
+bootstrap instead uses the explicit write-fenced importer mode, then runs report,
+apply, and verification before any protected create route is enabled. This keeps
+the exceptional raw-history path operator-controlled and prevents it from being
+used against a live destination.
+
 Phase 5 records materialization completion per aggregate group. The record is
 bound to the covered event range or high-water mark and input digest, creation-
 policy registry version, normalizer version, expected owner/binding counts, and
@@ -945,10 +956,13 @@ The identity, aggregate, and idempotency locks join the existing documented lock
 order in `GraphCommandPersistence`. All call paths must use the same order:
 
 1. graph-root locks;
-2. the single sorted set of aggregate, semantic-identity, and idempotency locks;
-3. identity, idempotency, and graph-revision rows;
-4. user nonce;
-5. event offset, event store, outbox, and notification rows.
+2. logical instance-identity locks;
+3. materialization-completion rows (`FOR SHARE` for live writes and `FOR UPDATE`,
+   sorted by aggregate type, for apply);
+4. the single sorted set of aggregate, semantic-identity, and idempotency locks;
+5. identity, idempotency, and graph-revision rows;
+6. user nonce;
+7. event offset, event store, outbox, and notification rows.
 
 The database unique constraints are the final race arbiter even when an advisory
 lock is omitted by a future bug. SQL unique-constraint failures must be translated
@@ -989,7 +1003,10 @@ must not disclose another tenant's identifier or fields.
 
 `portal-view` should generate an idempotency key when a create form is opened and
 reuse it for every retry of that submission. It generates a new key only after the
-attempt completes or the form is intentionally reset.
+attempt completes or the form is intentionally reset. Network/unknown failures
+retain the key. Typed terminal conflicts (`ENTITY_ALREADY_EXISTS`,
+`ENTITY_RETIRED`, or `IDEMPOTENCY_KEY_REUSED`) preserve the form but close the
+attempt, so a later edited submission receives a new key.
 
 The UI should also:
 
@@ -1422,6 +1439,14 @@ Add bounded metrics without identity values:
 - `entity_identity_backfill_conflict_total{aggregateType}`
 - `duplicate_create_projection_failure_total{aggregateType}`
 
+The current Dropwizard registry encodes the bounded `aggregateType` and `reason`
+dimensions as metric-name suffixes rather than native labels. Aggregate values
+come only from the frozen birth-event registry, reason values are stable codes,
+and all other values collapse to `Unknown` or `OTHER`. Tenant IDs, aggregate IDs,
+names, canonical identities, and request values are forbidden in metric names.
+Cleanup also publishes rows remaining, oldest-row age, deleted rows, unsupported
+rows, and lock-skipped runs on every sweep, including zero-deletion sweeps.
+
 Structured logs may include event type, aggregate type, event ID, correlation ID,
 scope type, policy version, and a short identity-digest prefix. They must not log
 raw canonical identities, request payloads, or credentials.
@@ -1443,7 +1468,12 @@ unprotected append path, importer problem, or policy drift.
 
 ## Acceptance Criteria
 
-The design is implemented when:
+These are program-wide criteria for issue 691. Phase 5 satisfies them only for
+the scoped Role/Rule stream and Category/Tag semantic-identity rollout described
+in Status; criteria involving the remaining 114 `REVIEW_PENDING` birth events
+remain open until their domain policies and migrations are reviewed.
+
+The design is fully implemented when:
 
 1. A second role or rule create returns a typed conflict and appends no event.
 2. No normal aggregate stream can contain two registered birth events.
@@ -1470,7 +1500,9 @@ The design is implemented when:
     enforced at the database-backed command boundary.
 17. Bootstrap, import, replay, and approved repair use the same versioned identity
     transition component as normal commands.
-18. A new database populates guard rows through bootstrap event append; generated
+18. A new database either appends already-qualified bootstrap events through the
+    guarded command boundary, or imports legacy history under an explicit write
+    fence and completes verified materialization before protected writes; generated
     SQL is limited to versioned, verified upgrade backfills.
 19. Event-history promotion reconstructs destination reservations, and
     snapshot-only promotion cannot silently lose aliases.
