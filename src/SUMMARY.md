@@ -149,6 +149,7 @@
       - [Access Control Default Deny](./help/portal-view/configs/access-control/default-deny.md)
       - [Access Control Default Include](./help/portal-view/configs/access-control/default-include.md)
       - [Access Control Skip Path Prefixes](./help/portal-view/configs/access-control/skip-path-prefixes.md)
+      - [Access Control Claim Mappings](./help/portal-view/configs/access-control/claim-mappings.md)
     - [Logging Filter](./help/portal-view/configs/logging/filter.md)
     - [MSAL Auth Cookie SameSite](./help/portal-view/configs/msal-auth/cookie-same-site.md)
     - [MSAL Auth Enabled](./help/portal-view/configs/msal-auth/enabled.md)

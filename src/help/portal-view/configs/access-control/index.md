@@ -13,6 +13,7 @@ The gateway uses a shared access-control runtime (implemented in `light-pingora`
 | **[defaultDeny](./default-deny.md)** | Boolean | `true` | Fallback policy when no authorization rules are defined for a requested endpoint. |
 | **[defaultInclude](./default-include.md)** | Boolean | `false` | Fallback policy for response row filtering when a user's claims do not match any rules. |
 | **[skipPathPrefixes](./skip-path-prefixes.md)** | Array of String | `[]` | List of path or tool name prefixes that bypass access control checking and filtering. |
+| **[claimMappings](./claim-mappings.md)** | Map of String to Array of String | `{}` | Maps permission dimensions such as `roles` or `tenant` to JWT claim names. |
 
 ---
 

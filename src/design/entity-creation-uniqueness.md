@@ -1123,8 +1123,8 @@ Before enforcement, run an inventory that finds:
 - global-scoped entities whose creating principal and historical policy evidence
   do not prove exact global-create authority at the time of creation.
 
-Older events may not contain a policy revision or enough authorization evidence
-to prove the historical decision. Classify those records as
+Older events may not contain enough authorization evidence to prove the
+historical decision. Classify those records as
 `UNKNOWN_SCOPE_PROVENANCE`; do not assume that a global row was legitimate merely
 because it exists. A global identity created through the legacy substring-role
 path must be reviewed or quarantined before backfill, otherwise Phase 5 would turn
@@ -1203,10 +1203,10 @@ parallel with Phase 2.
 - Configure its role permissions and `req-acc` rule in Light Portal, publish the
   generated policy through the config server, and verify the effective policy on
   each gateway instance before removing command-layer coarse role checks.
-- Record the published policy revision or digest and require every gateway
-  instance serving portal commands to acknowledge it. Block promotion or remove
-  an unacknowledged instance from routing rather than assuming an older policy
-  fails closed.
+- Verify through the standard config-server reload and deployment health checks
+  that every gateway instance serving Portal commands has loaded the intended
+  policy publication. Block promotion or remove a stale instance from routing
+  rather than assuming an older policy fails closed.
 - Prefer separate tenant and global logical endpoints. For a combined endpoint,
   use one CEL expression or `accessRuleLogic: all` to bind role, requested scope,
   and authenticated host in the same authorization decision.
@@ -1420,10 +1420,10 @@ The shared implementation must cover at least:
 | Portal role permission and `req-acc` rule published through the config server | gateway admits only configured logical endpoints |
 | Role permission exists but `req-acc` rule is absent | gateway denies before command dispatch |
 | Gateway effective policy is unavailable | command fails closed; no event or reservation is written |
-| Gateway has not acknowledged the published policy revision | deployment or routing to that instance remains blocked |
+| Gateway has not loaded the intended config-server policy publication | deployment or routing to that instance remains blocked by operational readiness checks |
 | `org-admin` or `host-admin` submits global scope on a combined endpoint | gateway denies; command handler is not invoked |
 | Host-scoped request contains another tenant's `hostId` | gateway or command boundary denies; no reservation is written |
-| Direct command invocation bypasses gateway authorization | rejected by ingress isolation or missing trusted authorization context |
+| Direct command invocation bypasses gateway authorization | prevented by ingress isolation or a mutually authenticated command-service hop |
 
 PostgreSQL-backed concurrency tests are required. Mock-only tests cannot prove the
 unique constraint, advisory-lock, and rollback behavior.
@@ -1492,8 +1492,9 @@ The design is fully implemented when:
 12. Adding a new birth event without a creation policy fails the deployment gate.
 13. Every participating logical command endpoint has a Portal-managed,
     config-server-published role permission and `req-acc` policy that fails closed.
-14. Every gateway instance serving portal commands acknowledges the published
-    policy revision or is excluded from routing.
+14. Every gateway instance serving Portal commands passes the standard
+    config-server reload and deployment health checks for the intended policy
+    publication or is excluded from routing.
 15. Java command handlers do not use `admin`, `org-admin`, or `host-admin` token
     parsing as the coarse endpoint-invocation authorization boundary.
 16. Host, parent, owner, lifecycle, version, and uniqueness invariants remain
