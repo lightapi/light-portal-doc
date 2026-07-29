@@ -132,9 +132,9 @@ Consent cancellation and normal stateless sign-out use credentialed,
 bodyless `POST /logout`. When logout CSRF enforcement is qualified, send the
 readable `csrf` cookie value as `X-CSRF-TOKEN`. Success is `204 No Content`
 with deletion cookies. Route `OPTIONS /logout` permanently through CORS before
-`StatelessAuthHandler`. The temporary compatibility GET route is removed at
-the Phase 4 release boundary; strict legacy-method rejection is `405` with
-`Allow: POST`.
+`StatelessAuthHandler`. Logout is POST-only; a legacy GET or another
+unsupported method returns `405`, `ERR10008`, and `Allow: POST` before cookie
+deletion.
 
 ## HostIdTokenPostHandler
 

@@ -33,11 +33,6 @@ paths:
     method: POST
     exec:
       - bff
-  # Temporary compatibility bridge for cached pre-migration clients.
-  - path: /auth/ms/logout
-    method: GET
-    exec:
-      - bff
   # Keep permanently so preflight reaches CORS before the auth handler.
   - path: /auth/ms/logout
     method: OPTIONS
@@ -45,7 +40,6 @@ paths:
       - bff
 ```
 
-The GET route is migration-only and is removed at the strict Phase 4 release
-boundary after the compatibility and telemetry gates pass. After strict
-enforcement, legacy mutation methods return `405`, `ERR10008`, and
-`Allow: POST`. The `OPTIONS` route remains.
+Logout is POST-only. A legacy GET or another unsupported method returns `405`,
+`ERR10008`, and `Allow: POST` before cookie deletion. The `OPTIONS` route
+remains.

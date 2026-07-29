@@ -144,9 +144,8 @@ This is where the core logic resides. You'll create an endpoint that receives th
 
     ```Java
         // Endpoint classification happens before this flow. OPTIONS passes to
-        // CORS. During the compatibility release, explicitly routed GET and
-        // POST mutation requests are accepted; Phase 4 makes POST strict and
-        // returns ERR10008/405 with Allow: POST for a legacy method.
+        // CORS. Mutation endpoints are POST-only; another method returns
+        // ERR10008/405 with Allow: POST before this flow starts.
         if (exchange.getRelativePath().equals(config.getExchangePath())) {
             // token exchange request handling.
             if(logger.isTraceEnabled()) logger.trace("MsalTokenExchangeHandler exchange is called.");
@@ -405,10 +404,7 @@ readable `csrf` cookie, then complete the Microsoft logout. Successful backend
 logout returns `204 No Content` and deletion cookies for all cookies owned by
 the handler.
 
-During the compatibility release, explicitly routed legacy GET exchange and
-logout requests remain accepted and measured. Those GET routes are migration
-history, not the public method contract, and are removed only at the Phase 4
-release boundary. Strict enforcement returns `405`, `ERR10008`, and
-`Allow: POST`. Keep explicit `OPTIONS` routes through a chain with CORS before
-the auth handler.
-
+Exchange and logout are POST-only. A legacy GET or another unsupported method
+returns `405`, `ERR10008`, and `Allow: POST` before token-server, cookie, or
+proxy side effects. Keep explicit `OPTIONS` routes through a chain with CORS
+before the auth handler.
