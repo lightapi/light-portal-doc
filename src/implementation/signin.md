@@ -118,11 +118,23 @@ This method in dbProvider will put the event value into cacheManager cache named
 
 ## Portal View
 
-The HostIdCodePostHandler redirects the code to the Portal View with /authorization?code=??? and this request will be sent to the light-gateway StatelessAuthHandler.
+The `HostIdCodePostHandler` redirects the browser to Portal View with
+`GET /authorization?code=...&state=...`. This is an OAuth callback and remains
+GET-only; it is not part of the session-mutation POST migration. Enabled
+`/google`, `/facebook`, and `/github` authorization-code callbacks follow the
+same GET-only rule.
 
 ## StatelessAuthHandler
 
 If the request path matches to the configured authPath, it will retrieve the code from the query parameter. Then create a csrf UUID token and an AuthorizationCodeRequest to get a token via OauthHelper. This request will have the auth code, the csrf token and other properties from the configuration. The request is sent to the HostIdTokenPostHandler to create the authorization code token. 
+
+Consent cancellation and normal stateless sign-out use credentialed,
+bodyless `POST /logout`. When logout CSRF enforcement is qualified, send the
+readable `csrf` cookie value as `X-CSRF-TOKEN`. Success is `204 No Content`
+with deletion cookies. Route `OPTIONS /logout` permanently through CORS before
+`StatelessAuthHandler`. The temporary compatibility GET route is removed at
+the Phase 4 release boundary; strict legacy-method rejection is `405` with
+`Allow: POST`.
 
 ## HostIdTokenPostHandler
 
