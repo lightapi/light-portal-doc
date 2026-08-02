@@ -1,8 +1,9 @@
 # Create LLM Model
 
 Use the **Create LLM Model** form to add a physical provider model to the LLM
-Model Catalog for the selected host. Open it from **Marketplace > LLM Model
-Catalog** and choose **Create**.
+global Model Catalog shared by every host. Open it from **Marketplace > LLM
+Model Catalog** and choose **Create**. Only platform catalog administrators
+should have permission to use this command.
 
 This guide applies only to `/app/form/createLlmModel`. For registrations,
 deployments, aliases, policies, and publication, see the
@@ -12,15 +13,15 @@ deployments, aliases, policies, and publication, see the
 
 | Field | Description |
 | --- | --- |
-| Host Id | The selected host. The form supplies this read-only value. |
 | Provider Type | Provider identifier, such as `openai`. |
 | Physical Model Id | The model identifier recognized by the provider. |
 | Model Family | The provider's model family or product family. |
 | Context Token Limit | Maximum context size. Enter an integer greater than zero. |
 | Output Token Limit | Maximum generated output size. Enter an integer greater than zero. |
 
-`Model Version` is optional. `Lifecycle Status` defaults to `DRAFT`, and
-`Active` defaults to enabled.
+`Model Version` is optional, and `Lifecycle Status` defaults to `DRAFT`.
+`active` is backend-managed: create and update keep the model active, while the
+delete command soft-deletes it.
 
 ## Structured Fields
 
@@ -69,16 +70,16 @@ or has not been applied.
 
 ## Categories and Tags
 
-Categories and tags are optional. The selectors show active global and
-host-specific taxonomy values registered for the `llm_model` entity type. A
-taxonomy value belonging to another host or entity type cannot be assigned.
+Categories and tags are optional. The selectors show active global taxonomy
+values registered for the `llm_model` entity type. Host-specific taxonomy
+cannot be assigned to a global model.
 
 ## Create the Record
 
 Review the values and choose **Create LLM Model**. The form sends the
 `createLlmModel` command and preserves `modalities` and `operations` as arrays
 and `declaredCapabilities` as an object. After a successful command, the
-browser returns to **Marketplace > LLM Model Catalog**.
+browser returns to **GenAI Admin > LLM Models**.
 
 ## Common Problems
 
@@ -88,8 +89,8 @@ browser returns to **Marketplace > LLM Model Catalog**.
   again. The last valid value remains unchanged.
 - **Required-field validation**: provide every required field and use positive
   integers for both token limits.
-- **No categories or tags are available**: confirm that the taxonomy values
-  are active and registered for `llm_model` on the selected host.
+- **No categories or tags are available**: confirm that global taxonomy values
+  are active and registered for `llm_model`.
 - **403 on Create**: confirm access to the
   `lightapi.net/genai/createLlmModel/0.1.0` command endpoint with the required
   write scope and role permission.
