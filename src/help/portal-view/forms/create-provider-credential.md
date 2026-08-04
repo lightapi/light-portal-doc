@@ -27,7 +27,7 @@ authorization header into any field.
 | Host Id | Yes | `01964b05-552a-7c4b-9184-6857e7f3dc5f` | Read-only host that owns the Credential and Deployment. |
 | Provider Deployment | Yes | `OpenAI GPT-4o Production` | Non-deleted host-scoped Deployment that will use this credential. The selector submits its `providerDeploymentId`, for example `7ee18d9d-9db4-4f56-8eba-9ca880755962`. |
 | Credential Version | Yes | `2` | Positive version number unique for the selected Deployment. Increment it for each rotation. |
-| Secret Reference | Yes | `vault://llm/openai-production/api-key` | External secret URI resolved by the target gateway environment. This is a location, never the secret value. |
+| Secret Reference | Yes | `env:OPENAI_API_KEY` | Environment-variable reference resolved locally by the target gateway. This is a name, never the secret value. |
 | Effective Time | Yes | `2026-08-15T14:00:00Z` | ISO-8601 timestamp when this version becomes eligible. Use an explicit timezone. |
 | Expiration Time | No | `2026-11-15T14:00:00Z` | Optional ISO-8601 cutoff. It must be later than Effective Time. Leave it empty for no scheduled expiration. |
 | Lifecycle Status | Yes | `PENDING` | New credentials are created as `PENDING` and are not publication-eligible until activated. |
@@ -56,17 +56,21 @@ older version to represent different secret material.
 
 ## Secret Reference
 
-The value must be an absolute URI with a scheme followed by `://`. For example:
+For instance-property delivery, use the environment-variable name available to
+the gateway process:
 
 ```text
-vault://llm/openai-production/api-key
-credential://production/openai-primary
+env:OPENAI_API_KEY
+env:AZURE_OPENAI_API_KEY
 ```
 
-These are syntax examples. Use only schemes and paths supported by the secret
-resolver configured for the target gateway. Portal validates the URI shape but
-does not prove that the referenced secret exists or that the gateway can read
-it. Provision and test the secret before activation.
+Kubernetes, Docker, or HashiCorp Vault injection may populate that environment
+variable; Portal neither reads nor stores its value. Absolute external URIs
+such as `vault://...` remain valid control-plane references only when the target
+gateway is configured with a resolver that maps that exact reference. The
+default instance-property path resolves `env:VARIABLE_NAME` directly. Portal
+does not prove that the variable exists, so provision and test it on the target
+gateway before activation.
 
 Values such as `sk-live-...`, `Bearer ...`, raw JSON, passwords, and copied API
 keys are forbidden. They can leak through events, logs, audit records, and UI
@@ -113,8 +117,9 @@ Model Control Plane after success.
 
 - **Deployment list is empty**: confirm the Deployment exists, is not deleted,
   and belongs to the selected host.
-- **Secret Reference is rejected**: enter a URI such as
-  `vault://llm/openai-production/api-key`, not a raw credential.
+- **Secret Reference is rejected**: enter `env:VARIABLE_NAME` (for example,
+  `env:OPENAI_API_KEY`) or a URI supported by an explicitly configured resolver,
+  not a raw credential.
 - **Credential version already exists**: increment the version for that
   Deployment.
 - **Expiration is rejected**: make it later than Effective Time and include a

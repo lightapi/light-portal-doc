@@ -266,17 +266,19 @@ prices, and Routes attach public aliases to eligible Deployments.
   exact upstream model, and HTTPS endpoint used to build the callable provider.
 - `region` and `transportBounds` retain control-plane placement and transport
   metadata. Arbitrary transport-bound properties are not automatically enforced
-  by the current gateway projection.
+  by the current gateway configuration compiler.
 - The conformance fields record whether the endpoint has passed the provider
   capability suite and when that evidence must be refreshed.
 
 Alias Routes reference `providerDeploymentId`. Before a route is publishable,
-the Deployment must be active, have lifecycle status `ACTIVE`, have unexpired
-`PASS` conformance evidence, and have an effective Credential and Pricing
-record. Publication materializes the approved deployment information for the
+the Deployment must be active, have lifecycle status `ACTIVE`, and have an
+effective Credential and Pricing record. Conformance evidence is optional and
+informational because provider testing occurs on the tenant gateway. Publication
+materializes the approved deployment information for the
 gateway. The gateway resolves the external credential reference, constructs
 the provider client from the endpoint and provider format, calls the configured
-physical model, applies conformance-derived capabilities, and shares runtime
+physical model, applies declared capabilities (and verified evidence when
+present), and shares runtime
 capacity within the published quota group.
 
 Changing a Deployment does not modify an already published gateway snapshot.
@@ -301,8 +303,26 @@ field-by-field examples.
 After saving, use **Validate** for deployment validation and **Conformance** to
 run the provider conformance workflow. Administrative forms do not accept
 conformance evidence. New deployments start with `conformanceState` set to
-`UNKNOWN`. A deployment in `PASS` state must carry the complete, matching,
-unexpired workflow result, digest, and validity time.
+`UNKNOWN`. Clicking **Conformance** records a versioned `PENDING` transition,
+clears any stale result, digest, and validity time, and disables the button for
+that row. It does not manufacture a passing result in the browser or command
+service.
+
+A trusted conformance runner consumes the pending work, tests the exact
+provider and physical model with resolved credentials, and calls
+`recordLlmProviderConformanceResult` with canonical evidence. That completion
+action requires the available `portal.w` scope. It accepts
+only `PASS`, `FAIL`, or `QUARANTINED`, verifies the result digest and deployment
+identity, and rejects expired PASS evidence. Both interactive requests and the
+runner callback use `portal.w`; restrict the completion action through its
+endpoint rule and role permissions instead of a separate scope.
+
+If a row remains `PENDING`, the Portal request succeeded but no trusted runner
+has completed it. Check that a conformance worker is consuming the deployment
+update event, can resolve the active Credential's `secretReference`, and is
+authorized to call the completion action. A deployment in `PASS` state must
+carry the complete, matching, unexpired workflow result, digest, and validity
+time.
 Due-conformance processing uses `refreshBeforeSeconds` to schedule a refresh
 before that evidence expires.
 
@@ -347,7 +367,7 @@ otherwise valid. The candidate check establishes eligibility; operators should
 avoid overlapping `ACTIVE` versions except during an intentional `ROTATING`
 window so the publication workflow has an unambiguous version to project.
 
-The published deployment resource contains a credential reference, not the
+The published `llm-router.providers` property contains a credential reference, not the
 credential value. At runtime, the gateway passes that reference to its configured
 secret resolver and uses the resolved credential when calling the provider. The
 gateway must never receive the raw secret through this form or the Portal event
@@ -358,9 +378,10 @@ contract.
 - `providerDeploymentId` selects the Deployment that will use the credential.
 - `credentialVersion` is a positive, monotonically increasing version for that
   Deployment, such as `1`, `2`, or `3`.
-- `secretReference` is an external URI such as
-  `vault://llm/openai-production/api-key`. Its scheme and path must be supported
-  by the secret resolver used in the target environment.
+- `secretReference` is normally `env:OPENAI_API_KEY` (or
+  `env://OPENAI_API_KEY`, which publication normalizes to the runtime form).
+  Vault may inject that environment variable. Other URI schemes require an
+  explicitly configured gateway resolver.
 - `effectiveTs` is the ISO-8601 time at which the version becomes eligible.
 - `expiresTs` is an optional ISO-8601 cutoff and must be later than
   `effectiveTs`.
@@ -463,10 +484,9 @@ The data is used as follows:
    preferred route. The Alias route preview returns the priority, fallback
    flag, eligibility result, and reason for each active Route.
 4. Publication validation requires every active Alias to have at least one
-   active Route whose Deployment is active, conformant, currently credentialed,
-   and priced.
+   active Route whose Deployment is active, currently credentialed, and priced.
 5. Publication preparation uses the ordered Route records to construct the
-   `llm-route` projection consumed by the gateway. The gateway reads the
+   `llm-router.aliases` instance property consumed by the gateway snapshot. The gateway reads the
    resulting ordered deployment list and attempt policy; it does not query the
    Portal Route table directly.
 
@@ -507,11 +527,11 @@ The data is used as follows:
 1. Publication validation requires each active Alias to have a healthy Route
    to a Deployment with at least one active Pricing record whose effective time
    has started and whose expiration has not passed.
-2. Publication preparation selects the intended effective rates and emits an
-   `llm-pricing` projection associated with the Deployment. The gateway reads
-   the immutable projection; it does not query the Portal Pricing table during
-   requests.
-3. The current gateway projection consumes the input and output rates. It
+2. Publication preparation selects the intended effective rates and includes
+   them in the generated `llm-router.deployments` property. The gateway reads
+   its immutable config snapshot; it does not query the Portal Pricing table
+   during requests.
+3. The current gateway configuration consumes the input and output rates. It
    rejects a Deployment whose input or output price is unknown instead of
    silently treating an absent price as zero.
 4. Before provider dispatch, the gateway uses the projected rates, token
@@ -692,25 +712,125 @@ intentionally not shown in either form.
 
 ## Publication Tab
 
-Use Publication to append a complete, immutable configuration version for one
-gateway environment.
+The other tabs are the authoring control plane. The Publication tab compiles
+their active records into typed `llm-router` config properties and applies one
+immutable revision to one explicitly selected Light Gateway instance. Editing
+a model record never changes a running gateway by itself.
 
-1. Enter the target `Environment`.
-2. Edit the Publication JSON.
-3. Resolve every validation and gateway compatibility warning.
-4. Review the version, resource count, requested features, and compiler
-   acknowledgement.
-5. Choose **Validate and publish** and confirm the operation.
+### What The Tab Does
 
-A publication requires `environment`, `publicationVersion`, a semantic
-`minimumGatewayVersion`, a full `manifest`, and at least one full-root resource.
-Supported resource types are `llm-deployment`, `llm-route`, `llm-policy`, and
-`llm-pricing`. Each resource needs an id, version, sequence, schema version, and
-complete payload.
+The tab provides:
 
-Rollback is append-only. To enable **Append rollback**, provide
-`rollbackOfPublicationId` and a complete replacement publication. Rollback
-creates a new history entry; it does not modify an earlier publication.
+- an **Environment** dropdown populated from the selected host's configured
+  environments;
+- an **LLM Gateway Instance** dropdown listing active, writable instances whose
+  product is `lg` and whose host and environment match the selection;
+- **Generate from active records**, which joins the ready Aliases, Routes,
+  Deployments, Accounts, Credentials, Pricing, Policies, and Bindings into a
+  deterministic, read-only property preview;
+- source and property-set digests plus a difference count against the selected
+  instance's current managed properties;
+- **Publish to instance**, which asks the server to regenerate and verify the
+  preview digest before atomically applying it; and
+- instance-scoped history with **Apply exact revision** for canary promotion or
+  rollback without recompiling mutable control-plane rows.
+
+The browser never submits arbitrary property IDs or an editable manifest. The
+server resolves the fixed `llm-router` metadata and owns only these properties:
+
+| Property | Type | Purpose |
+| --- | --- | --- |
+| `llm-router.enabled` | boolean | Enables the LLM router module. |
+| `llm-router.developmentFixtures` | boolean | Always published as `false`; production data does not use embedded fixtures. |
+| `llm-router.providers` | map | Provider format, base URL, external secret reference, headers, and quota-group identity. |
+| `llm-router.deployments` | map | Physical model, declared capabilities, concurrency, and effective pricing. |
+| `llm-router.aliases` | map | Public names, ordered deployments, retry/fallback bounds, and request limits. |
+| `llm-router.openaiExtensionAllowlist` | list | Explicit OpenAI-compatible extension fields allowed by the generated configuration. |
+
+### Why Publication Is Separate
+
+A publication provides these guarantees:
+
+1. **Atomicity**: all Portal-owned LLM instance properties and ownership rows
+   change in the same event-projection transaction.
+2. **Immutability**: a generated revision is stored once with canonical source
+   and property digests. Corrections create another revision.
+3. **Target isolation**: publication changes only the selected instance.
+   Another production or canary instance is unaffected.
+4. **Exact promotion and rollback**: the same stored property set can be
+   applied to another instance without reading changed authoring rows.
+5. **Namespace ownership**: the workflow cannot overwrite unrelated instance
+   properties.
+
+### Readiness Validation
+
+Before generating a new revision, the backend requires at least one active
+Alias and at least one usable Route for every active Alias. A Route is usable
+when its Deployment:
+
+- is active and has lifecycle status `ACTIVE`;
+- has an effective, unexpired Credential with status `ACTIVE` or `ROTATING`;
+  and
+- has an effective, unexpired Pricing version.
+
+The target must also be an active, writable `lg` instance in the selected host
+and environment. Provider conformance is optional evidence. Portal does not
+possess tenant API keys and does not call the provider, so `PENDING` or missing
+conformance does not block publication or gateway startup. Structural and
+capability compatibility checks still use the declared model and registration
+capabilities. Users test provider connectivity through their own gateway after
+snapshot and restart.
+
+### Publication Fields
+
+| Preview field | Meaning | Example |
+| --- | --- | --- |
+| `instanceId` | Explicit config/snapshot target, not an individual replica. | `50000000-0000-4000-8000-000000000001` |
+| `sourceDigest` | Canonical digest of the active source records used by the compiler. | `sha256:4f...` |
+| `propertySetDigest` | Canonical digest of all generated typed properties. | `sha256:91...` |
+| `configProperties` | Read-only property metadata, types, structured values, and canonical JSON storage values. | `[{"propertyName":"providers","valueType":"map",...}]` |
+| `differences` | Managed properties whose generated value differs from the selected instance. | `[{"propertyName":"aliases",...}]` |
+| `validationResult` | Structural counts and validation status. It is not provider connectivity evidence. | `{"valid":true,"aliasCount":2}` |
+
+### How Gateway Data Is Used
+
+After the instance-publication event is projected:
+
+1. Portal inserts or reuses an immutable revision in
+   `llm_gateway_publication_t`.
+2. Portal appends an instance application in
+   `llm_gateway_instance_publication_t`.
+3. The same transaction upserts the six managed values in
+   `instance_property_t` and records their ownership. Existing rows are
+   reactivated when necessary; an update-only event is not used for absent
+   properties.
+4. The user creates and promotes a config snapshot for that instance through
+   the existing configuration workflow. Publication does not do this
+   automatically.
+5. The config server renders the typed map/list values into `values.yml`; the
+   gateway's `llm-router.yml` template consumes them at startup or explicit
+   module reload.
+6. Credentials resolve locally from environment variables or the tenant's
+   secret-injection mechanism. Secret values never enter Portal properties,
+   revisions, snapshots, UI payloads, or logs.
+
+### Publishing And Rollback
+
+To publish:
+
+1. Select the host, **Environment**, and **LLM Gateway Instance**.
+2. Choose **Generate from active records** and review the read-only properties,
+   digest, and differences.
+3. Choose **Publish to instance**. If another author changed source records
+   after preview, regenerate instead of publishing stale data.
+4. Create and promote a config snapshot for the same instance.
+5. Restart or reload the gateway and test the provider through that gateway.
+6. If testing fails, edit the control-plane records and repeat the cycle.
+
+For canary promotion or rollback, choose **Apply exact revision** in the
+instance history. Portal loads the stored property set and applies it as a new
+instance-publication action; it does not regenerate from current records or
+mutate history. Create and promote another snapshot after that application.
 
 ## Endpoint Authorization And 403 Responses
 
@@ -720,7 +840,8 @@ against each versioned service endpoint:
 | Operation | HTTP path | Endpoint identity | Scope |
 | --- | --- | --- | --- |
 | List and preview | `/portal/query` | `lightapi.net/genai/<queryAction>/0.1.0` | `portal.r` |
-| Create, update, delete, validate, conformance, publish, rollback | `/portal/command` | `lightapi.net/genai/<commandAction>/0.1.0` | `portal.w` |
+| Create, update, delete, validate, request conformance, publish, rollback | `/portal/command` | `lightapi.net/genai/<commandAction>/0.1.0` | `portal.w` |
+| Record trusted conformance result | `/portal/command` | `lightapi.net/genai/recordLlmProviderConformanceResult/0.1.0` | `portal.w` |
 
 Register and authorize these actions for the interactive page:
 
@@ -736,7 +857,7 @@ Register and authorize these actions for the interactive page:
 | Pricing | `getLlmPricingVersion` | `createLlmPricingVersion`, `updateLlmPricingVersion`, `deleteLlmPricingVersion` |
 | Policies | `getLlmModelPolicy` | `createLlmModelPolicy`, `updateLlmModelPolicy`, `deleteLlmModelPolicy` |
 | Bindings | `getLlmModelPolicyBinding` | `createLlmModelPolicyBinding`, `updateLlmModelPolicyBinding`, `deleteLlmModelPolicyBinding` |
-| Publication | `getLlmGatewayPublication` | `publishLlmGatewayConfiguration`, `rollbackLlmGatewayConfiguration` |
+| Publication | `getEligibleLlmGatewayInstances`, `getLlmGatewayPublicationCandidate`, `getLlmGatewayInstancePublicationHistory` | `publishLlmGatewayConfiguration`, `rollbackLlmGatewayConfiguration` |
 
 For every endpoint, confirm that the API endpoint record, endpoint scope, rule
 association, and role permission are active. Model mutations require the global
@@ -762,5 +883,9 @@ endpoint, role, rule, or scope.
   it belongs to the same host.
 - **Invalid lifecycle transition**: reload the current state and choose a
   forward transition; terminal states cannot return to draft.
-- **Publication button disabled**: fix the displayed candidate validation or
-  gateway compatibility warnings first.
+- **Publication button disabled**: select an eligible gateway instance and
+  generate a property preview first.
+- **Candidate generation failed**: every active Alias in the selected
+  environment needs at least one active Route whose Deployment is `ACTIVE`, has
+  an effective `ACTIVE` or `ROTATING` Credential, and effective Pricing. The
+  selected target must be an active writable `lg` instance in that environment.

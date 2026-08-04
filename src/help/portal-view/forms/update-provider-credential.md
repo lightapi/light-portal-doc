@@ -24,7 +24,7 @@ version, or reference is intended for correcting a record before activation.
 | --- | --- | --- | --- |
 | Provider Deployment | Yes | `OpenAI GPT-4o Production` | Deployment bound to this credential. The selector submits its `providerDeploymentId`, for example `7ee18d9d-9db4-4f56-8eba-9ca880755962`. |
 | Credential Version | Yes | `2` | Positive version unique within the selected Deployment. Correct it only before activation; create a new version for rotation. |
-| Secret Reference | Yes | `vault://llm/openai-production/api-key-v2` | External secret location. Correct it before activation when necessary; never enter the secret value. |
+| Secret Reference | Yes | `env:OPENAI_API_KEY_V2` | Environment-variable reference resolved locally by the gateway. Vault or another injector may populate the variable; never enter its value. |
 | Effective Time | Yes | `2026-08-15T14:00:00Z` | ISO-8601 time when this version becomes eligible. |
 | Expiration Time | No | `2026-11-15T14:00:00Z` | Optional ISO-8601 cutoff later than Effective Time. |
 | Lifecycle Status | No | `ACTIVE` | Administrative status: `PENDING`, `ACTIVE`, `ROTATING`, `REVOKED`, or `EXPIRED`. |
