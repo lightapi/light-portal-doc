@@ -24,23 +24,26 @@ identifier accepted by that endpoint.
 | Field | Required | Example | Description |
 | --- | --- | --- | --- |
 | Host Id | Yes | `selected-host-id` | Read-only host that owns the Deployment. |
-| LLM Registration | Yes | `Production / GPT-4o` | Non-deleted host-scoped Registration that approves the catalog model and environment. The selector submits its `modelRegistrationId`. |
+| LLM Registration | Yes | `dev — groq / llama-3.3-70b-versatile` | Non-deleted host-scoped Registration that approves the catalog model and environment. Labels combine environment, provider, and physical model; the selector still submits only its `modelRegistrationId`. |
 | Provider Account | Yes | `OpenAI Production` | Non-deleted host-scoped billing/quota Account. The selector submits its `providerAccountId`. |
 | Deployment Name | Yes | `openai-gpt-5.6-sol-ca-prod` | Operator-friendly name. It must be unique within the host. |
-| Provider Type | Yes | `openai` | Provider adapter/format. Select it before Physical Model Id. |
+| Provider Type | Yes | `groq` | Provider identity used for the Account, model catalog, and billing. Select it before Physical Model Id. |
+| Provider Protocol | Yes | `openai` | Upstream wire protocol. Choose `openai` for OpenAI-compatible endpoints such as Groq or Gemini, or `anthropic` for the Anthropic Messages protocol. |
 | Physical Model Id | Yes | `gpt-4o` | Exact model name sent to the provider. Options are filtered by Provider Type. |
 | Base URL | Yes | `https://api.openai.com/v1` | HTTPS base endpoint used by the provider client. Do not include credentials. |
-| Region | No | `ca-central-1` | Placement or residency region associated with the endpoint. |
+| Region | No | `ca-central-1` | Optional placement or residency region. Leave it empty for a global endpoint. |
 | Transport Bounds | No | `{"connectTimeoutMs":5000}` | Non-secret JSON object for provider-specific transport annotations. Defaults to `{}`. |
-| Refresh Before Seconds | No | `86400` | Positive number of seconds before expiry when conformance becomes due for refresh. |
-| Lifecycle Status | No | `DRAFT` | New Deployments are created as drafts. Activate them only after validation and conformance complete. |
+| Refresh Before Seconds | No | `86400` | Reserved refresh lead time for a future trusted conformance runner. |
+| Lifecycle Status | No | `DRAFT` | New Deployments are created as drafts. Activate them after their runtime credential is provisioned. |
 
 The backend creates `providerDeploymentId`. The form does not accept `active`;
 that value is backend-managed for soft deletion.
 
 ## Registration And Account
 
-Both selectors load non-deleted reference labels for the selected host. The
+Both selectors load non-deleted reference labels for the selected host. An LLM
+Registration label has the form `environment — provider / physical-model`, so
+registrations in the same environment remain distinguishable. The
 command rejects an ID that does not exist under that host. Choose a Registration
 for the intended environment and an Account whose provider and billing owner
 match this endpoint. The Account owns the quota-group identity; the Deployment
@@ -50,7 +53,12 @@ does not duplicate it.
 
 Choose **Provider Type** first. **Physical Model Id** then loads the model names
 related to that provider. The selected physical model must be the same model
-actually served by `baseUrl` and later reported by the conformance result.
+actually served by `baseUrl`.
+
+Provider Type and Provider Protocol have different meanings. Type identifies
+the provider; Protocol selects the request/response codec used by the gateway.
+For example, a Groq deployment uses `providerType: groq` with
+`providerProtocol: openai`.
 
 `baseUrl` must start with `https://`. Examples include:
 
@@ -93,24 +101,11 @@ provider-account runtime capacity identity.
 
 ## Conformance Fields
 
-Conformance evidence is not editable on this form. Portal creates the
-Deployment with state `UNKNOWN` and no digest, validity time, or result. After
-creation, use **Validate** and **Conformance** on the Deployments tab.
-
-The workflow produces a result containing the provider, physical model,
-validity time, detected capabilities, and captured evidence. If state is
-`PASS`, Portal requires all of the following to agree:
-
-- `conformanceDigest` matches the canonical result digest;
-- `conformanceValidUntil` matches the result's `validUntil` and is in the
-  future;
-- the result provider and physical model match `providerType` and
-  `physicalModelId`;
-- the result contains capability and capability-evidence objects.
-
-Administrative create and update commands reject manually supplied conformance
-evidence. Incomplete, mismatched, or expired workflow evidence is rejected and
-cannot become a healthy published route.
+Conformance evidence is not editable on this form. Portal retains the backend
+fields for a future trusted runner, but the current Deployments tab does not
+offer validation or conformance actions. `UNKNOWN` or `PENDING` evidence does
+not block the current route-preview or instance-targeted publication flow. Do
+not manually supply conformance state, digest, validity, or result fields.
 
 ## Lifecycle Status
 
@@ -118,8 +113,8 @@ New records use `DRAFT`. The update form supports `VALIDATING`, `ACTIVE`,
 `SUSPENDED`, and `RETIRED` after creation.
 
 Lifecycle `ACTIVE` alone does not make the Deployment routable. It also needs
-unexpired `PASS` conformance evidence, an effective Credential, Pricing, an
-Alias Route, and publication.
+an effective `ACTIVE` or `ROTATING` Credential, effective Pricing, an Alias
+Route, and publication.
 
 ## Create The Deployment
 
@@ -133,6 +128,8 @@ Choose **Create Provider Deployment**. The form sends
   confirm the current host selection.
 - **Physical Model Id is empty**: select Provider Type first and confirm the
   provider-to-model reference relation is configured.
+- **Provider Protocol is rejected**: choose `openai` or `anthropic`; do not put
+  a provider identity such as `groq` or `gemini` in this field.
 - **Base URL is rejected**: use a complete HTTPS URL.
 - **Transport Bounds error**: enter an object, correct JSON/YAML syntax, and
   choose **Apply**.

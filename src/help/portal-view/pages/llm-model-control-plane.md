@@ -238,7 +238,7 @@ Account; do not add or edit `active` in the JSON draft.
 
 Use Deployments to define a callable provider endpoint for an approved LLM. A
 Deployment binds a host-scoped Registration and provider Account to the exact
-provider type, physical model, HTTPS endpoint, region, and conformance record
+provider type, protocol, physical model, HTTPS endpoint, and optional region
 that Portal will govern. The referenced Account owns the quota group.
 
 ### Why Deployments Are Separate
@@ -267,8 +267,8 @@ prices, and Routes attach public aliases to eligible Deployments.
 - `region` and `transportBounds` retain control-plane placement and transport
   metadata. Arbitrary transport-bound properties are not automatically enforced
   by the current gateway configuration compiler.
-- The conformance fields record whether the endpoint has passed the provider
-  capability suite and when that evidence must be refreshed.
+- Conformance fields are retained for a future trusted provider-test runner,
+  but they are not part of the current interactive deployment workflow.
 
 Alias Routes reference `providerDeploymentId`. Before a route is publishable,
 the Deployment must be active, have lifecycle status `ACTIVE`, and have an
@@ -290,7 +290,9 @@ before the gateway consumes the new materialized values.
 Choose **Create provider deployment** to open
 `/app/form/createProviderDeployment`. Required create fields are
 `modelRegistrationId`, `providerAccountId`, `deploymentName`, `providerType`,
-`physicalModelId`, and `baseUrl`. `baseUrl` must use HTTPS.
+`providerProtocol`, `physicalModelId`, and `baseUrl`. `providerProtocol` is
+`openai` or `anthropic`; it is independent from provider identity, so Groq and
+Gemini OpenAI-compatible endpoints use `openai`. `baseUrl` must use HTTPS.
 
 Choose a row's edit action to open `/app/form/updateProviderDevelopment`. The
 update form retains read-only `hostId`, `providerDeploymentId`, and
@@ -300,31 +302,18 @@ See [Create Provider Deployment](../forms/create-provider-deployment.md) and
 [Update Provider Deployment](../forms/update-provider-development.md) for
 field-by-field examples.
 
-After saving, use **Validate** for deployment validation and **Conformance** to
-run the provider conformance workflow. Administrative forms do not accept
-conformance evidence. New deployments start with `conformanceState` set to
-`UNKNOWN`. Clicking **Conformance** records a versioned `PENDING` transition,
-clears any stale result, digest, and validity time, and disables the button for
-that row. It does not manufacture a passing result in the browser or command
-service.
+The Deployments tab does not expose **Validate** or **Conformance** actions in
+the current MVP because Portal has no trusted runner to complete those jobs.
+Older records may retain `UNKNOWN` or `PENDING` conformance state; that state is
+informational and does not block current route preview or instance-targeted
+publication. Do not manufacture a `PASS`, digest, validity time, or result.
 
-A trusted conformance runner consumes the pending work, tests the exact
-provider and physical model with resolved credentials, and calls
-`recordLlmProviderConformanceResult` with canonical evidence. That completion
-action requires the available `portal.w` scope. It accepts
-only `PASS`, `FAIL`, or `QUARANTINED`, verifies the result digest and deployment
-identity, and rejects expired PASS evidence. Both interactive requests and the
-runner callback use `portal.w`; restrict the completion action through its
-endpoint rule and role permissions instead of a separate scope.
-
-If a row remains `PENDING`, the Portal request succeeded but no trusted runner
-has completed it. Check that a conformance worker is consuming the deployment
-update event, can resolve the active Credential's `secretReference`, and is
-authorized to call the completion action. A deployment in `PASS` state must
-carry the complete, matching, unexpired workflow result, digest, and validity
-time.
-Due-conformance processing uses `refreshBeforeSeconds` to schedule a refresh
-before that evidence expires.
+To make a Deployment available, provision its external secret in the target
+gateway runtime, change the related Credential to `ACTIVE`, change the
+Deployment lifecycle to `ACTIVE`, add effective Pricing and an Alias Route,
+and publish the configuration. Provider connectivity is then tested through
+the tenant gateway. The backend conformance contract remains reserved for a
+future trusted runner.
 
 As with the other tabs, `active` is backend-managed. Create and update keep the
 row active; Delete soft-deletes it.
@@ -840,8 +829,8 @@ against each versioned service endpoint:
 | Operation | HTTP path | Endpoint identity | Scope |
 | --- | --- | --- | --- |
 | List and preview | `/portal/query` | `lightapi.net/genai/<queryAction>/0.1.0` | `portal.r` |
-| Create, update, delete, validate, request conformance, publish, rollback | `/portal/command` | `lightapi.net/genai/<commandAction>/0.1.0` | `portal.w` |
-| Record trusted conformance result | `/portal/command` | `lightapi.net/genai/recordLlmProviderConformanceResult/0.1.0` | `portal.w` |
+| Create, update, delete, publish, rollback | `/portal/command` | `lightapi.net/genai/<commandAction>/0.1.0` | `portal.w` |
+| Reserved conformance runner callbacks | `/portal/command` | `lightapi.net/genai/<conformanceAction>/0.1.0` | `portal.w` |
 
 Register and authorize these actions for the interactive page:
 
@@ -850,7 +839,7 @@ Register and authorize these actions for the interactive page:
 | Models | `getLlmModel` | `createLlmModel`, `updateLlmModel`, `deleteLlmModel` |
 | Registrations | `getLlmModelRegistration` | `createLlmModelRegistration`, `updateLlmModelRegistration`, `deleteLlmModelRegistration` |
 | Accounts | `getLlmProviderAccount` | `createLlmProviderAccount`, `updateLlmProviderAccount`, `deleteLlmProviderAccount` |
-| Deployments | `getLlmProviderDeployment` | `createLlmProviderDeployment`, `updateLlmProviderDeployment`, `deleteLlmProviderDeployment`, `validateLlmProviderDeployment`, `runLlmProviderConformance` |
+| Deployments | `getLlmProviderDeployment` | `createLlmProviderDeployment`, `updateLlmProviderDeployment`, `deleteLlmProviderDeployment` |
 | Credentials | `getLlmProviderCredential` | `createLlmProviderCredential`, `updateLlmProviderCredential`, `deleteLlmProviderCredential` |
 | Aliases | `getLlmPublicAlias`, `previewLlmAliasRoutes` | `createLlmPublicAlias`, `updateLlmPublicAlias`, `deleteLlmPublicAlias` |
 | Routes | `getLlmAliasRoute` | `createLlmAliasRoute`, `updateLlmAliasRoute`, `deleteLlmAliasRoute` |

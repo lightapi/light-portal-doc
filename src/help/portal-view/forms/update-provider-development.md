@@ -22,15 +22,16 @@ is not included in the form.
 
 | Field | Example | Description |
 | --- | --- | --- |
-| LLM Registration | `Production / GPT-4o` | Host-scoped approval that supplies the model and environment context. |
+| LLM Registration | `dev — groq / llama-3.3-70b-versatile` | Host-scoped approval; its label combines environment, provider, and physical model. |
 | Provider Account | `OpenAI Production` | Host-scoped billing and quota owner. |
 | Deployment Name | `openai-gpt4o-ca-prod` | Unique operator-friendly name within the host. |
-| Provider Type | `openai` | Provider adapter/format. Changing it reloads Physical Model Id options. |
+| Provider Type | `groq` | Provider identity. Changing it reloads Physical Model Id options. |
+| Provider Protocol | `openai` | Gateway wire protocol: `openai` for OpenAI-compatible endpoints, or `anthropic` for the Anthropic Messages protocol. |
 | Physical Model Id | `gpt-4o` | Exact upstream model served by the endpoint. |
 | Base URL | `https://api.openai.com/v1` | HTTPS provider base endpoint without credentials. |
-| Region | `ca-central-1` | Optional placement or residency region. |
+| Region | `ca-central-1` | Optional placement or residency region. Leave it empty for a global endpoint. |
 | Transport Bounds | `{"requestTimeoutMs":60000}` | Optional non-secret transport metadata object. |
-| Refresh Before Seconds | `86400` | Positive lead time for scheduling conformance refresh. |
+| Refresh Before Seconds | `86400` | Reserved refresh lead time for a future trusted conformance runner. |
 | Lifecycle Status | `ACTIVE` | `DRAFT`, `VALIDATING`, `ACTIVE`, `SUSPENDED`, or `RETIRED`. |
 
 Registration and Account selectors list non-deleted labels under the selected host.
@@ -38,16 +39,16 @@ Provider Type comes from `model_provider`; Physical Model Id comes from the
 provider-to-model reference relation; Region comes from the host's region
 reference data.
 
-## Account-Owned Quota And Conformance
+## Account-Owned Quota And Reserved Conformance
 
 The form does not edit `quotaGroupId`. The selected Provider Account owns that
 value, and Portal derives it through the existing Account relationship. Changing
 the Account changes the value used by the next publication, but it does not
 rewrite an already published gateway snapshot.
 
-Conformance state, digest, validity, and result are workflow-owned and are not
-accepted by this administrative update form. Use the Deployment tab's
-**Validate** and **Conformance** actions to refresh them.
+Conformance state, digest, validity, and result are not accepted by this
+administrative update form. They are reserved for a future trusted runner; the
+current Deployments tab does not expose validation or conformance actions.
 
 ## Structured Fields
 
@@ -63,17 +64,16 @@ example:
 
 Transport-bound properties remain control-plane annotations unless the
 publication contract explicitly maps them to supported gateway settings.
-Conformance Result is maintained exclusively by the conformance workflow.
 
-## Identity And Conformance Changes
+## Identity Changes
 
-The provider type, physical model, endpoint, and workflow evidence form one
-validated identity. If the provider endpoint or physical model changes, run
-validation and conformance again before treating the Deployment as
-route-eligible. The selected Account's provider type must match the Deployment.
+The provider type, provider protocol, physical model, and endpoint form the
+callable identity. If the provider endpoint or physical model changes, publish
+the updated configuration and test connectivity through the tenant gateway.
+The selected Account's provider type must match the Deployment.
 
-Changing lifecycle status to `ACTIVE` does not bypass conformance, Credential,
-Pricing, Alias Route, or publication requirements. A retired Deployment cannot
+Changing lifecycle status to `ACTIVE` does not bypass Credential, Pricing,
+Alias Route, or publication requirements. A retired Deployment cannot
 transition back to an earlier lifecycle state.
 
 ## Save The Update
@@ -84,8 +84,9 @@ Choose **Update Provider Deployment**. The form sends
 **Administration > GenAI Admin > LLM Models** after success.
 
 An update changes the Portal control-plane record; it does not rewrite a
-previously published gateway snapshot. Validate and publish the intended new
-configuration before expecting the gateway to use it.
+previously published gateway snapshot. Publish the intended new configuration
+and test it through the tenant gateway before expecting supported runtime
+behavior.
 
 ## Common Problems
 
@@ -98,6 +99,8 @@ configuration before expecting the gateway to use it.
   **Apply**, or choose **Reset** to restore the last valid value.
 - **Provider mismatch**: select an Account whose provider type matches the
   Deployment.
+- **Provider Protocol is rejected**: choose `openai` or `anthropic`; Groq and
+  Gemini OpenAI-compatible endpoints use `openai`.
 - **403 on Update**: confirm access to
   `lightapi.net/genai/updateLlmProviderDeployment/0.1.0` and the required write
   permission.
