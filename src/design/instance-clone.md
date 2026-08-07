@@ -280,6 +280,10 @@ calls reuse it so proposed IDs remain stable while the user edits selections.
     "targetProductVersionId": "...",
     "includeFiles": false,
     "fileSelections": [],
+    "includeApis": true,
+    "apiSelections": ["..."],
+    "includeApps": true,
+    "appSelections": ["..."],
     "includeDeployments": false,
     "deploymentSelections": [],
     "createSnapshot": true,
@@ -309,6 +313,23 @@ environment tag should normally have the same value.
 Optional instance overrides include description, zone, region, line of
 business, resource name, business name, topic classification, and ownership
 when the caller is an administrator.
+
+API and app selections are parent-aware. When `apiSelections` or
+`appSelections` is omitted from an initial plan request, every active source API
+or app is selected. Once a plan has been returned, the client sends the explicit
+selected IDs. `includeApis: false` or `includeApps: false` with an empty
+selection removes the entire corresponding section. A non-empty selection is
+invalid when its include flag is false.
+
+Execution requires both `apiSelections` and `appSelections` to be present and
+returns `INVALID_CLONE_REQUEST` when either field is omitted; older clients must
+be upgraded before they can execute clones planned with this contract.
+
+Excluding an instance API also excludes its path prefixes, API properties, and
+every app/API association that references it. Excluding an instance app also
+excludes its app properties and every app/API association that references it.
+An association and its properties are copied only when both its app and API are
+selected. Property selectors whose parent entity is excluded are rejected.
 
 ### Property selector
 
@@ -346,8 +367,10 @@ invalid lower-precedence value.
 ### Sensitive values
 
 The property inventory always returns property metadata but does not return raw
-values by default. It includes configuration name, property name, scope,
-`valueType`, parent display identity, aggregate version, and `valueState`.
+values by default. `propertyMetadata` is keyed by property ID and includes the
+configuration name, property name, and `valueType`; selectors continue to carry
+the stable property UUID. The UI falls back to the UUID when catalog metadata is
+unavailable.
 
 `COPY` never requires the raw value to leave the server. A user who needs to
 inspect a value uses a separate audited POST reveal action with the same owner
@@ -435,6 +458,10 @@ the returned `sourceGraphDigest` and `planHash`:
     "targetProductVersionId": "...",
     "includeFiles": false,
     "fileSelections": [],
+    "includeApis": true,
+    "apiSelections": ["..."],
+    "includeApps": true,
+    "appSelections": ["..."],
     "includeDeployments": false,
     "deploymentSelections": [],
     "createSnapshot": true,
@@ -449,6 +476,11 @@ covers the current schemas and value-type constraints of every referenced
 configuration property. A schema change after preview returns
 `PLAN_DEPENDENCY_CHANGED` and requires a new preview. Client-provided target or
 child IDs that do not match the deterministic mapping are rejected.
+
+The clone page renders the planned instance APIs and instance apps as explicit
+checkbox lists with **Select all** and **Clear all** controls. Changing either
+list invalidates the current plan and clears property overrides so the next
+plan contains only properties whose parents remain selected.
 
 The immediate response is `ACCEPTED`, not completed. It contains the clone
 request ID, target instance ID, transaction ID, terminal event ID, event counts,
