@@ -2169,6 +2169,8 @@ deactivateKnowledgeSource
 deleteKnowledgeSource
 testKnowledgeSource
 requestKnowledgeSourceSync
+requestKnowledgeSourceAclReconciliation
+receiveKnowledgeSourceProviderNotification (workload only)
 
 bindAgentKnowledgeBase
 updateAgentKnowledgeBaseBinding
