@@ -500,11 +500,16 @@ PostgreSQL database contains a narrow runtime authorization projection with:
 - the last applied Portal event sequence, signed heartbeat time, and projection
   acknowledgement.
 
-The retrieval API reads this projection, the active generation pointer, source
-ACL revisions, and candidate rows in one database transaction at a repeatable
-snapshot. It never authorizes from a Portal-database join or a process-local
-cache. The projection consumer applies events in aggregate order and uses an
-idempotent inbox; applied state and acknowledgement are committed together.
+The retrieval API first serializes quota admission in a short read-committed
+transaction that locks the consumer quota row. It then reads the runtime
+authorization projection, active generation pointer, source ACL revisions, and
+candidate rows in one separate transaction at a repeatable snapshot. It never
+authorizes from a Portal-database join or a process-local cache. The projection
+consumer applies events in aggregate order and uses an idempotent inbox;
+applied state and acknowledgement are committed together. A sequence gap parks
+only the affected aggregate and cannot stop progress for unrelated aggregates.
+The signed heartbeat and authorization-lease renewal run on an independent
+timer, so a parked or malformed event cannot expire every healthy binding.
 
 An authorization-removing action such as unbind, source deactivation, Knowledge
 Base deactivation, or strategy revocation is `PENDING` until the knowledge
@@ -541,6 +546,7 @@ KnowledgeSourceUpdatedEvent
 KnowledgeSourceDeactivatedEvent
 KnowledgeSourceDeletedEvent
 KnowledgeSourceSyncRequestedEvent
+KnowledgeSourceConnectivityTestRequestedEvent
 
 AgentKnowledgeBaseBoundEvent
 AgentKnowledgeBaseBindingUpdatedEvent
@@ -1404,8 +1410,12 @@ is insufficient.
 Use two internal workload Aliases and two independently admitted gateway
 workload lanes:
 
-- `kb-index-embedding` is asynchronous and throughput-oriented;
-- `kb-query-embedding` is latency-oriented and has protected capacity.
+- `kb-index` is asynchronous and throughput-oriented;
+- `kb-query` is latency-oriented and has protected capacity.
+
+The Alias names are `kb-index` and `kb-query`; the distinct workload-lane
+identifiers remain `kb_index` and `kb_query`. Alias names and lane identifiers
+are separate contracts and must not be substituted for one another.
 
 The immutable space registry and gateway conformance/admission implementation
 are shared platform services used by Knowledge Base, Hindsight, and
@@ -2181,6 +2191,10 @@ importKnowledgeBasePortabilityManifest
 bindImportedKnowledgeDependencies
 approveKnowledgeBaseImportBuild
 abandonKnowledgeBaseImport
+
+acknowledgeKnowledgeProjection
+acknowledgeKnowledgeBaseIndexGenerationPromotion
+acknowledgeKnowledgeBaseIndexGenerationRollback
 ~~~
 
 Suggested query actions are:
@@ -2217,6 +2231,10 @@ only after every required mapping and policy gate passes; and
 `abandonKnowledgeBaseImport` makes an incomplete import terminal without
 releasing its publication identity. The two import queries expose minimized
 status and source-to-target lineage without returning secrets or source content.
+The three `acknowledge*` actions are workload-authenticated internal actions,
+not administrator or browser operations. They make projection progress and
+knowledge-service pointer outcomes durable in Portal history through an
+idempotent reverse acknowledgement path.
 
 estimateKnowledgeBaseEmbeddingMigration accepts a visible qualified target
 profile and returns chunk/token counts, cost and duration ranges, temporary
@@ -2437,6 +2455,21 @@ unsupported filter or query contract, 429 quota, 503 stale authorization
 projection or unavailable required dependency, and 504 propagated deadline.
 Complete, empty, and permitted partial retrieval use 200 with the explicit body
 status. Every error uses a stable code, retryable flag, and correlation ID.
+
+The initial frozen error-code mapping is:
+
+| Code | HTTP | Retryable |
+| --- | ---: | --- |
+| KNOWLEDGE_INVALID_REQUEST | 400 | No |
+| KNOWLEDGE_AUTHENTICATION_REQUIRED | 401 | No |
+| KNOWLEDGE_FORBIDDEN | 403 | No |
+| KNOWLEDGE_NOT_FOUND | 404 | No |
+| KNOWLEDGE_STATE_CONFLICT | 409 | No |
+| KNOWLEDGE_UNSUPPORTED_CONTRACT | 422 | No |
+| KNOWLEDGE_QUOTA_EXCEEDED | 429 | Yes |
+| KNOWLEDGE_PROJECTION_STALE | 503 | Yes |
+| KNOWLEDGE_DEPENDENCY_UNAVAILABLE | 503 | Yes |
+| KNOWLEDGE_DEADLINE_EXCEEDED | 504 | Yes |
 
 Also expose an authorized document-resolution endpoint for a user following a
 citation:
