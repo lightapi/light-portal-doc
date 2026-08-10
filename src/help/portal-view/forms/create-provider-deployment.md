@@ -39,8 +39,6 @@ and base URL must describe the same provider path.
 | Expected Sidecar Identity | No | Sidecar profile/digest object only; leave empty for a native hosted Endpoint. Never include credentials. |
 | Region | No | Optional provider placement/residency label. |
 | Transport Bounds | No | Additional non-secret transport annotations; use `{}` when none are approved. |
-| Refresh Before Seconds | No | Lead time used by trusted refresh/qualification workflows. |
-| Lifecycle Status | Yes | New Deployments start as `DRAFT`. |
 
 Runtime Capacity requires exactly usable positive bounds. A suitable demo
 starting point is:
@@ -83,8 +81,7 @@ Select the `loc` NVIDIA Nemotron Registration, Account
   "readinessPolicy": "IMMEDIATE",
   "expectedSidecar": null,
   "region": null,
-  "transportBounds": {},
-  "lifecycleStatus": "DRAFT"
+  "transportBounds": {}
 }
 ```
 
@@ -95,8 +92,8 @@ internally inconsistent legacy/deployment record.
 ### Protected Knowledge Base lanes
 
 `kb-index` and `kb-query` are separate protected workload lanes. For a
-production-like qualification, create distinct index/query Deployments with
-different Deployment Revision and Capacity Domain identities, and use provider
+production deployment, create distinct index/query Deployments with different
+Deployment Revision and Capacity Domain identities, and use provider
 Accounts/quota that supply real capacity isolation. Merely giving two records
 different strings does not create physical isolation when both consume the
 same free external quota.
@@ -105,16 +102,13 @@ For a functional local demo, one hosted Deployment can prove transport and
 embedding correctness, but it must not be represented as production lane
 isolation evidence.
 
-## Qualification and activation
 
-Conformance/qualification evidence is machine-owned and is not editable on
-this form. A trusted runner must test the exact protocol, physical model,
-operation, credential path, and embedding-space evidence. Do not manufacture a
-PASS result.
+Portal validates the declared protocol, model, endpoint, runtime bounds, and
+cross-record references. Test actual provider access through the published
+gateway, where the runtime secret is available.
 
-After creation, provision the Credential, Pricing, Alias, and Route. Move the
-Deployment to `ACTIVE` only after the runtime path is ready, then publish a new
-gateway candidate. Portal generates Provider Deployment Id and Aggregate
+After creation, provision the Credential, Pricing, Alias, and Route, then
+publish a new gateway candidate. Portal generates Provider Deployment Id and Aggregate
 Version; `active` remains backend-managed.
 
 ## Common problems

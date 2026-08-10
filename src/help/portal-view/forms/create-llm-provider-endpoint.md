@@ -45,8 +45,7 @@ Select the `nvidia-free-embedding-demo` Provider Account and use:
   "trustBundleReference": null,
   "poolIdleTimeoutMs": 30000,
   "clientRefreshIntervalMs": 300000,
-  "plaintextRiskAcknowledged": false,
-  "lifecycleStatus": "DRAFT"
+  "plaintextRiskAcknowledged": false
 }
 ```
 
@@ -55,6 +54,5 @@ TLS Endpoint. Create `env:NVIDIA_API_KEY` later on the Credentials tab; never
 paste its value here.
 
 Portal generates Provider Endpoint Id and Aggregate Version. After creating a
-compatible Deployment and Credential, activate and publish the Endpoint only
-after the runtime path has been verified.
-
+compatible Deployment and Credential, publish the configuration and verify the
+runtime path through the target gateway.

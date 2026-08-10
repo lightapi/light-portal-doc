@@ -1,8 +1,8 @@
 # Update Provider Endpoint
 
-Use `/app/form/updateLlmProviderEndpoint` to revise a provider transport profile
-or lifecycle. Host Id, Provider Endpoint Id, Resolved Trust SHA-256, and
-Aggregate Version are read-only.
+Use `/app/form/updateLlmProviderEndpoint` to revise a provider transport profile.
+Host Id, Provider Endpoint Id, Resolved Trust SHA-256, and Aggregate Version are
+read-only.
 
 The authentication and network invariants from
 [Create Provider Endpoint](./create-llm-provider-endpoint.md) still apply. In

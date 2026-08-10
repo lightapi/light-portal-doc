@@ -1,6 +1,6 @@
 # Update Public Alias
 
-Use this form to revise mutable policy, lifecycle, visibility, or migration
+Use this form to revise mutable policy, visibility, or migration
 metadata for an existing Alias. Routes remain separate and are updated from the
 Routes tab.
 
@@ -36,7 +36,6 @@ normalization, cosine distance, and `document-v1` transform.
 | Data Classification | Host vocabulary used by governance and routing. |
 | Logging Mode | `NONE`, `METADATA`, or `REDACTED`. |
 | PII Mode | `DENY`, `REDACT`, `TOKENIZE`, or `ALLOW`. |
-| Lifecycle Status | `DRAFT`, `ACTIVE`, `DEPRECATED`, or `RETIRED`. |
 | Replacement Alias | Intended successor; it is not an automatic redirect. |
 | Alias Visibility | `PUBLIC`, `INTERNAL_LEGACY`, or `INTERNAL_WORKLOAD`. |
 | Bound Agent Definition | Required only for `INTERNAL_LEGACY`. |
@@ -47,7 +46,6 @@ the bound principal matches the query or indexing bearer-token subject. Do not
 switch a protected workload Alias to `PUBLIC` merely to bypass an identity
 failure; correct the token/principal binding.
 
-Changing lifecycle to `ACTIVE` does not make the Alias publishable by itself.
-It still requires compatible active Routes, Deployments, Endpoint credentials,
-Pricing, qualification evidence, and a new publication. `active` remains
-backend-managed through soft delete.
+Updating the Alias does not make it publishable by itself. It still requires
+compatible Routes, Deployments, Endpoint credentials, and Pricing. Soft-delete
+state remains backend-managed.

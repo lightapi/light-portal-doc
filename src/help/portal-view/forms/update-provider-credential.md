@@ -1,7 +1,7 @@
 # Update Provider Credential
 
-Use `/app/form/updateProviderCredential` to change the activation window or
-lifecycle of an existing provider Credential. Open it from **Administration >
+Use `/app/form/updateProviderCredential` to change the activation window of an
+existing provider Credential. Open it from **Administration >
 GenAI Admin > LLM Models > Credentials** by choosing the row's edit action.
 
 The update form does not accept raw secret material. For an actual rotation,
@@ -29,51 +29,29 @@ version, or reference is intended for correcting a record before activation.
 | Secret Reference | Yes | `env:OPENAI_API_KEY_V2` | Environment-variable reference resolved locally by the gateway. Vault or another injector may populate the variable; never enter its value. |
 | Effective Time | Yes | `2026-08-15T14:00:00Z` | ISO-8601 time when this version becomes eligible. |
 | Expiration Time | No | `2026-11-15T14:00:00Z` | Optional ISO-8601 cutoff later than Effective Time. |
-| Lifecycle Status | No | `ACTIVE` | Administrative status: `PENDING`, `ACTIVE`, `ROTATING`, `REVOKED`, or `EXPIRED`. |
 
 Use an explicit timezone in both timestamps. Leaving Expiration Time empty keeps
-the time window open-ended, but lifecycle status can still make the credential
-ineligible.
-
-## Lifecycle Status
-
-| Status | Publication eligibility | Typical use |
-| --- | --- | --- |
-| `PENDING` | No | Reference is provisioned or awaiting verification. |
-| `ACTIVE` | Yes, while effective and unexpired | Normal credential serving traffic. |
-| `ROTATING` | Yes, while effective and unexpired | Intentional overlap while traffic moves to a newer version. |
-| `REVOKED` | No | Secret was withdrawn or must no longer be used. This is terminal. |
-| `EXPIRED` | No | Credential reached the end of its supported lifetime. This is terminal. |
-
-Portal's lifecycle validation does not allow a terminal `REVOKED` or `EXPIRED`
-record to return to an earlier status. Create a new version instead.
+the reference effective until it is replaced or deleted.
 
 For NVIDIA, preserve purpose `ENDPOINT`, Endpoint `nvidia-free-embeddings`, and
-the corresponding Nemotron Deployment. Activate `env:NVIDIA_API_KEY` only after
-the gateway container can resolve it. For key rotation, create version `2` with
+the corresponding Nemotron Deployment. Publish only after the gateway container
+can resolve `env:NVIDIA_API_KEY`. For key rotation, create version `2` with
 a new external reference instead of putting a new key value into this form.
 
 ## Rotation Example
 
-Suppose version `1` is currently active and version `2` should take over at
+Suppose version `1` is currently used and version `2` should take over at
 `2026-08-15T14:00:00Z`:
 
-1. Create version `2` as `PENDING` with the new external reference and effective
-   time.
+1. Create version `2` with the new external reference and effective time.
 2. Verify the secret and resolver permissions.
-3. Change version `2` to `ACTIVE` when it is ready.
-4. Mark version `1` as `ROTATING` only for the intentional overlap period.
-5. Mark version `1` as `REVOKED` or `EXPIRED` after cutover.
-
-Avoid leaving multiple versions `ACTIVE` indefinitely. The current
-publication-candidate check verifies that an eligible credential exists; it
-does not itself express an operator's preference between overlapping versions.
+3. End version `1` by setting its Expiration Time to the cutover time.
+4. Publish and test the new snapshot through the target gateway.
 
 ## Save The Update
 
 Choose **Update Provider Credential**. The form sends
 `lightapi.net/genai/updateLlmProviderCredential/0.1.0` with the stable identity,
-external reference, activation window, lifecycle status, and
 `aggregateVersion`, then returns to the LLM Model Control Plane.
 
 ## Common Problems
@@ -82,13 +60,10 @@ external reference, activation window, lifecycle status, and
   apply the change to the latest row.
 - **Expiration is rejected**: ensure it is later than Effective Time and both
   values contain a timezone.
-- **Cannot return from REVOKED or EXPIRED**: terminal versions cannot be
-  reactivated; create a new version.
 - **Need a different Secret Reference after activation**: create the next
   credential version instead of rewriting operational history.
-- **Publication still reports no credentialed route**: verify lifecycle is
-  `ACTIVE` or `ROTATING`, Effective Time has arrived, Expiration Time has not
-  passed, and the row was not deleted.
+- **Publication still reports no credentialed route**: verify Effective Time
+  has arrived, Expiration Time has not passed, and the row was not deleted.
 - **403 on Update**: confirm access to
   `lightapi.net/genai/updateLlmProviderCredential/0.1.0` and the required write
   permission.

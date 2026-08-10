@@ -23,7 +23,6 @@ approved publication mapping and a gateway that supports the mapped fields.
 | Cache Policy | Object describing intended cache use and constraints. | `{"enabled":false}` |
 | PII Policy | Object describing intended PII handling and applicable kinds. | `{"mode":"REDACT","allowedKinds":["EMAIL"]}` |
 | Native Extension Policy | Object allowlisting provider-specific request fields outside the portable model contract. Keep it narrowly scoped by provider. | `{"openai":{"allowedRequestFields":["service_tier"]}}` |
-| Lifecycle Status | Administrative state. `DRAFT` is the create default; use `ACTIVE` only after review. `SUSPENDED` temporarily removes intended eligibility and `RETIRED` is terminal. | `DRAFT` |
 
 ## Complete Example
 
@@ -53,8 +52,7 @@ approved publication mapping and a gateway that supports the mapped fields.
     "openai": {
       "allowedRequestFields": ["service_tier"]
     }
-  },
-  "lifecycleStatus": "DRAFT"
+  }
 }
 ```
 

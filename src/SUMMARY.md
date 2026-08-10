@@ -162,6 +162,7 @@
     - [Register Standalone MCP Server](./help/portal-view/tasks/register-standalone-mcp-server.md)
     - [Publish API](./help/portal-view/tasks/publish-api.md)
     - [Register AI Agent](./help/portal-view/tasks/register-ai-agent.md)
+    - [Validate LLM Embeddings](./help/portal-view/tasks/validate-llm-embeddings.md)
     - [Manage Instance](./help/portal-view/tasks/manage-instance.md)
     - [Manage Client App](./help/portal-view/tasks/manage-client-app.md)
     - [Manage Workflow](./help/portal-view/tasks/manage-workflow.md)

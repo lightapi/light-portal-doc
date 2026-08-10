@@ -5,9 +5,8 @@ policy contract that every route behind that name must satisfy. Applications
 use the Alias Name instead of a provider Deployment or physical model ID.
 
 Despite the entity name, an Alias can be generally available (`PUBLIC`) or
-restricted to an agent or workload identity. Start a new Alias in `DRAFT`, add
-and validate its Routes, credentials, pricing, and deployment qualification,
-and make it `ACTIVE` only when it is ready for publication.
+restricted to an agent or workload identity. Add its Routes, Credential, and
+Pricing records, then use Publish to review the complete configuration.
 
 > **Important:** `operations`, `requiredCapabilities.embeddingSpace`,
 > `requireExpectedEmbeddingSpace`, and `embeddingWorkloadLane` form an
@@ -31,7 +30,6 @@ and make it `ACTIVE` only when it is ready for publication.
 | Data Classification | Optional classification used by data-handling and route policy. Use the vocabulary established for the host. | `public` |
 | Logging Mode | `NONE`, `METADATA`, or `REDACTED`. | `METADATA` |
 | PII Mode | `DENY`, `REDACT`, `TOKENIZE`, or `ALLOW`. Choose the most restrictive mode compatible with the use case. | `DENY` |
-| Lifecycle Status | `DRAFT`, `ACTIVE`, `DEPRECATED`, or `RETIRED`. `DRAFT` is the safe creation value. | `DRAFT` |
 | Replacement Alias | Optional intended successor for migration. It is not an automatic redirect and cannot reference the Alias being created. | `governed-chat-v2` |
 | Alias Visibility | `PUBLIC`, `INTERNAL_LEGACY`, or `INTERNAL_WORKLOAD`. The visibility determines which identity binding fields are allowed. | `INTERNAL_WORKLOAD` |
 | Bound Agent Definition | Required only for `INTERNAL_LEGACY`; select the single agent allowed to resolve the Alias. Leave it empty for the other visibility modes. | `Legacy Support Agent` |
@@ -113,7 +111,6 @@ Create the indexing Alias first:
   "dataClassification": "public",
   "loggingMode": "METADATA",
   "piiMode": "DENY",
-  "lifecycleStatus": "DRAFT",
   "aliasVisibility": "INTERNAL_WORKLOAD",
   "boundWorkloadPrincipal": "knowledge-indexer"
 }
@@ -159,7 +156,6 @@ For a generally available generation Alias:
   "dataClassification": "internal",
   "loggingMode": "METADATA",
   "piiMode": "REDACT",
-  "lifecycleStatus": "DRAFT",
   "aliasVisibility": "PUBLIC"
 }
 ```

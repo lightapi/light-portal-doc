@@ -25,7 +25,6 @@ separate Account for each boundary that must be managed independently.
 | Billing Principal | Yes | The organization, project, subscription, or cost center responsible for provider charges. Enter an identifier or name, never a credential. |
 | Quota Group Id | Yes | A stable identifier for the provider capacity or quota pool shared by related Deployments. |
 | Capacity Metadata | No | A JSON object containing non-secret provider capacity information. It defaults to an empty object. |
-| Lifecycle Status | No | The administrative state. It defaults to `DRAFT`; supported values are `DRAFT`, `ACTIVE`, `SUSPENDED`, and `RETIRED`. |
 
 The backend creates `providerAccountId`. The form does not ask you to supply
 that identifier. The `active` field is also backend-managed and is not part of
@@ -107,8 +106,7 @@ For the NVIDIA hosted `nemotron-3-embed-1b` demo, use:
   "capacityMetadata": {
     "serviceTier": "free-demo",
     "sharedExternalQuota": true
-  },
-  "lifecycleStatus": "DRAFT"
+  }
 }
 ```
 
@@ -131,5 +129,5 @@ instead. Keep all secret material on the Credentials tab.
   `lightapi.net/genai/createLlmProviderAccount/0.1.0` command endpoint and the
   required write permission.
 
-For account lifecycle, deployment relationships, and gateway usage, see the
+For account relationships and gateway usage, see the
 [LLM Model Control Plane](../pages/llm-model-control-plane.md) guide.

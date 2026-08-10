@@ -38,24 +38,17 @@ is not included in the form.
 | Expected Sidecar Identity | Empty | Profile/digest only for a managed sidecar; leave empty for a native hosted Endpoint. |
 | Region | `ca-central-1` | Optional placement or residency region. Leave it empty for a global endpoint. |
 | Transport Bounds | `{"requestTimeoutMs":60000}` | Optional non-secret transport metadata object. |
-| Refresh Before Seconds | `86400` | Reserved refresh lead time for a future trusted conformance runner. |
-| Lifecycle Status | `ACTIVE` | `DRAFT`, `VALIDATING`, `ACTIVE`, `SUSPENDED`, or `RETIRED`. |
 
 Registration and Account selectors list non-deleted labels under the selected host.
 Provider Type comes from `model_provider`; Physical Model Id comes from the
 provider-to-model reference relation; Region comes from the host's region
 reference data.
 
-## Account-Owned Quota And Reserved Conformance
 
 The form does not edit `quotaGroupId`. The selected Provider Account owns that
 value, and Portal derives it through the existing Account relationship. Changing
 the Account changes the value used by the next publication, but it does not
 rewrite an already published gateway snapshot.
-
-Conformance state, digest, validity, and result are not accepted by this
-administrative update form. They are reserved for a future trusted runner; the
-current Deployments tab does not expose validation or conformance actions.
 
 ## Structured Fields
 
@@ -79,9 +72,8 @@ callable identity. If the provider endpoint or physical model changes, publish
 the updated configuration and test connectivity through the tenant gateway.
 The selected Account's provider type must match the Deployment.
 
-Changing lifecycle status to `ACTIVE` does not bypass Credential, Pricing,
-Alias Route, or publication requirements. A retired Deployment cannot
-transition back to an earlier lifecycle state.
+An update does not bypass Credential, Pricing, Alias Route, or publication
+requirements. Publish performs the final cross-record review.
 
 For the hosted NVIDIA Deployment, preserve Provider Type `nvidia`, Protocol
 `openai_embeddings`, Physical Model Id `nvidia/nemotron-3-embed-1b`, Base URL

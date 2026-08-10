@@ -47,13 +47,11 @@ This update makes the Route a Canadian fallback with priority `10`:
 
 The Route preview reports ordering and eligibility, but it does not execute a
 provider request or guarantee that fallback will succeed at runtime. Before
-publication, confirm that at least one Route for every active Alias has an
-active, credentialed, and priced Deployment. Conformance evidence is
-machine-owned and applies when required by the qualification policy. The
-`active` state is backend-managed through soft delete and is not part of this
+publication, confirm that at least one Route for every Alias has a credentialed
+and priced Deployment. The `active` state is backend-managed through soft delete and is not part of this
 form.
 
-For `kb-index` or `kb-query`, select only a Deployment qualified for
+For `kb-index` or `kb-query`, select only a Deployment configured for
 `openai_embeddings` and the Alias's exact 2048-dimensional Nemotron embedding
 space. Changing a Route to another Deployment with the same vector dimension
 but a different space ID, revision, normalization, distance metric, or document

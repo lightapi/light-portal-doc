@@ -15,7 +15,6 @@ public HTTPS provider.
 | Allowed Ports | Yes | Non-empty JSON array of integer ports from 1 through 65535. |
 | Allow Private TLS | Yes | Permit `PRIVATE_TLS` Endpoints in this Zone. |
 | Allow Private Plaintext | Yes | Permit explicitly acknowledged `PRIVATE_PLAINTEXT`; keep disabled unless an administrator accepts the risk. |
-| Lifecycle Status | Yes | New Zones start as `DRAFT`. |
 
 Example for a private TLS provider:
 
@@ -26,8 +25,7 @@ Example for a private TLS provider:
   "cidrs": ["10.42.0.0/16"],
   "allowedPorts": [443],
   "allowPrivateTls": true,
-  "allowPrivatePlaintext": false,
-  "lifecycleStatus": "DRAFT"
+  "allowPrivatePlaintext": false
 }
 ```
 

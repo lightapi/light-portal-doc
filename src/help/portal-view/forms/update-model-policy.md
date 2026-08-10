@@ -1,6 +1,6 @@
 # Update Model Policy
 
-Use this form to revise a Model Policy's name, governance objects, or lifecycle.
+Use this form to revise a Model Policy's name or governance objects.
 The change remains control-plane data until a supported publication mapping is
 validated and a new immutable gateway candidate is applied.
 
@@ -26,7 +26,6 @@ key requires an approved compiler mapping and compatible gateway support.
 | Cache Policy | Object describing intended cache behavior. | `{"enabled":false}` |
 | PII Policy | Object describing intended handling for personally identifiable data. | `{"mode":"REDACT","allowedKinds":["EMAIL","PHONE"]}` |
 | Native Extension Policy | Object allowlisting provider-specific request extensions. | `{"openai":{"allowedRequestFields":["service_tier"]}}` |
-| Lifecycle Status | `DRAFT`, `ACTIVE`, `SUSPENDED`, or `RETIRED`. A Policy cannot return to `DRAFT` after leaving it, and `RETIRED` is terminal. | `ACTIVE` |
 | Aggregate Version | Read-only record version submitted with the update. Reload after a conflict instead of changing it manually. | `4` |
 
 ## Complete Example
@@ -59,7 +58,6 @@ key requires an approved compiler mapping and compatible gateway support.
       "allowedRequestFields": ["service_tier"]
     }
   },
-  "lifecycleStatus": "ACTIVE",
   "aggregateVersion": 4
 }
 ```
@@ -68,8 +66,8 @@ Do not place API keys, passwords, bearer values, authorization headers, or
 other raw secrets in a policy object. Use the Credentials tab for external
 secret references.
 
-Before suspending or retiring a Policy, review its Bindings and any Agent that
-selects its Model Policy Id. After any enforceable change, create and apply a
+Before changing a Policy, review its Bindings and any Agent that selects its
+Model Policy Id. After any enforceable change, create and apply a
 new valid publication; an existing gateway snapshot does not update in place.
 The `active` state is backend-managed through soft delete and is not part of
 this form.

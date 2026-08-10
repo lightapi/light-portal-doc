@@ -15,7 +15,7 @@ capabilities.
 | Field | Description | Example |
 | --- | --- | --- |
 | Host Id | Read-only tenant boundary supplied by the portal. Both referenced records must belong to this host. | `10000000-0000-4000-8000-000000000001` |
-| Public Alias | Non-deleted Alias that clients use as their stable model name. Lifecycle activation is required later for publication. | `kb-index` |
+| Public Alias | Non-deleted Alias that clients use as their stable model name. Publication validates its routes and provider material. | `kb-index` |
 | Provider Deployment | Non-deleted Deployment that can serve the Alias. Its environment and embedding capabilities must match the Alias. | `nvidia-nemotron-3-embed-1b-loc` |
 | Route Priority | Non-negative ordering value. Lower values are evaluated first and must be unique within the Alias. | `0` |
 | Route Weight | Read-only value fixed at `1` for the current MVP. Weighted selection is not supported yet. | `1` |
@@ -63,10 +63,8 @@ fallback:
 ```
 
 Creating a Route does not by itself make the Alias publishable. The Alias and
-Deployment must reach the required lifecycle state, and the Deployment needs
-an effective Credential and effective Pricing. Conformance evidence is
-machine-owned and is required only when the applicable qualification policy
-requires it; never manufacture it in this form. The backend generates the
+Deployment must be present and internally consistent, and the Deployment needs
+an effective Credential and effective Pricing. The backend generates the
 Alias Route Id and aggregate version. The `active` state is backend-managed
 through soft delete and is not part of this form.
 
@@ -106,5 +104,4 @@ complete embedding-space contract, not only dimension `2048`.
 Production-protected `kb_index` and `kb_query` lanes require genuinely separate
 runtime and capacity/quota domains. Routing both Aliases through one free
 shared NVIDIA Deployment is appropriate for this functional demo, but it is
-not production-isolation evidence and can be rejected by protected-lane
-qualification.
+not production-isolation evidence.

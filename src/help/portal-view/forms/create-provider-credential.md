@@ -33,7 +33,6 @@ authorization header into any field.
 | Secret Reference | Yes | `env:OPENAI_API_KEY` | Environment-variable reference resolved locally by the target gateway. This is a name, never the secret value. |
 | Effective Time | Yes | `2026-08-15T14:00:00Z` | ISO-8601 timestamp when this version becomes eligible. Use an explicit timezone. |
 | Expiration Time | No | `2026-11-15T14:00:00Z` | Optional ISO-8601 cutoff. It must be later than Effective Time. Leave it empty for no scheduled expiration. |
-| Lifecycle Status | Yes | `PENDING` | New credentials are created as `PENDING` and are not publication-eligible until activated. |
 
 Portal generates `providerCredentialId` and initializes `aggregateVersion`.
 The form does not accept `active`; soft-delete state is backend-managed.
@@ -91,25 +90,19 @@ Expiration Time: 2026-11-15T14:00:00Z
 
 Publication eligibility uses the database clock. Before `effectiveTs`, the row
 is not eligible. At or after `expiresTs`, it is no longer eligible. An empty
-expiration means the time window does not expire automatically; lifecycle state
-can still revoke it.
+expiration means the time window does not expire automatically.
 
-## Lifecycle And Activation
+## Activation window
 
-The create form fixes lifecycle status to `PENDING`. This prevents a newly
-entered, unverified reference from immediately satisfying the publication
-credential gate.
+Portal publishes the reference only while this time window is effective. Portal
+never resolves or tests the referenced secret.
 
 After creation:
 
 1. Confirm the external secret exists in the target environment.
 2. Confirm the gateway's workload identity can resolve it.
 3. Verify the activation window.
-4. Open the update form and change the lifecycle to `ACTIVE` when ready.
-
-`ACTIVE` or `ROTATING` credentials within their effective window can satisfy the
-publication-candidate check. `PENDING`, `REVOKED`, and `EXPIRED` credentials
-cannot.
+4. Publish and test the configuration through the target gateway.
 
 ## Submit The Credential
 
@@ -130,12 +123,10 @@ For the hosted Nemotron Endpoint, use:
 | Secret Reference | `env:NVIDIA_API_KEY` |
 | Effective Time | Current UTC time in ISO-8601 format |
 | Expiration Time | Empty for the local demo unless the key has a known expiry |
-| Lifecycle Status | `PENDING` |
 
 Pass `NVIDIA_API_KEY` into the `light-gateway` process through runtime secret
 injection or Compose environment expansion. Never commit its value to Portal
-configuration. Change this row to `ACTIVE` only after the target gateway can
-resolve the variable.
+configuration. Publish only after the target gateway can resolve the variable.
 
 ## Common Problems
 
@@ -148,9 +139,8 @@ resolve the variable.
   Deployment.
 - **Expiration is rejected**: make it later than Effective Time and include a
   timezone.
-- **Publication still fails**: a `PENDING` or not-yet-effective credential does
-  not satisfy route health; activate it only after the external reference is
-  verified.
+- **Publication still fails**: verify the Effective Time has arrived and the
+  Expiration Time has not passed.
 - **403 on Create**: confirm access to
   `lightapi.net/genai/createLlmProviderCredential/0.1.0` and the required write
   permission.

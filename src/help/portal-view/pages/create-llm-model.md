@@ -20,8 +20,7 @@ deployments, aliases, policies, and publication, see the
 | Context Token Limit | Maximum context size. Enter an integer greater than zero. |
 | Output Token Limit | Maximum generated output size. Enter an integer greater than zero. |
 
-`Model Version` is optional, and `Lifecycle Status` defaults to `DRAFT`.
-`active` is backend-managed: create and update keep the model active, while the
+`Model Version` is optional. `active` is backend-managed: create and update keep the model active, while the
 delete command soft-deletes it.
 
 ## Structured Fields
@@ -85,7 +84,6 @@ For the `light-knowledge` demo, use these values for the NVIDIA catalog Model:
 | Physical Model Id | `nvidia/nemotron-3-embed-1b` |
 | Model Family | `nemotron-3-embed` |
 | Model Version | Leave empty unless the provider publishes a stable version identifier |
-| Lifecycle Status | `DRAFT` initially |
 | Context Token Limit | `4096` |
 | Output Token Limit | `1` because the current generic schema requires a positive value; embedding calls do not generate output tokens |
 | Modalities | `["text"]` |
@@ -95,13 +93,22 @@ Use this Declared Capabilities object:
 
 ```json
 {
+  "operations": ["embed"],
   "embedding": {
-    "dimensions": [2048],
-    "defaultDimension": 2048,
-    "encodings": ["float"],
-    "normalization": "l2",
-    "distanceMetrics": ["cosine"],
-    "inputTypes": ["query", "passage"]
+    "maxBatchItems": 1,
+    "maxInputTokensPerItem": 4096,
+    "maxAggregateInputTokens": 4096,
+    "supportedDimensions": [2048],
+    "supportedEncodings": ["float"],
+    "maxResponseBytes": 16777216,
+    "space": {
+      "spaceId": "nvidia-nemotron-3-embed-1b-float-v1",
+      "revision": 1,
+      "dimension": 2048,
+      "normalization": "l2",
+      "distanceMetric": "cosine",
+      "documentInputTransformVersion": "document-v1"
+    }
   }
 }
 ```
@@ -109,7 +116,7 @@ Use this Declared Capabilities object:
 NVIDIA currently documents only the native 2048-dimensional output for this
 hosted model. Document indexing must use passage semantics and retrieval must
 use query semantics. The catalog capability declaration records that contract;
-the qualified provider adapter must still send the correct provider request.
+the gateway provider adapter must still send the correct provider request.
 See the [NVIDIA NIM support matrix](https://docs.nvidia.com/nim/nemo-retriever/text-embedding/latest/support-matrix.html).
 
 ## Create the Record
