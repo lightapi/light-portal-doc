@@ -1,52 +1,64 @@
 # Create Pricing Version
 
-Use this form to add an approved, effective-dated rate schedule for a Provider
-Deployment. Pricing Versions are separate from Deployments so rate changes can
-be reviewed, audited, and published without changing provider endpoint or
-credential configuration.
+Use this form to add an approved, effective-dated rate schedule for one
+Provider Deployment and operation. Pricing is separate from Deployment and
+Credential identity so rate changes remain versioned and auditable.
 
-Rates use integer **micros per one million tokens**. One unit of currency is
-`1,000,000` micros. For example, `$2.50` per million tokens is entered as
-`2500000`, not `2.5`.
+Rates use integer micros per one million tokens. One currency unit is
+`1,000,000` micros.
 
 ## Fields
 
-| Field | Description | Example |
+| Field | Required | Description |
 | --- | --- | --- |
-| Host Id | Read-only tenant boundary supplied by the portal. The selected Deployment must belong to this host. | `10000000-0000-4000-8000-000000000001` |
-| Provider Deployment | Active provider endpoint to which this rate schedule applies. | `openai-prod-ca` (`30000000-0000-4000-8000-000000000030`) |
-| Pricing Version | Positive operator-assigned sequence for this Deployment's pricing. It is business versioning, distinct from Aggregate Version. The Deployment and Pricing Version pair must be unique. | `3` |
-| Input Micros Per Million Tokens | Non-negative charge for one million non-cached input tokens. `$2.50` is `2500000` micros. | `2500000` |
-| Output Micros Per Million Tokens | Non-negative charge for one million generated output tokens. `$10.00` is `10000000` micros. | `10000000` |
-| Cached Input Micros Per Million Tokens | Optional non-negative cached-input rate. The control plane retains it, but the current MVP gateway projection does not consume it separately. | `1250000` |
-| Effective Time | ISO 8601 timestamp at which the rate becomes eligible for use and publication. | `2026-08-01T12:00:00Z` |
-| Expiration Time | Optional ISO 8601 end of the pricing window. It must be later than Effective Time. Leave it empty for an open-ended rate. | `2026-11-01T12:00:00Z` |
-| Pricing Source | Bounded reference describing where the approved numbers came from, such as a provider contract, price sheet, or internal agreement. | `provider-contract-2026-08` |
-| Approved By | Person, group, or approval identity responsible for authorizing this rate. | `finops@example.com` |
+| Host Id | Yes | Read-only tenant boundary. |
+| Provider Deployment | Yes | Deployment whose operation is being priced. |
+| Operation | Yes | `generate` or `embed`; it must match the Deployment protocol. |
+| Pricing Version | Yes | Positive business version unique for the Deployment. |
+| Pricing Basis | Yes | `EXTERNAL_PROVIDER`, `ZERO_MARGINAL`, or `AMORTIZED_INTERNAL`. |
+| Input Micros Per Million Tokens | Yes | Non-negative input/embedding token rate. |
+| Output Micros Per Million Tokens | For `generate` only | Required for generation and prohibited for `embed`. |
+| Cached Input Micros Per Million Tokens | No | Optional cached-input rate. |
+| Effective Time | Yes | ISO-8601 timestamp with timezone. |
+| Expiration Time | No | Optional cutoff later than Effective Time. |
+| Pricing Source | Yes | Reference to the contract, provider page, or approved demo assumption. |
+| Approved By | Yes | Person, group, or automation identity approving the rate. |
 
-## Example
+Pricing-basis rules are:
+
+- `EXTERNAL_PROVIDER` records a provider charge and may use zero only when the
+  approved external rate is actually zero;
+- `ZERO_MARGINAL` requires all supplied rates to be zero; and
+- `AMORTIZED_INTERNAL` requires at least one non-zero rate.
+
+## NVIDIA free endpoint example
+
+For a free-demo entitlement with no marginal token charge, select the NVIDIA
+Nemotron Deployment and use:
 
 ```json
 {
-  "providerDeploymentId": "30000000-0000-4000-8000-000000000030",
-  "pricingVersion": 3,
-  "inputMicrosPerMillion": 2500000,
-  "outputMicrosPerMillion": 10000000,
-  "cachedInputMicrosPerMillion": 1250000,
-  "effectiveTs": "2026-08-01T12:00:00Z",
-  "expiresTs": "2026-11-01T12:00:00Z",
-  "source": "provider-contract-2026-08",
-  "approvedBy": "finops@example.com"
+  "operation": "embed",
+  "pricingVersion": 1,
+  "pricingBasis": "ZERO_MARGINAL",
+  "inputMicrosPerMillion": 0,
+  "cachedInputMicrosPerMillion": 0,
+  "effectiveTs": "2026-08-10T00:00:00Z",
+  "expiresTs": null,
+  "source": "nvidia-build-free-endpoint-demo",
+  "approvedBy": "local-demo-operator"
 }
 ```
 
-The system does not automatically close an older Pricing Version or reject
-overlapping effective windows. Before creating the record, review existing
-Pricing entries for the Deployment and choose a unique version and an
-unambiguous time window.
+Leave Output Micros Per Million Tokens empty. Do not enter `0` in that field:
+the embedding contract requires it to be omitted/null.
 
-Creating the record makes the price available to control-plane validation; it
-does not immediately change a running gateway. The rate reaches the gateway
-only through a valid new publication. The backend generates the Pricing
-Version Id and Aggregate Version. The `active` state is backend-managed through
-soft delete and is not part of this form.
+Verify the current NVIDIA account terms before using `ZERO_MARGINAL`. If the
+account is billed or quota usage must carry a monetary rate, choose
+`EXTERNAL_PROVIDER` and enter the approved input price instead. A free endpoint
+can still have capacity and rate limits even when its marginal price is zero.
+
+The system does not automatically close an older Pricing Version or reject all
+overlapping windows. Use a new version for a new rate period and publish a new
+gateway candidate. Portal generates Pricing Version Id and Aggregate Version;
+`active` remains backend-managed.

@@ -16,13 +16,13 @@ a newer change.
 | --- | --- | --- |
 | Host Id | Read-only tenant boundary supplied by the portal. | `10000000-0000-4000-8000-000000000001` |
 | Alias Route Id | Read-only identifier generated when the Route was created. | `40000000-0000-4000-8000-000000000040` |
-| Public Alias | Alias served by this Route. Changing it revalidates the selected Deployment against the new Alias. | `governed-chat` (`20000000-0000-4000-8000-000000000020`) |
-| Provider Deployment | Provider endpoint used by the Route. It must match the Alias environment and required capabilities. | `anthropic-prod-ca` (`30000000-0000-4000-8000-000000000031`) |
-| Route Priority | Non-negative ordering value; lower values come first. It must be unique among Routes for the Alias. | `10` |
+| Public Alias | Alias served by this Route. Changing it revalidates the selected Deployment against the new Alias. | `kb-index` or `kb-query` |
+| Provider Deployment | Provider endpoint used by the Route. It must match the Alias environment and required capabilities. | `nvidia-nemotron-3-embed-1b-loc` |
+| Route Priority | Non-negative ordering value; lower values come first. It must be unique among Routes for the Alias. | `0` |
 | Route Weight | Read-only value fixed at `1`. Weighted traffic splitting is not supported by the current MVP. | `1` |
-| Fallback Enabled | Whether this Route is intended as a fallback-only choice. | `true` |
+| Fallback Enabled | Whether this Route is intended as a fallback-only choice. | `false` |
 | Canary Percent | Read-only value fixed at `0`. Percentage canary routing is not supported by the current MVP. | `0` |
-| Residency Conditions | JSON or YAML governance object for residency requirements. Choose **Apply** after editing. Current preview does not evaluate it; runtime enforcement depends on compiler and gateway support. | `{"regions":["ca-central-1"]}` |
+| Residency Conditions | JSON or YAML governance object for residency requirements. Choose **Apply** after editing. Use `{}` for this public NVIDIA demo. | `{}` |
 | Aggregate Version | Read-only record version sent with the update for optimistic concurrency. Reload the Route if another update has advanced it. | `6` |
 
 ## Example
@@ -48,5 +48,37 @@ This update makes the Route a Canadian fallback with priority `10`:
 The Route preview reports ordering and eligibility, but it does not execute a
 provider request or guarantee that fallback will succeed at runtime. Before
 publication, confirm that at least one Route for every active Alias has an
-active, conformant, credentialed, and priced Deployment. The `active` state is
-backend-managed through soft delete and is not part of this form.
+active, credentialed, and priced Deployment. Conformance evidence is
+machine-owned and applies when required by the qualification policy. The
+`active` state is backend-managed through soft delete and is not part of this
+form.
+
+For `kb-index` or `kb-query`, select only a Deployment qualified for
+`openai_embeddings` and the Alias's exact 2048-dimensional Nemotron embedding
+space. Changing a Route to another Deployment with the same vector dimension
+but a different space ID, revision, normalization, distance metric, or document
+transform is incompatible.
+
+## NVIDIA Knowledge Base update
+
+For the functional demo, the `kb-index` and `kb-query` Route rows may both use
+`nvidia-nemotron-3-embed-1b-loc`. Preserve these primary-route values:
+
+```json
+{
+  "routePriority": 0,
+  "routeWeight": 1,
+  "fallbackEnabled": false,
+  "canaryPercent": 0,
+  "residencyConditions": {}
+}
+```
+
+Normally there is nothing to update after creating those two rows. Use this
+form only to replace the Deployment, introduce a real fallback, or apply an
+approved residency condition. Select the correct Alias row before editing;
+changing the Public Alias moves the Route rather than copying it.
+
+For production-protected `kb_index` and `kb_query` lanes, route each Alias to
+its separately qualified runtime and capacity/quota domain. Merely creating
+two Route rows that share one Deployment does not provide that isolation.

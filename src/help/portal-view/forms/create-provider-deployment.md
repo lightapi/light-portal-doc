@@ -1,143 +1,131 @@
 # Create Provider Deployment
 
-Use `/app/form/createProviderDeployment` to define the callable provider
-endpoint for an approved LLM Registration and provider Account. Open the form
-from **Administration > GenAI Admin > LLM Models > Deployments** by choosing
-**Create provider deployment**.
+Use `/app/form/createProviderDeployment` to bind an approved LLM Registration,
+Provider Account, and Provider Endpoint to an exact callable model runtime.
+Open it from **Administration > GenAI Admin > LLM Models > Deployments**.
 
-A Deployment contains endpoint and governance metadata. It does not contain a
-raw API key or password. Add an external secret reference later on the
-Credentials tab.
+A Deployment contains runtime identity, capacity, readiness, and non-secret
+transport metadata. Provider credentials remain separate.
 
-## Before You Begin
+## Before you begin
 
-Create these records first for the same host:
+Create these records first under the same host:
 
-- an LLM Model and environment-specific Registration;
-- a provider Account for the intended billing and quota owner.
+- the global catalog Model and environment-specific Registration;
+- the Provider Account; and
+- the Provider Endpoint.
 
-You also need the provider's HTTPS inference base URL and the physical model
-identifier accepted by that endpoint.
+The Registration, Account, Endpoint, provider type, protocol, physical model,
+and base URL must describe the same provider path.
 
-## Form Fields
+## Fields
 
-| Field | Required | Example | Description |
-| --- | --- | --- | --- |
-| Host Id | Yes | `selected-host-id` | Read-only host that owns the Deployment. |
-| LLM Registration | Yes | `dev — groq / llama-3.3-70b-versatile` | Non-deleted host-scoped Registration that approves the catalog model and environment. Labels combine environment, provider, and physical model; the selector still submits only its `modelRegistrationId`. |
-| Provider Account | Yes | `OpenAI Production` | Non-deleted host-scoped billing/quota Account. The selector submits its `providerAccountId`. |
-| Deployment Name | Yes | `openai-gpt-5.6-sol-ca-prod` | Operator-friendly name. It must be unique within the host. |
-| Provider Type | Yes | `groq` | Provider identity used for the Account, model catalog, and billing. Select it before Physical Model Id. |
-| Provider Protocol | Yes | `openai` | Upstream wire protocol. Choose `openai` for OpenAI-compatible endpoints such as Groq or Gemini, or `anthropic` for the Anthropic Messages protocol. |
-| Physical Model Id | Yes | `gpt-4o` | Exact model name sent to the provider. Options are filtered by Provider Type. |
-| Base URL | Yes | `https://api.openai.com/v1` | HTTPS base endpoint used by the provider client. Do not include credentials. |
-| Region | No | `ca-central-1` | Optional placement or residency region. Leave it empty for a global endpoint. |
-| Transport Bounds | No | `{"connectTimeoutMs":5000}` | Non-secret JSON object for provider-specific transport annotations. Defaults to `{}`. |
-| Refresh Before Seconds | No | `86400` | Reserved refresh lead time for a future trusted conformance runner. |
-| Lifecycle Status | No | `DRAFT` | New Deployments are created as drafts. Activate them after their runtime credential is provisioned. |
+| Field | Required | Description |
+| --- | --- | --- |
+| Host Id | Yes | Read-only host that owns the Deployment. |
+| LLM Registration | Yes | Environment-specific approval of the catalog Model. |
+| Provider Account | Yes | Billing, quota, and capacity owner. |
+| Deployment Name | Yes | Host-unique operator name. |
+| Provider Type | Yes | Provider identity, such as `nvidia`. |
+| Provider Protocol | Yes | Exact wire contract: `openai_chat`, `openai_responses`, `openai_embeddings`, or `anthropic_messages`. |
+| Physical Model Id | Yes | Exact upstream model string. |
+| Base URL | Yes | HTTPS compatibility URL. Copy it exactly from the selected Endpoint. |
+| Provider Endpoint | Yes | Reusable transport/authentication profile. |
+| Deployment Revision Id | Yes | Stable operator revision for this callable runtime configuration. |
+| Physical Runtime Id | Yes | Stable identity of the external service, process, or GPU runtime. |
+| Capacity Domain Id | Yes | Capacity/isolation domain. Protected query and index lanes must not share one. |
+| Runtime Capacity | Yes | JSON object with all five positive bounded-capacity fields shown below. |
+| Readiness Policy | Yes | `IMMEDIATE` or `WARM_BEFORE_ELIGIBLE`. |
+| Expected Sidecar Identity | No | Sidecar profile/digest object only; leave empty for a native hosted Endpoint. Never include credentials. |
+| Region | No | Optional provider placement/residency label. |
+| Transport Bounds | No | Additional non-secret transport annotations; use `{}` when none are approved. |
+| Refresh Before Seconds | No | Lead time used by trusted refresh/qualification workflows. |
+| Lifecycle Status | Yes | New Deployments start as `DRAFT`. |
 
-The backend creates `providerDeploymentId`. The form does not accept `active`;
-that value is backend-managed for soft deletion.
-
-## Registration And Account
-
-Both selectors load non-deleted reference labels for the selected host. An LLM
-Registration label has the form `environment — provider / physical-model`, so
-registrations in the same environment remain distinguishable. The
-command rejects an ID that does not exist under that host. Choose a Registration
-for the intended environment and an Account whose provider and billing owner
-match this endpoint. The Account owns the quota-group identity; the Deployment
-does not duplicate it.
-
-## Provider, Model, And Endpoint
-
-Choose **Provider Type** first. **Physical Model Id** then loads the model names
-related to that provider. The selected physical model must be the same model
-actually served by `baseUrl`.
-
-Provider Type and Provider Protocol have different meanings. Type identifies
-the provider; Protocol selects the request/response codec used by the gateway.
-For example, a Groq deployment uses `providerType: groq` with
-`providerProtocol: openai`.
-
-`baseUrl` must start with `https://`. Examples include:
-
-```text
-https://api.openai.com/v1
-https://my-resource.openai.azure.com/openai
-https://llm-provider.example.com/v1
-```
-
-Do not put a query-string token, API key, password, or authorization header in
-the URL or any other Deployment field.
-
-## Transport Bounds
-
-`transportBounds` is an optional object for non-secret transport annotations.
-The editor supports **JSON** and **YAML**. For example:
+Runtime Capacity requires exactly usable positive bounds. A suitable demo
+starting point is:
 
 ```json
 {
-  "connectTimeoutMs": 5000,
-  "requestTimeoutMs": 60000,
-  "maxConnections": 50
+  "maxParallelRequests": 32,
+  "maxQueuedRequests": 32,
+  "coldStartTimeoutMs": 30000,
+  "streamSetupTimeoutMs": 10000,
+  "requestTimeoutMs": 30000
 }
 ```
 
-Use `{}` when no annotations are required. Choose **Apply** after editing JSON
-or YAML. The Create action remains blocked while a structured draft is invalid
-or has unapplied changes.
+Choose **Apply** after editing Runtime Capacity, Expected Sidecar Identity, or
+Transport Bounds.
 
-These properties are currently retained as control-plane metadata. Arbitrary
-keys are not automatically projected into or enforced by the gateway runtime.
+## NVIDIA Nemotron embedding example
 
-## Account-Owned Quota Group
+Select the `loc` NVIDIA Nemotron Registration, Account
+`nvidia-free-embedding-demo`, and Endpoint `nvidia-free-embeddings`. Then use:
 
-There is no Quota Group field on this form. The selected Provider Account owns
-`quotaGroupId`, and Portal derives it through `providerAccountId`. During
-publication, Portal copies that authoritative value into the immutable gateway
-resource. Deployments published under the same quota group share the gateway's
-provider-account runtime capacity identity.
+```json
+{
+  "deploymentName": "nvidia-nemotron-3-embed-1b-loc",
+  "providerType": "nvidia",
+  "providerProtocol": "openai_embeddings",
+  "physicalModelId": "nvidia/nemotron-3-embed-1b",
+  "baseUrl": "https://integrate.api.nvidia.com/v1",
+  "deploymentRevisionId": "nvidia-free-embedding-demo/r1",
+  "physicalRuntimeId": "nvidia/integrate-api/free-embeddings",
+  "capacityDomainId": "nvidia-free-embedding-demo",
+  "runtimeCapacity": {
+    "maxParallelRequests": 32,
+    "maxQueuedRequests": 32,
+    "coldStartTimeoutMs": 30000,
+    "streamSetupTimeoutMs": 10000,
+    "requestTimeoutMs": 30000
+  },
+  "readinessPolicy": "IMMEDIATE",
+  "expectedSidecar": null,
+  "region": null,
+  "transportBounds": {},
+  "lifecycleStatus": "DRAFT"
+}
+```
 
-## Conformance Fields
+The form still requires Base URL and Provider Protocol even though the selected
+Endpoint already stores them. Copy the exact values; a mismatch creates an
+internally inconsistent legacy/deployment record.
 
-Conformance evidence is not editable on this form. Portal retains the backend
-fields for a future trusted runner, but the current Deployments tab does not
-offer validation or conformance actions. `UNKNOWN` or `PENDING` evidence does
-not block the current route-preview or instance-targeted publication flow. Do
-not manually supply conformance state, digest, validity, or result fields.
+### Protected Knowledge Base lanes
 
-## Lifecycle Status
+`kb-index` and `kb-query` are separate protected workload lanes. For a
+production-like qualification, create distinct index/query Deployments with
+different Deployment Revision and Capacity Domain identities, and use provider
+Accounts/quota that supply real capacity isolation. Merely giving two records
+different strings does not create physical isolation when both consume the
+same free external quota.
 
-New records use `DRAFT`. The update form supports `VALIDATING`, `ACTIVE`,
-`SUSPENDED`, and `RETIRED` after creation.
+For a functional local demo, one hosted Deployment can prove transport and
+embedding correctness, but it must not be represented as production lane
+isolation evidence.
 
-Lifecycle `ACTIVE` alone does not make the Deployment routable. It also needs
-an effective `ACTIVE` or `ROTATING` Credential, effective Pricing, an Alias
-Route, and publication.
+## Qualification and activation
 
-## Create The Deployment
+Conformance/qualification evidence is machine-owned and is not editable on
+this form. A trusted runner must test the exact protocol, physical model,
+operation, credential path, and embedding-space evidence. Do not manufacture a
+PASS result.
 
-Choose **Create Provider Deployment**. The form sends
-`lightapi.net/genai/createLlmProviderDeployment/0.1.0` and returns to
-**Administration > GenAI Admin > LLM Models** after success.
+After creation, provision the Credential, Pricing, Alias, and Route. Move the
+Deployment to `ACTIVE` only after the runtime path is ready, then publish a new
+gateway candidate. Portal generates Provider Deployment Id and Aggregate
+Version; `active` remains backend-managed.
 
-## Common Problems
+## Common problems
 
-- **Registration or Account is empty**: create a non-deleted host-scoped record or
-  confirm the current host selection.
-- **Physical Model Id is empty**: select Provider Type first and confirm the
-  provider-to-model reference relation is configured.
-- **Provider Protocol is rejected**: choose `openai` or `anthropic`; do not put
-  a provider identity such as `groq` or `gemini` in this field.
-- **Base URL is rejected**: use a complete HTTPS URL.
-- **Transport Bounds error**: enter an object, correct JSON/YAML syntax, and
+- **Protocol rejected:** use `openai_embeddings`, not `openai` or `nvidia`.
+- **Base URL rejected:** use the exact HTTPS base URL without `/embeddings` and
+  without a key or query string.
+- **Endpoint missing:** create the Provider Endpoint first under the same host.
+- **Runtime Capacity rejected:** supply all five positive integer fields and
   choose **Apply**.
-- **Provider mismatch**: select an Account whose provider type matches the
-  Deployment.
-- **403 on Create**: confirm access to
-  `lightapi.net/genai/createLlmProviderDeployment/0.1.0` and the required write
-  permission.
-
-For downstream routing and publication behavior, see the
-[Deployments tab guide](../pages/llm-model-control-plane.md#deployments-tab).
+- **Provider mismatch:** the Registration, Account, Endpoint, and Deployment
+  must all describe NVIDIA.
+- **Raw secret rejected:** credentials belong only in an external secret store
+  referenced from the Credentials tab.

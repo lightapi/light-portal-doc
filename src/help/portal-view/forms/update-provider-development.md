@@ -26,9 +26,16 @@ is not included in the form.
 | Provider Account | `OpenAI Production` | Host-scoped billing and quota owner. |
 | Deployment Name | `openai-gpt4o-ca-prod` | Unique operator-friendly name within the host. |
 | Provider Type | `groq` | Provider identity. Changing it reloads Physical Model Id options. |
-| Provider Protocol | `openai` | Gateway wire protocol: `openai` for OpenAI-compatible endpoints, or `anthropic` for the Anthropic Messages protocol. |
+| Provider Protocol | `openai_embeddings` | Exact gateway wire contract: `openai_chat`, `openai_responses`, `openai_embeddings`, or `anthropic_messages`. |
 | Physical Model Id | `gpt-4o` | Exact upstream model served by the endpoint. |
 | Base URL | `https://api.openai.com/v1` | HTTPS provider base endpoint without credentials. |
+| Provider Endpoint | `nvidia-free-embeddings` | Reusable transport/authentication profile. Protocol and Base URL must remain consistent with it. |
+| Deployment Revision Id | `nvidia-free-embedding-demo/r1` | Operator revision of this exact callable configuration. |
+| Physical Runtime Id | `nvidia/integrate-api/free-embeddings` | Stable external service/process identity. |
+| Capacity Domain Id | `nvidia-free-embedding-demo` | Runtime capacity domain; protected lanes must not share one. |
+| Runtime Capacity | `{"maxParallelRequests":32,...}` | Required positive parallel, queue, cold-start, stream-setup, and request timeout bounds. |
+| Readiness Policy | `IMMEDIATE` | `IMMEDIATE` or `WARM_BEFORE_ELIGIBLE`. |
+| Expected Sidecar Identity | Empty | Profile/digest only for a managed sidecar; leave empty for a native hosted Endpoint. |
 | Region | `ca-central-1` | Optional placement or residency region. Leave it empty for a global endpoint. |
 | Transport Bounds | `{"requestTimeoutMs":60000}` | Optional non-secret transport metadata object. |
 | Refresh Before Seconds | `86400` | Reserved refresh lead time for a future trusted conformance runner. |
@@ -52,8 +59,8 @@ current Deployments tab does not expose validation or conformance actions.
 
 ## Structured Fields
 
-**Transport Bounds** supports JSON and YAML. Choose **Apply** after editing. For
-example:
+**Runtime Capacity**, **Expected Sidecar Identity**, and **Transport Bounds**
+support JSON and YAML. Choose **Apply** after editing. For example:
 
 ```json
 {
@@ -75,6 +82,12 @@ The selected Account's provider type must match the Deployment.
 Changing lifecycle status to `ACTIVE` does not bypass Credential, Pricing,
 Alias Route, or publication requirements. A retired Deployment cannot
 transition back to an earlier lifecycle state.
+
+For the hosted NVIDIA Deployment, preserve Provider Type `nvidia`, Protocol
+`openai_embeddings`, Physical Model Id `nvidia/nemotron-3-embed-1b`, Base URL
+`https://integrate.api.nvidia.com/v1`, and Endpoint
+`nvidia-free-embeddings`. Rotate `env:NVIDIA_API_KEY` through Credentials rather
+than changing Endpoint or Deployment fields.
 
 ## Save The Update
 
@@ -99,8 +112,8 @@ behavior.
   **Apply**, or choose **Reset** to restore the last valid value.
 - **Provider mismatch**: select an Account whose provider type matches the
   Deployment.
-- **Provider Protocol is rejected**: choose `openai` or `anthropic`; Groq and
-  Gemini OpenAI-compatible endpoints use `openai`.
+- **Provider Protocol is rejected**: choose the exact protocol enum; NVIDIA
+  embeddings use `openai_embeddings`.
 - **403 on Update**: confirm access to
   `lightapi.net/genai/updateLlmProviderDeployment/0.1.0` and the required write
   permission.

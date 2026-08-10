@@ -94,6 +94,29 @@ Review the values and choose **Create Provider Account**. The form sends the
 command, the browser returns to **Administration > GenAI Admin > LLM Models**.
 The new Account can then be selected by a provider Deployment.
 
+## NVIDIA free embedding demo
+
+For the NVIDIA hosted `nemotron-3-embed-1b` demo, use:
+
+```json
+{
+  "accountName": "nvidia-free-embedding-demo",
+  "providerType": "nvidia",
+  "billingPrincipal": "nvidia-build-api-demo",
+  "quotaGroupId": "nvidia-free-embedding-demo",
+  "capacityMetadata": {
+    "serviceTier": "free-demo",
+    "sharedExternalQuota": true
+  },
+  "lifecycleStatus": "DRAFT"
+}
+```
+
+`billingPrincipal` and `quotaGroupId` are operator-assigned governance names;
+they are not the NVIDIA API key. If your NVIDIA account exposes a stable
+organization or project identifier, use that identifier for Billing Principal
+instead. Keep all secret material on the Credentials tab.
+
 ## Common Problems
 
 - **Provider Type is empty**: confirm the `model_provider` reference values are

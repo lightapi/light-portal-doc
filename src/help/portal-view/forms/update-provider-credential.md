@@ -22,7 +22,9 @@ version, or reference is intended for correcting a record before activation.
 
 | Field | Required | Example | Description |
 | --- | --- | --- | --- |
-| Provider Deployment | Yes | `OpenAI GPT-4o Production` | Deployment bound to this credential. The selector submits its `providerDeploymentId`, for example `7ee18d9d-9db4-4f56-8eba-9ca880755962`. |
+| Credential Purpose | Yes | `ENDPOINT` | Resolver boundary: central Endpoint or sidecar runtime. |
+| Provider Endpoint | For `ENDPOINT` | `nvidia-free-embeddings` | Endpoint bound to the Credential. |
+| Provider Deployment | For `SIDECAR_RUNTIME` and current compatibility path | `nvidia-nemotron-3-embed-1b-loc` | Corresponding Deployment. |
 | Credential Version | Yes | `2` | Positive version unique within the selected Deployment. Correct it only before activation; create a new version for rotation. |
 | Secret Reference | Yes | `env:OPENAI_API_KEY_V2` | Environment-variable reference resolved locally by the gateway. Vault or another injector may populate the variable; never enter its value. |
 | Effective Time | Yes | `2026-08-15T14:00:00Z` | ISO-8601 time when this version becomes eligible. |
@@ -45,6 +47,11 @@ ineligible.
 
 Portal's lifecycle validation does not allow a terminal `REVOKED` or `EXPIRED`
 record to return to an earlier status. Create a new version instead.
+
+For NVIDIA, preserve purpose `ENDPOINT`, Endpoint `nvidia-free-embeddings`, and
+the corresponding Nemotron Deployment. Activate `env:NVIDIA_API_KEY` only after
+the gateway container can resolve it. For key rotation, create version `2` with
+a new external reference instead of putting a new key value into this form.
 
 ## Rotation Example
 

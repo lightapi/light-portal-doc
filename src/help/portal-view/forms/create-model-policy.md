@@ -17,7 +17,7 @@ approved publication mapping and a gateway that supports the mapped fields.
 | --- | --- | --- |
 | Host Id | Read-only tenant boundary supplied by the portal. The generated Policy and all of its Bindings belong to this host. | `10000000-0000-4000-8000-000000000001` |
 | Policy Name | Required, recognizable name unique within the host. Use a stable governance name rather than a provider or Deployment identifier. | `governed-chat-standard` |
-| Access Policy | Object describing intended subject and operation access. The example vocabulary must be mapped by the publication implementation before it can affect runtime authorization. | `{"allowedSubjectTypes":["AGENT","CLIENT"],"allowedOperations":["chat_completions"]}` |
+| Access Policy | Object describing intended subject and operation access. The example vocabulary must be mapped by the publication implementation before it can affect runtime authorization. | `{"allowedSubjectTypes":["AGENT","CLIENT"],"allowedOperations":["generate"]}` |
 | Budget Policy | Object describing intended per-request or period spending controls. Monetary examples use integer micros, where `1000000` micros is one currency unit. | `{"maxCostMicrosPerRequest":500000,"monthlyCostMicros":50000000}` |
 | Content Policy | Object describing intended logging and prompt or response handling. | `{"loggingMode":"METADATA","allowPromptLogging":false}` |
 | Cache Policy | Object describing intended cache use and constraints. | `{"enabled":false}` |
@@ -32,7 +32,7 @@ approved publication mapping and a gateway that supports the mapped fields.
   "policyName": "governed-chat-standard",
   "accessPolicy": {
     "allowedSubjectTypes": ["AGENT", "CLIENT"],
-    "allowedOperations": ["chat_completions"]
+    "allowedOperations": ["generate"]
   },
   "budgetPolicy": {
     "maxCostMicrosPerRequest": 500000,
@@ -67,3 +67,13 @@ publication workflow to translate supported policy intent into a new immutable
 gateway candidate. Creating the row alone does not change a running gateway.
 The backend generates Model Policy Id and Aggregate Version. The `active` state
 is backend-managed through soft delete and is not part of this form.
+
+## NVIDIA Knowledge Base note
+
+A Model Policy is optional for the initial NVIDIA transport smoke test. If the
+host requires one for `kb-index` or `kb-query`, use operation `embed`, bind the
+Policy to the intended workload/Alias, and use budgets appropriate to the
+approved free entitlement. Do not place `NVIDIA_API_KEY` or its value in any
+policy object. A native-extension allowlist also does not implement NVIDIA's
+query/passage transformation by itself; the provider adapter must support that
+request contract.

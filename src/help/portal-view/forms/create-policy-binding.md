@@ -53,3 +53,9 @@ Before saving an Agent Default, confirm that the Agent selects this Model Policy
 and that the Alias has eligible, published Routes and provider material. The
 backend generates Model Policy Binding Id and Aggregate Version. The `active`
 state is backend-managed through soft delete and is not part of this form.
+
+For `kb-index` or `kb-query`, a Binding is optional unless an Agent or other
+subject is expected to select the embedding Alias through a Model Policy. If
+you create one, bind the exact workload identity to the corresponding Alias;
+do not use a Binding as a substitute for the Alias workload-identity allowlist
+or Route eligibility.

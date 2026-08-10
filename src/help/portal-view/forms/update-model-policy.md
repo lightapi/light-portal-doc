@@ -20,7 +20,7 @@ key requires an approved compiler mapping and compatible gateway support.
 | Host Id | Read-only tenant boundary supplied by the portal. | `10000000-0000-4000-8000-000000000001` |
 | Model Policy Id | Read-only stable identifier generated when the Policy was created and referenced by Bindings or Agent configuration. | `60000000-0000-4000-8000-000000000060` |
 | Policy Name | Recognizable name unique within the host. Renaming does not change the stable Model Policy Id. | `governed-chat-standard-v2` |
-| Access Policy | Object describing intended subject and operation access. | `{"allowedSubjectTypes":["AGENT"],"allowedOperations":["chat_completions"]}` |
+| Access Policy | Object describing intended subject and operation access. Operations use the control-plane vocabulary `generate` or `embed`. | `{"allowedSubjectTypes":["AGENT"],"allowedOperations":["generate"]}` |
 | Budget Policy | Object describing intended spending controls. Monetary examples use integer micros. | `{"maxCostMicrosPerRequest":400000,"monthlyCostMicros":40000000}` |
 | Content Policy | Object describing intended content logging and handling. | `{"loggingMode":"METADATA","allowPromptLogging":false}` |
 | Cache Policy | Object describing intended cache behavior. | `{"enabled":false}` |
@@ -37,7 +37,7 @@ key requires an approved compiler mapping and compatible gateway support.
   "policyName": "governed-chat-standard-v2",
   "accessPolicy": {
     "allowedSubjectTypes": ["AGENT"],
-    "allowedOperations": ["chat_completions"]
+    "allowedOperations": ["generate"]
   },
   "budgetPolicy": {
     "maxCostMicrosPerRequest": 400000,
@@ -73,3 +73,9 @@ selects its Model Policy Id. After any enforceable change, create and apply a
 new valid publication; an existing gateway snapshot does not update in place.
 The `active` state is backend-managed through soft delete and is not part of
 this form.
+
+For the NVIDIA Knowledge Base aliases, use operation `embed` if a Policy is
+needed at all. Keep `apiKey` and `input_type` out of the policy: the API key is
+represented by the Credential's `env:NVIDIA_API_KEY` reference, while the
+query-versus-passage request transformation belongs in the approved embedding
+adapter.

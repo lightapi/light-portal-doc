@@ -13,6 +13,7 @@ deployments, aliases, policies, and publication, see the
 
 | Field | Description |
 | --- | --- |
+| Global Catalog | Read-only `true`; catalog Models are platform-global and are not owned by the selected host. |
 | Provider Type | Provider identifier, such as `openai`. |
 | Physical Model Id | The model identifier recognized by the provider. |
 | Model Family | The provider's model family or product family. |
@@ -38,8 +39,8 @@ also use the **JSON** or **YAML** tab, for example:
 ```
 
 ```yaml
-- chat_completions
-- embeddings
+- generate
+- embed
 ```
 
 ### Declared Capabilities
@@ -73,6 +74,43 @@ or has not been applied.
 Categories and tags are optional. The selectors show active global taxonomy
 values registered for the `llm_model` entity type. Host-specific taxonomy
 cannot be assigned to a global model.
+
+## NVIDIA Nemotron embedding example
+
+For the `light-knowledge` demo, use these values for the NVIDIA catalog Model:
+
+| Field | Value |
+| --- | --- |
+| Provider Type | `nvidia` |
+| Physical Model Id | `nvidia/nemotron-3-embed-1b` |
+| Model Family | `nemotron-3-embed` |
+| Model Version | Leave empty unless the provider publishes a stable version identifier |
+| Lifecycle Status | `DRAFT` initially |
+| Context Token Limit | `4096` |
+| Output Token Limit | `1` because the current generic schema requires a positive value; embedding calls do not generate output tokens |
+| Modalities | `["text"]` |
+| Operations | `["embed"]` |
+
+Use this Declared Capabilities object:
+
+```json
+{
+  "embedding": {
+    "dimensions": [2048],
+    "defaultDimension": 2048,
+    "encodings": ["float"],
+    "normalization": "l2",
+    "distanceMetrics": ["cosine"],
+    "inputTypes": ["query", "passage"]
+  }
+}
+```
+
+NVIDIA currently documents only the native 2048-dimensional output for this
+hosted model. Document indexing must use passage semantics and retrieval must
+use query semantics. The catalog capability declaration records that contract;
+the qualified provider adapter must still send the correct provider request.
+See the [NVIDIA NIM support matrix](https://docs.nvidia.com/nim/nemo-retriever/text-embedding/latest/support-matrix.html).
 
 ## Create the Record
 

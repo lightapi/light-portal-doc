@@ -45,3 +45,8 @@ default. Ensure a replacement Alias is eligible and published before directing
 an Agent to it. The gateway does not query this Binding row during an inference
 request, and the `active` state is backend-managed through soft delete rather
 than this form.
+
+For the NVIDIA Knowledge Base demo, preserve the distinction between
+`kb-index` and `kb-query` when changing an Alias scope. Pointing both workload
+identities at one Binding does not create independent provider capacity or
+quota; that isolation is established by eligible Routes and their Deployments.

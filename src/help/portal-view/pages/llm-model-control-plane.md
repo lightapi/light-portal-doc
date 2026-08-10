@@ -15,34 +15,48 @@ The operational tabs are under **Administration > GenAI Admin > LLM Models**.
 - Use an account with the role permissions and rules for the LLM query and
   command endpoints.
 - Create dependent records in this order: Catalog, Registration, Account,
-  Deployment, Credential, Alias, Route, Pricing, Policy, Binding, Publication.
+  optional Network Zone, Provider Endpoint, Deployment, Credential, Alias,
+  Route, Pricing, optional Policy and Binding, then Publication.
 - Keep the `aggregateVersion` returned by a query. Update and delete commands
   require it for optimistic concurrency.
 
-## Forms And The JSON Draft Editor
+## NVIDIA Nemotron embedding demo sequence
+
+The following records form the hosted NVIDIA path used by the
+`light-knowledge` demo:
+
+| Step | Tab or page | Key values |
+| ---: | --- | --- |
+| 1 | LLM Model Catalog | `nvidia`, `nvidia/nemotron-3-embed-1b`, operation `embed`, dimension `2048` |
+| 2 | Registrations | Environment `loc`, data classification `public`, no capability restriction beyond the catalog contract |
+| 3 | Accounts | `nvidia-free-embedding-demo` with provider type `nvidia`; no secret values |
+| 4 | Network Zones | Skip for NVIDIA's public HTTPS endpoint |
+| 5 | Provider Endpoints | `nvidia-free-embeddings`, `openai_embeddings`, `https://integrate.api.nvidia.com/v1`, `BEARER`, `PUBLIC_TLS`, `NATIVE` |
+| 6 | Deployments | Exact NVIDIA Registration, Account, Endpoint, physical model, protocol, and base URL |
+| 7 | Credentials | Purpose `ENDPOINT`, secret reference `env:NVIDIA_API_KEY`, version `1`, initially `PENDING` |
+| 8 | Aliases | `kb-index`/`kb_index` and `kb-query`/`kb_query`, both using the same immutable 2048-dimensional embedding space |
+| 9 | Routes | Connect each Alias to its compatible embedding Deployment; priority `0`, weight `1`, canary `0` |
+| 10 | Pricing | Operation `embed`; omit output pricing. Use the approved free-demo pricing basis described in the Pricing help. |
+| 11 | Policies and Bindings | Optional for the initial provider smoke test; required when the host's governance design selects a policy for these workload Aliases |
+| 12 | Publication | Activate only verified records, generate a new candidate, publish, and test through the gateway |
+
+The NVIDIA API key never belongs in the catalog, Account, Endpoint,
+Deployment, Alias, Route, Pricing, or policy records. Portal stores only the
+external reference `env:NVIDIA_API_KEY`; the gateway process receives the
+actual environment variable at runtime.
+
+## Forms And Structured Editors
 
 The Models and Registrations tabs use typed Create and Update forms. Model
 forms use global taxonomy and do not send `hostId`; Registration forms retain
 the selected host. Both preserve arrays and objects as JSON values and keep
 record identifiers and `aggregateVersion` read-only on update.
 
-The remaining resource tabs use a JSON draft editor. It opens with:
-
-```json
-{
-  "hostId": "selected-host-id"
-}
-```
-
-Add the fields required for the selected resource and choose **Save**. The
-server creates the resource id when it is omitted. Use valid JSON types: do not
-put numbers, booleans, arrays, or objects in quotes unless the field is a
-string.
-
-The edit action loads the current sanitized record into the same editor. Keep
-its id, `hostId`, and `aggregateVersion`, change the intended fields, and save.
-The delete action sends the selected id, `hostId`, and `aggregateVersion` after
-confirmation.
+The downstream tabs also use schema-driven Create and Update forms. Structured
+arrays and objects offer Form, JSON, and YAML editors; choose **Apply** after
+editing JSON or YAML. The server creates resource IDs. Update forms retain the
+resource ID, `hostId`, and `aggregateVersion` as read-only values for host
+isolation and optimistic concurrency.
 
 The editor sends the versioned Portal command contract. Do not paste an API
 key, bearer token, password, or other secret value into any draft. The backend
@@ -76,6 +90,11 @@ taxonomy row is rejected before an event is emitted.
 
 Create a catalog entry before creating a Registration that refers to its
 `modelId`.
+
+For NVIDIA Nemotron, create or select the catalog record with provider type
+`nvidia`, physical model `nvidia/nemotron-3-embed-1b`, operation `embed`, text
+modality, context limit `4096`, and declared native dimension `2048`. See
+[Create LLM Model](./create-llm-model.md) for the complete example.
 
 ## Registrations Tab
 
@@ -152,6 +171,23 @@ soft deletion.
 Both forms return to **Administration > GenAI Admin > LLM Models** after a
 successful save. A referenced model must exist in the global catalog; otherwise
 the command is rejected before an event is emitted.
+
+For the NVIDIA `light-knowledge` demo, select the
+`nvidia/nemotron-3-embed-1b` catalog Model and use:
+
+```json
+{
+  "environment": "loc",
+  "regions": [],
+  "dataClassifications": ["public"],
+  "capabilityRestrictions": {},
+  "lifecycleStatus": "DRAFT"
+}
+```
+
+Do not redefine the embedding dimension in Capability Restrictions unless the
+host intentionally narrows a broader catalog declaration. This NVIDIA endpoint
+supports only its native 2048-dimensional output.
 
 ## Accounts Tab
 
@@ -234,6 +270,61 @@ on entering a secret or endpoint in the Accounts tab.
 As with the other tabs, `active` is backend-managed. Delete soft-deletes the
 Account; do not add or edit `active` in the JSON draft.
 
+For the NVIDIA demo, use Account Name and Quota Group Id
+`nvidia-free-embedding-demo`, Provider Type `nvidia`, and a non-secret Billing
+Principal such as `nvidia-build-api-demo`. See
+[Create Provider Account](../forms/create-provider-account.md#nvidia-free-embedding-demo)
+for the complete object.
+
+## Network Zones Tab
+
+Network Zones are administrator-owned outbound allowlists for private provider
+networks. They define allowed DNS names, CIDRs, ports, and whether private TLS
+or explicitly acknowledged private plaintext transport is permitted. A public
+internet HTTPS endpoint does not need a Network Zone.
+
+For `https://integrate.api.nvidia.com/v1`, do not create or select a Network
+Zone. The NVIDIA Endpoint uses `PUBLIC_TLS`; `networkZoneId`, trust-bundle
+fields, and private-plaintext acknowledgement remain empty or false. Existing
+rows that show only lifecycle/version data are not placeholders to delete;
+only create a Zone when a private Endpoint needs one.
+
+See [Create Network Zone](../forms/create-llm-network-zone.md) and
+[Update Network Zone](../forms/update-llm-network-zone.md).
+
+## Provider Endpoints Tab
+
+Provider Endpoints own the reusable transport and authentication profile for a
+Provider Account. Deployments reference an Endpoint and still carry the exact
+protocol and base URL for the current compatibility contract.
+
+For the NVIDIA hosted embedding endpoint, use:
+
+```json
+{
+  "endpointName": "nvidia-free-embeddings",
+  "providerProtocol": "openai_embeddings",
+  "baseUrl": "https://integrate.api.nvidia.com/v1",
+  "headers": {},
+  "endpointAuthMode": "BEARER",
+  "apiKeyHeader": null,
+  "networkProfileMode": "PUBLIC_TLS",
+  "networkTermination": "NATIVE",
+  "poolIdleTimeoutMs": 30000,
+  "clientRefreshIntervalMs": 300000,
+  "plaintextRiskAcknowledged": false,
+  "lifecycleStatus": "DRAFT"
+}
+```
+
+Select the `nvidia-free-embedding-demo` Account. `BEARER` must omit
+`apiKeyHeader`; only `API_KEY` authentication supplies lowercase
+`authorization` or `x-api-key`. Never put the NVIDIA key in Headers or any
+Endpoint field.
+
+See [Create Provider Endpoint](../forms/create-llm-provider-endpoint.md) and
+[Update Provider Endpoint](../forms/update-llm-provider-endpoint.md).
+
 ## Deployments Tab
 
 Use Deployments to define a callable provider endpoint for an approved LLM. A
@@ -262,8 +353,12 @@ prices, and Routes attach public aliases to eligible Deployments.
 - `providerAccountId` identifies the provider Account. Portal derives its
   `quotaGroupId` through the Account foreign key when querying and publishing
   the Deployment.
-- `providerType`, `physicalModelId`, and `baseUrl` identify the provider adapter,
-  exact upstream model, and HTTPS endpoint used to build the callable provider.
+- `providerType`, `providerProtocol`, `physicalModelId`, `baseUrl`, and
+  `providerEndpointId` identify the provider adapter, exact wire contract,
+  upstream model, compatibility URL, and reusable Endpoint profile.
+- `deploymentRevisionId`, `physicalRuntimeId`, `capacityDomainId`,
+  `runtimeCapacity`, and `readinessPolicy` form the runtime identity and bounded
+  capacity contract used by protected workloads.
 - `region` and `transportBounds` retain control-plane placement and transport
   metadata. Arbitrary transport-bound properties are not automatically enforced
   by the current gateway configuration compiler.
@@ -288,11 +383,12 @@ before the gateway consumes the new materialized values.
 ### Create And Update
 
 Choose **Create provider deployment** to open
-`/app/form/createProviderDeployment`. Required create fields are
-`modelRegistrationId`, `providerAccountId`, `deploymentName`, `providerType`,
-`providerProtocol`, `physicalModelId`, and `baseUrl`. `providerProtocol` is
-`openai` or `anthropic`; it is independent from provider identity, so Groq and
-Gemini OpenAI-compatible endpoints use `openai`. `baseUrl` must use HTTPS.
+`/app/form/createProviderDeployment`. In addition to the Registration,
+Account, provider identity, exact protocol/model, and HTTPS base URL, the
+current create contract requires Provider Endpoint, deployment revision,
+physical runtime, capacity domain, runtime capacity, and readiness policy.
+Valid exact protocol values are `openai_chat`, `openai_responses`,
+`openai_embeddings`, and `anthropic_messages`.
 
 Choose a row's edit action to open `/app/form/updateProviderDevelopment`. The
 update form retains read-only `hostId`, `providerDeploymentId`, and
@@ -302,11 +398,11 @@ See [Create Provider Deployment](../forms/create-provider-deployment.md) and
 [Update Provider Deployment](../forms/update-provider-development.md) for
 field-by-field examples.
 
-The Deployments tab does not expose **Validate** or **Conformance** actions in
-the current MVP because Portal has no trusted runner to complete those jobs.
-Older records may retain `UNKNOWN` or `PENDING` conformance state; that state is
-informational and does not block current route preview or instance-targeted
-publication. Do not manufacture a `PASS`, digest, validity time, or result.
+Conformance evidence is machine-owned. Do not manufacture a `PASS`, digest,
+validity time, or result in an administrative form. A trusted qualification
+runner must test the exact provider protocol, physical model, operation,
+embedding space, and current credential path before recording evidence used by
+production eligibility.
 
 To make a Deployment available, provision its external secret in the target
 gateway runtime, change the related Credential to `ACTIVE`, change the
@@ -318,12 +414,19 @@ future trusted runner.
 As with the other tabs, `active` is backend-managed. Create and update keep the
 row active; Delete soft-deletes it.
 
+For NVIDIA use Provider Type `nvidia`, Protocol `openai_embeddings`, Physical
+Model Id `nvidia/nemotron-3-embed-1b`, Base URL
+`https://integrate.api.nvidia.com/v1`, and the `nvidia-free-embeddings`
+Endpoint. Copy the protocol and URL exactly even though the Endpoint is also
+selected. See
+[Create Provider Deployment](../forms/create-provider-deployment.md#nvidia-nemotron-embedding-example).
+
 ## Credentials Tab
 
-Use Credentials to tell Portal how a Deployment authenticates to its upstream
-provider without putting an API key, token, password, or other secret value in
-the Portal database. Each row binds a Deployment to a versioned external secret
-reference and defines when that reference is eligible for use.
+Use Credentials to tell Portal how a Provider Endpoint or sidecar runtime
+authenticates without putting an API key, token, password, or other secret
+value in the Portal database. Each row contains a purpose, owner reference,
+versioned external secret reference, and eligibility window.
 
 ### Why Credentials Are Separate
 
@@ -337,9 +440,11 @@ calls to that endpoint. Keeping these records separate allows operators to:
 - audit which external reference was eligible during a particular time window;
 - keep raw secret material outside Portal and its event stream.
 
-The combination of `providerDeploymentId` and `credentialVersion` is unique for
-a host. Create a new, incremented version for rotation instead of overwriting an
-existing version's identity or secret reference.
+An `ENDPOINT` credential selects `providerEndpointId`; a `SIDECAR_RUNTIME`
+credential selects `providerDeploymentId`. The current create command also
+expects the Deployment selector to be populated, so for an Endpoint credential
+select both the Endpoint and its corresponding Deployment. Create a new,
+incremented version for rotation instead of overwriting an older version.
 
 ### How Credential Data Is Used
 
@@ -364,11 +469,14 @@ contract.
 
 ### Credential Fields
 
-- `providerDeploymentId` selects the Deployment that will use the credential.
+- `credentialPurpose` is `ENDPOINT` for the central gateway's provider call or
+  `SIDECAR_RUNTIME` for a credential resolved inside a provider sidecar.
+- `providerEndpointId` is required for `ENDPOINT`.
+- `providerDeploymentId` is required for `SIDECAR_RUNTIME` and is also required
+  by the current create-command compatibility path.
 - `credentialVersion` is a positive, monotonically increasing version for that
   Deployment, such as `1`, `2`, or `3`.
-- `secretReference` is normally `env:OPENAI_API_KEY` (or
-  `env://OPENAI_API_KEY`, which publication normalizes to the runtime form).
+- `secretReference` is normally `env:VARIABLE_NAME`.
   Vault may inject that environment variable. Other URI schemes require an
   explicitly configured gateway resolver.
 - `effectiveTs` is the ISO-8601 time at which the version becomes eligible.
@@ -394,6 +502,12 @@ Never enter the secret value itself. Fields resembling API keys, passwords,
 authorization headers, or tokens are rejected. As with the other tabs,
 `active` is backend-managed; Delete soft-deletes the Credential.
 
+For the NVIDIA hosted Endpoint select purpose `ENDPOINT`, Endpoint
+`nvidia-free-embeddings`, its Nemotron Deployment, version `1`, and
+`env:NVIDIA_API_KEY`. Keep the row `PENDING` until the variable is present and
+resolvable in the gateway container. See
+[Create Provider Credential](../forms/create-provider-credential.md#nvidia-endpoint-credential).
+
 ## Aliases Tab
 
 Aliases give applications and agents a stable model name without exposing a
@@ -418,23 +532,21 @@ The data is used as follows:
 3. Publication validation requires each active alias in the target environment
    to have a healthy, priced, and credentialed route before a gateway candidate
    can be published.
-4. The publication layer projects supported alias settings into gateway route
-   policy. These settings include the public model name, token and capability
-   requirements, and supported audit and PII controls. Fields such as
-   `operations` and `maxRequestBytes` remain control-plane governance data
-   unless the selected publication compiler and gateway version support their
-   runtime projection.
-5. A `PUBLIC` alias is available for normal model discovery and routing. An
-   `INTERNAL_LEGACY` alias is limited to its selected agent definition and is
-   not exposed as a general public model.
+4. The publication layer projects the Alias operation, embedding contract,
+   limits, visibility/binding, audit, and PII policy into gateway routing.
+5. A `PUBLIC` Alias is available for normal discovery; `INTERNAL_LEGACY` binds
+   one agent definition; `INTERNAL_WORKLOAD` binds the exact authenticated
+   workload principal.
 
 Required create fields are `environment` and `aliasName`. The other fields are
 optional policy constraints:
 
-- `operations` lists permitted model operations, for example
-  `["chat_completions"]`.
+- `operations` lists `generate`, `embed`, or both.
 - `requiredCapabilities` describes capabilities that every eligible route must
-  provide, for example `{"tools":true,"streaming":true}`.
+  provide. An embedding Alias requires the exact six-field `embeddingSpace`.
+- `requireExpectedEmbeddingSpace` forces embedding callers to supply the
+  expected space ID and revision.
+- `embeddingWorkloadLane` is `standard`, `kb_query`, or `kb_index`.
 - `maxInputTokens`, `maxOutputTokens`, and `maxRequestBytes` set alias-level
   request limits.
 - `dataClassification`, `loggingMode`, and `piiMode` describe data-handling
@@ -444,9 +556,9 @@ optional policy constraints:
 - `replacementAliasId` records the intended successor for a deprecated or
   retiring alias. It cannot reference the alias itself. It is a governance and
   migration hint; it does not automatically redirect traffic.
-- `aliasVisibility` defaults to `PUBLIC`. A `PUBLIC` alias must leave
-  `boundAgentDefId` empty. An `INTERNAL_LEGACY` alias must select a
-  `boundAgentDefId`.
+- `aliasVisibility` defaults to `PUBLIC`. Public Aliases leave both binding
+  fields empty; `INTERNAL_LEGACY` selects `boundAgentDefId`; and
+  `INTERNAL_WORKLOAD` supplies `boundWorkloadPrincipal`.
 
 See [Create Public Alias](../forms/create-public-alias.md) and
 [Update Public Alias](../forms/update-public-alias.md) for field descriptions
@@ -473,7 +585,7 @@ The data is used as follows:
    preferred route. The Alias route preview returns the priority, fallback
    flag, eligibility result, and reason for each active Route.
 4. Publication validation requires every active Alias to have at least one
-   active Route whose Deployment is active, currently credentialed, and priced.
+   healthy, priced, and credentialed Route.
 5. Publication preparation uses the ordered Route records to construct the
    `llm-router.aliases` instance property consumed by the gateway snapshot. The gateway reads the
    resulting ordered deployment list and attempt policy; it does not query the
@@ -533,9 +645,11 @@ The data is used as follows:
    governance, but the current MVP gateway `llm-pricing` payload does not yet
    consume a separate cached-input rate.
 
-Required create fields are `providerDeploymentId`, `pricingVersion`,
-`inputMicrosPerMillion`, `outputMicrosPerMillion`, `effectiveTs`, `source`, and
-`approvedBy`. `cachedInputMicrosPerMillion` and `expiresTs` are optional.
+Required create fields are `providerDeploymentId`, `operation`,
+`pricingVersion`, `pricingBasis`, `inputMicrosPerMillion`, `effectiveTs`,
+`source`, and `approvedBy`. `outputMicrosPerMillion` is required for `generate`
+and must be omitted for `embed`. `cachedInputMicrosPerMillion` and `expiresTs`
+are optional.
 `expiresTs`, when supplied, must be later than `effectiveTs`.
 
 The pair of Deployment and `pricingVersion` must be unique. The database does
@@ -549,6 +663,12 @@ See [Create Pricing Version](../forms/create-pricing-version.md) and
 [Update Pricing Version](../forms/update-pricing-version.md) for field
 descriptions and complete examples. The `active` column is managed by backend
 soft delete and is intentionally not shown in either form.
+
+For a free hosted NVIDIA demo, select operation `embed`, omit output pricing,
+and use `ZERO_MARGINAL` with zero input/cached-input rates only when your
+approved demo contract truly has no marginal charge. Otherwise use
+`EXTERNAL_PROVIDER` and enter the approved input rate. See
+[Create Pricing Version](../forms/create-pricing-version.md#nvidia-free-endpoint-example).
 
 ## Policies Tab
 
@@ -839,6 +959,8 @@ Register and authorize these actions for the interactive page:
 | Models | `getLlmModel` | `createLlmModel`, `updateLlmModel`, `deleteLlmModel` |
 | Registrations | `getLlmModelRegistration` | `createLlmModelRegistration`, `updateLlmModelRegistration`, `deleteLlmModelRegistration` |
 | Accounts | `getLlmProviderAccount` | `createLlmProviderAccount`, `updateLlmProviderAccount`, `deleteLlmProviderAccount` |
+| Network Zones | `getLlmNetworkZone` | `createLlmNetworkZone`, `updateLlmNetworkZone`, `deleteLlmNetworkZone` |
+| Provider Endpoints | `getLlmProviderEndpoint` | `createLlmProviderEndpoint`, `updateLlmProviderEndpoint`, `deleteLlmProviderEndpoint` |
 | Deployments | `getLlmProviderDeployment` | `createLlmProviderDeployment`, `updateLlmProviderDeployment`, `deleteLlmProviderDeployment` |
 | Credentials | `getLlmProviderCredential` | `createLlmProviderCredential`, `updateLlmProviderCredential`, `deleteLlmProviderCredential` |
 | Aliases | `getLlmPublicAlias`, `previewLlmAliasRoutes` | `createLlmPublicAlias`, `updateLlmPublicAlias`, `deleteLlmPublicAlias` |

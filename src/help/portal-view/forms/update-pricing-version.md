@@ -19,9 +19,11 @@ from the operator-assigned **Pricing Version**.
 | Host Id | Read-only tenant boundary supplied by the portal. | `10000000-0000-4000-8000-000000000001` |
 | Pricing Version Id | Read-only identifier generated when this Pricing record was created. | `50000000-0000-4000-8000-000000000050` |
 | Provider Deployment | Deployment to which this rate schedule applies. | `openai-prod-ca` (`30000000-0000-4000-8000-000000000030`) |
+| Operation | Priced operation; it must match the Deployment protocol. | `embed` |
 | Pricing Version | Positive business version unique for the selected Deployment. It is not the optimistic-concurrency version. | `3` |
+| Pricing Basis | `EXTERNAL_PROVIDER`, `ZERO_MARGINAL`, or `AMORTIZED_INTERNAL`. | `ZERO_MARGINAL` |
 | Input Micros Per Million Tokens | Non-negative input rate in micros per one million tokens. | `2500000` |
-| Output Micros Per Million Tokens | Non-negative output rate in micros per one million tokens. | `10000000` |
+| Output Micros Per Million Tokens | Required for `generate`; must be empty for `embed`. | `10000000` |
 | Cached Input Micros Per Million Tokens | Optional cached-input rate retained by the control plane. The current MVP gateway projection does not consume it separately. | `1250000` |
 | Effective Time | ISO 8601 timestamp when the rate becomes effective. | `2026-08-01T12:00:00Z` |
 | Expiration Time | Optional ISO 8601 timestamp later than Effective Time. Leave empty for no scheduled expiration. | `2026-11-01T12:00:00Z` |
@@ -35,7 +37,9 @@ from the operator-assigned **Pricing Version**.
 {
   "pricingVersionId": "50000000-0000-4000-8000-000000000050",
   "providerDeploymentId": "30000000-0000-4000-8000-000000000030",
+  "operation": "generate",
   "pricingVersion": 3,
+  "pricingBasis": "EXTERNAL_PROVIDER",
   "inputMicrosPerMillion": 2500000,
   "outputMicrosPerMillion": 10000000,
   "cachedInputMicrosPerMillion": 1250000,
@@ -51,3 +55,8 @@ After an update, verify that the Deployment does not have ambiguous overlapping
 Pricing windows and publish a new immutable gateway candidate before expecting
 runtime cost calculations to change. The `active` state is backend-managed
 through soft delete and is not part of this form.
+
+For the NVIDIA embedding demo, preserve operation `embed` and leave output
+pricing empty. If the approved free entitlement has no marginal token charge,
+use `ZERO_MARGINAL` and zero input/cached-input rates. Prefer creating a new
+Pricing Version when the NVIDIA commercial terms or entitlement changes.

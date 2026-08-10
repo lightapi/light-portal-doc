@@ -1,7 +1,7 @@
 # Create Provider Credential
 
-Use `/app/form/createProviderCredential` to associate a provider Deployment with
-a versioned external secret reference. Open the form from **Administration >
+Use `/app/form/createProviderCredential` to associate a Provider Endpoint or
+sidecar runtime with a versioned external secret reference. Open the form from **Administration >
 GenAI Admin > LLM Models > Credentials** by choosing **Create provider
 credential**.
 
@@ -12,7 +12,8 @@ environment's supported secret manager before activating this record.
 
 You need:
 
-- a non-deleted provider Deployment under the selected host;
+- a non-deleted Provider Endpoint and corresponding Deployment for an
+  `ENDPOINT` credential, or a Deployment for `SIDECAR_RUNTIME`;
 - an external secret-manager entry containing the provider credential;
 - the URI syntax supported by the gateway's configured secret resolver; and
 - an activation and optional expiration time for this version.
@@ -25,7 +26,9 @@ authorization header into any field.
 | Field | Required | Example | Description |
 | --- | --- | --- | --- |
 | Host Id | Yes | `01964b05-552a-7c4b-9184-6857e7f3dc5f` | Read-only host that owns the Credential and Deployment. |
-| Provider Deployment | Yes | `OpenAI GPT-4o Production` | Non-deleted host-scoped Deployment that will use this credential. The selector submits its `providerDeploymentId`, for example `7ee18d9d-9db4-4f56-8eba-9ca880755962`. |
+| Credential Purpose | Yes | `ENDPOINT` | `ENDPOINT` is resolved by the central gateway; `SIDECAR_RUNTIME` is resolved only inside the provider sidecar. |
+| Provider Endpoint | For `ENDPOINT` | `nvidia-free-embeddings` | Endpoint whose bearer/API-key authentication uses this reference. |
+| Provider Deployment | Current create compatibility path | `nvidia-nemotron-3-embed-1b-loc` | Select the corresponding Deployment. It is mandatory for `SIDECAR_RUNTIME` and currently also required by the command create contract for Endpoint credentials. |
 | Credential Version | Yes | `2` | Positive version number unique for the selected Deployment. Increment it for each rotation. |
 | Secret Reference | Yes | `env:OPENAI_API_KEY` | Environment-variable reference resolved locally by the target gateway. This is a name, never the secret value. |
 | Effective Time | Yes | `2026-08-15T14:00:00Z` | ISO-8601 timestamp when this version becomes eligible. Use an explicit timezone. |
@@ -35,11 +38,11 @@ authorization header into any field.
 Portal generates `providerCredentialId` and initializes `aggregateVersion`.
 The form does not accept `active`; soft-delete state is backend-managed.
 
-## Provider Deployment
+## Purpose and owner
 
-The selector lists active, host-scoped Deployment labels and submits the stable
-Deployment ID. The command rejects a missing, deleted, or cross-host reference.
-Choose the endpoint that is actually configured to use the external credential.
+For `ENDPOINT`, select the Provider Endpoint and its corresponding Deployment.
+For `SIDECAR_RUNTIME`, select the Deployment and do not select an unrelated
+Endpoint. All references must be non-deleted and owned by the selected host.
 
 ## Credential Version
 
@@ -62,6 +65,7 @@ the gateway process:
 ```text
 env:OPENAI_API_KEY
 env:AZURE_OPENAI_API_KEY
+env:NVIDIA_API_KEY
 ```
 
 Kubernetes, Docker, or HashiCorp Vault injection may populate that environment
@@ -112,6 +116,26 @@ cannot.
 Choose **Create Provider Credential**. The form sends
 `lightapi.net/genai/createLlmProviderCredential/0.1.0` and returns to the LLM
 Model Control Plane after success.
+
+## NVIDIA Endpoint credential
+
+For the hosted Nemotron Endpoint, use:
+
+| Field | Value |
+| --- | --- |
+| Credential Purpose | `ENDPOINT` |
+| Provider Endpoint | `nvidia-free-embeddings` |
+| Provider Deployment | The corresponding `nvidia/nemotron-3-embed-1b` Deployment |
+| Credential Version | `1` |
+| Secret Reference | `env:NVIDIA_API_KEY` |
+| Effective Time | Current UTC time in ISO-8601 format |
+| Expiration Time | Empty for the local demo unless the key has a known expiry |
+| Lifecycle Status | `PENDING` |
+
+Pass `NVIDIA_API_KEY` into the `light-gateway` process through runtime secret
+injection or Compose environment expansion. Never commit its value to Portal
+configuration. Change this row to `ACTIVE` only after the target gateway can
+resolve the variable.
 
 ## Common Problems
 
