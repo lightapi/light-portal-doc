@@ -24,7 +24,8 @@ Create records in this order:
 8. Public Alias
 9. Alias Route
 10. Pricing
-11. Optional policy and policy binding
+11. Optional Policy and Policy Binding, only when a workload uses policy-based
+    governance or Alias selection
 12. Publish, review, and create the gateway snapshot
 
 If Publish reports a problem, return to the named tab, correct that record, and
@@ -121,6 +122,58 @@ Create an `embed` Pricing record for the Deployment. Embedding pricing accepts
 an input rate and forbids an output rate. A zero demo rate is valid when that is
 the intended accounting contract.
 
+## When to use Policies and Bindings
+
+Policies and Bindings are optional governance records. They are not required to
+create a Provider connection, make a Route eligible, publish an Alias, or test
+an embedding model through the live gateway.
+
+Use a **Policy** when the host needs reusable governance intent such as:
+
+- which subject or operation classes should be allowed;
+- request or period budget limits;
+- content logging, cache, or PII handling intent; or
+- a narrow allowlist of provider-specific request extensions.
+
+Policy objects are extensible authoring data. A key affects runtime behavior
+only when the publication mapping and target gateway support that key. Do not
+assume that storing an arbitrary JSON property automatically enforces it.
+
+Use a **Binding** to assign a Policy to a concrete subject. Supported subject
+namespaces are `AGENT`, `CLIENT`, `PRINCIPAL`, and `PRODUCT_PROFILE`. A Binding
+may also identify a Public Alias to limit the assignment to that Alias.
+
+Create them in this order:
+
+1. Create the Policy with a stable governance-oriented name.
+2. Create a Binding that selects the Policy and supplies the exact Subject Type
+   and Subject Id used by the consuming system.
+3. Select a Public Alias when the assignment is Alias-specific.
+4. For an `AGENT` that resolves its default model through policy, set Agent
+   Default on exactly one active Alias Binding for that Policy and Agent.
+5. Publish again and verify that the generated configuration contains only the
+   policy behavior supported by the selected gateway version.
+
+Do not use a Policy or Binding to:
+
+- store an API key or other provider secret;
+- replace Provider Account, Endpoint, Credential, Deployment, Route, or Pricing
+  configuration;
+- replace an internal Alias's workload-principal restriction; or
+- make an otherwise incompatible Deployment eligible for an Alias.
+
+For the initial NVIDIA `kb-index` and `kb-query` demo, skip both tabs unless an
+Agent or another subject must select those Aliases through a Model Policy. The
+Aliases' `INTERNAL_WORKLOAD` identity, embedding-space contract, Routes, and
+Pricing are sufficient for direct workload-based publication and live gateway
+testing. If policy-based selection is added later, create a dedicated embedding
+Policy using operation `embed`, then bind it to the exact subject and Alias;
+do not reuse a generation-only chat Policy.
+
+See [Create Model Policy](../forms/create-model-policy.md) and
+[Create Policy Binding](../forms/create-policy-binding.md) for field-level
+examples and Agent Default rules.
+
 ## Network Zones
 
 Network Zones are required only for private TLS or explicitly approved private
@@ -154,5 +207,8 @@ workflow.
 - **Raw provider secrets rejected:** use `env:NVIDIA_API_KEY`, never the key.
 - **No active records:** no non-deleted rows exist for that tab; create one only
   when the workflow requires it.
+- **Policy appears to have no effect:** confirm that an active Binding selects
+  the intended subject and optional Alias, and that the publication mapping and
+  gateway version implement the authored policy keys.
 - **Publication rejected:** correct the record named by the Publish validation
   result and publish a new candidate.
