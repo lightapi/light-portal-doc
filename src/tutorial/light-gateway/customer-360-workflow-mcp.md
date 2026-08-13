@@ -138,7 +138,7 @@ and use the new value consistently in the tool binding and router config.
 ## 3. Create the tool, binding, and endpoint registrations
 
 1. In the sidebar, expand **GenAI Admin** and select **Tool**.
-2. Select **Create New Tool**.
+2. Select **Create Workflow-backed Tool**.
 3. Enter these values. Unlisted optional fields can remain empty.
 
    | Field | Value |
@@ -155,83 +155,30 @@ and use the new value consistently in the tool binding and router config.
    | Human Approval Required | Disabled |
    | Version | `1.0.0` |
    | Execution Placement | `workflow` |
-   | Schema Digest | `sha256:56cb21e48069caa1c9998ba58a3983a68b42d038b364c82b3a3620b85c3718ca` |
+   | Workflow Definition | `light-demo/customer-360-mcp @ 1.0.0` |
 
    `Implementation Type` is not required for a workflow-placed tool.
-4. After selecting `workflow`, enter the following JSON in **Workflow
-   Binding**. Replace `<wfDefId>` with the generated ID from step 2.
+4. Portal loads the immutable workflow definition and derives the internal
+   definition, schema, and policy digests. These implementation fields are not
+   entered by the user. The reviewed workflow-tool runtime profile supplies
+   execution limits and resolves cataloged endpoint references.
 
-   ```json
-   {
-     "wfDefId": "<wfDefId>",
-     "workflowVersion": "1.0.0",
-     "definitionDigest": "sha256:a7c1c07164110840222fd2528122d75ced9f69d4e7b7b2944ea15dddd14e10ae",
-     "schemaDigest": "sha256:56cb21e48069caa1c9998ba58a3983a68b42d038b364c82b3a3620b85c3718ca",
-     "invocationMode": "sync",
-     "syncWaitMs": 20000,
-     "totalDeadlineMs": 30000,
-     "executionClass": "interactive",
-     "resultTextMode": "compact-json",
-     "idempotencyPolicy": {
-       "kind": "derived",
-       "inFlightDedupMs": 30000,
-       "resultReplayMs": 0
-     },
-     "delegationPolicy": {
-       "maximumDelegationDepth": 0
-     },
-     "responsePolicyDigest": "sha256:36c9bb0c09a5e06a4871f9c7ad985792269eb798334c2e9715f25d441796174e",
-     "runtimeBounds": {
-       "maximumTaskAttempts": 8,
-       "maximumNestedCalls": 1,
-       "maximumParallelism": 3,
-       "maximumRequestBytes": 65536,
-       "maximumIntermediateBytes": 524288,
-       "maximumResultBytes": 262144,
-       "maximumCostUnits": 0
-     },
-     "policyDigest": "sha256:b5838a4852ba9937839f228e9d3e30607a58b69652e5c373fb2cb61108e87180",
-     "endpoints": [
-       {
-         "endpointRef": "customer-360.profile",
-         "endpointUri": "http://demo-customer-profile-api:8085/customers/${{ customerId }}",
-         "allowedMethods": ["GET"],
-         "authorizationPolicyDigest": "sha256:b5838a4852ba9937839f228e9d3e30607a58b69652e5c373fb2cb61108e87180"
-       },
-       {
-         "endpointRef": "customer-360.preferences",
-         "endpointUri": "http://demo-customer-profile-api:8085/customers/${{ customerId }}/preferences?channel=${{ channel }}",
-         "allowedMethods": ["GET"],
-         "authorizationPolicyDigest": "sha256:b5838a4852ba9937839f228e9d3e30607a58b69652e5c373fb2cb61108e87180"
-       },
-       {
-         "endpointRef": "customer-360.policies",
-         "endpointUri": "http://demo-customer-profile-api:8085/customers/${{ customerId }}/policies",
-         "allowedMethods": ["GET"],
-         "authorizationPolicyDigest": "sha256:b5838a4852ba9937839f228e9d3e30607a58b69652e5c373fb2cb61108e87180"
-       }
-     ]
-   }
-   ```
-
-5. If the structured editor marks the JSON tab with `*`, select **Apply**.
-6. Submit **Create Tool Form** once.
-7. Return to **Tool**, refresh the list, and open `customer_360` with
+5. Submit **Create Tool Form** once.
+6. Return to **Tool**, refresh the list, and open `customer_360` with
    **Update Tool**. Record the generated Tool ID as `<toolId>` and confirm:
 
    - Execution Placement is `workflow`.
    - Stable Tool Reference equals `<toolId>`.
-   - The binding contains `<wfDefId>` and a generated `bindingId`.
+   - The binding contains the selected Workflow Definition ID and a generated `bindingId`.
    - All three endpoint entries are present.
 
 The command handler generates the Tool ID and binding ID. The event projector
 creates all four read-model types from the one `ToolCreatedEvent`; do not fill
 in any missing projection row manually.
 
-`maximumParallelism` must be at least `3`, because the definition has three
-fork branches. The binding Schema Digest must exactly match the top-level Tool
-Schema Digest. A synchronous gateway binding also requires `syncWaitMs` no
-greater than `20000` and `totalDeadlineMs` no greater than `30000`.
+The reviewed runtime profile must permit at least three parallel branches for
+this workflow. Confirm that limit when reviewing the generated binding; Portal
+does not currently validate workflow structure against runtime-profile limits.
 
 ## 4. Enable the static light-gateway entry
 

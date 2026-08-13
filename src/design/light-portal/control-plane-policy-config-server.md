@@ -48,6 +48,20 @@ the exact intended property set before property events are emitted.
 `config_snapshot_t` and its snapshot content are immutable deployable artifacts.
 The `current` flag is a projected pointer to one of those immutable artifacts.
 
+For Gateway tools, publication is an explicit Instance Admin action after tool
+authoring is complete. A single-tool or batch publication pins each current tool
+revision, including its published workflow-version binding, and stages the
+corresponding `mcp-router.yml` entries for the selected Gateway instance. The
+Instance Admin then creates a configuration snapshot and moves the current
+pointer to activate it. Changing a tool or selecting another workflow version
+requires another publication; it never mutates an existing snapshot.
+
+Configuration snapshots replace user-managed digest fields, not integrity
+checks. End users neither enter nor see schema, definition, or policy digests on
+the tool form. Portal derives those values from canonical server-side content
+where an internal admission or audit contract still requires them. Config
+Server separately computes the snapshot and artifact digests described below.
+
 ## Context
 
 Agent configuration is authored in Light Portal from multiple control-plane
@@ -190,6 +204,14 @@ events; Workflow and Knowledge never insert or update event-backed projection
 rows. Direct writes are limited to explicitly operational state owned by the
 service.
 
+Workflow versions use one stable `wfDefId` for their complete history. A user
+may save a `DRAFT` version repeatedly. Publishing that version freezes its YAML;
+the next edit must create a new version under the same `wfDefId`. Tools bind to
+the pair `(wfDefId, workflowVersion)` and only published versions are selectable.
+This permits an operator to roll a tool back to a previously published workflow
+version without inventing a second workflow identity. Portal provides a
+side-by-side, normalized YAML comparison between versions.
+
 The shared database roles must be least-privilege roles restricted to the exact
 projection reads and operational writes each service needs. They must not be
 database superusers. A future physical database split may deliver the same
@@ -230,6 +252,9 @@ semantic contracts.
     unknown or unvalidated policy.
 15. Workflow and Knowledge never mutate event-backed authoring projections
     directly; operational writes are not authoring shortcuts.
+16. A tool may bind only to a published workflow version. A published workflow
+    version is immutable and remains addressable by its stable `wfDefId` and
+    version string.
 
 ## Architecture
 

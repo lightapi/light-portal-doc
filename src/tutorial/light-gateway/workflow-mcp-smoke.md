@@ -89,7 +89,7 @@ projection. Refresh the list instead.
 ## 2. Create the workflow-backed tool and binding
 
 1. In the sidebar, expand **GenAI Admin** and select **Tool**.
-2. Select **Create New Tool**.
+2. Select **Create Workflow-backed Tool**.
 3. Enter the following tool values. Fields not listed here can remain empty.
 
    | Field | Value |
@@ -106,74 +106,33 @@ projection. Refresh the list instead.
    | Human Approval Required | Disabled |
    | Version | `1.0.0` |
    | Execution Placement | `workflow` |
-   | Schema Digest | `sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa` |
+   | Workflow Definition | `light-demo/workflow-mcp-smoke @ 1.0.0` |
 
    `Implementation Type` is not required for a workflow-placed tool. The
    workflow binding, rather than a Java class, REST endpoint, script, or MCP
    server, identifies its execution target.
 
-4. After selecting `workflow`, the **Workflow Binding** structured-data field
-   appears. Enter the following JSON, replacing `<wfDefId>` with the ID from
-   step 1:
+4. Portal loads the immutable workflow definition and derives the internal
+   definition, schema, and policy digests. These implementation fields are not
+   entered by the user. The reviewed workflow-tool runtime profile supplies
+   the binding defaults.
 
-   ```json
-   {
-     "wfDefId": "<wfDefId>",
-     "workflowVersion": "1.0.0",
-     "definitionDigest": "sha256:5197cc8e1ef611ef736c6d033ffdbab19137318bbadf61ea16b906d114ad81c8",
-     "schemaDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-     "invocationMode": "sync",
-     "syncWaitMs": 20000,
-     "totalDeadlineMs": 30000,
-     "executionClass": "interactive",
-     "resultTextMode": "compact-json",
-     "idempotencyPolicy": {
-       "kind": "derived",
-       "inFlightDedupMs": 30000,
-       "resultReplayMs": 0
-     },
-     "delegationPolicy": {
-       "maximumDelegationDepth": 0
-     },
-     "responsePolicyDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-     "runtimeBounds": {
-       "maximumTaskAttempts": 4,
-       "maximumNestedCalls": 1,
-       "maximumParallelism": 1,
-       "maximumRequestBytes": 65536,
-       "maximumIntermediateBytes": 262144,
-       "maximumResultBytes": 131072,
-       "maximumCostUnits": 0
-     },
-     "policyDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-   }
-   ```
-
-5. If the structured-data editor shows an **Apply** action, select it before
-   submitting the form. A tab marked with `*` still has unapplied edits and the
-   portal will refuse to submit it.
-6. Submit **Create Tool Form** once.
-7. Record the generated Tool ID as `<toolId>`. The command service uses this as
+5. Submit **Create Tool Form** once.
+6. Record the generated Tool ID as `<toolId>`. The command service uses this as
    the stable tool reference unless one was explicitly supplied. It also
    generates the binding ID because `bindingId` was omitted from the JSON.
-8. Return to **Tool**, refresh the table, and open **Update Tool** for
+7. Return to **Tool**, refresh the table, and open **Update Tool** for
    `workflow_mcp_smoke`. Confirm that:
 
    - Execution Placement is `workflow`.
    - Stable Tool Reference equals `<toolId>`.
-   - Workflow Binding contains `<wfDefId>` and a generated `bindingId`.
+   - Workflow Binding contains the selected Workflow Definition ID and a generated `bindingId`.
    - The tool is active.
-
-The four digest values above are the pinned values used by this smoke fixture
-and its shipped light-gateway configuration. They are contract identifiers,
-not a suggestion to use repeated placeholder digests for production tools. If
-the workflow, schemas, or policies change, generate and deploy new matching
-digests instead of reusing these values.
 
 For a synchronous binding, the portal requires a read-only, non-destructive,
 headless tool: **Read Only** must be enabled while **Destructive** and
-**Human Approval Required** remain disabled. The Workflow Binding Schema
-Digest must exactly match the top-level Schema Digest.
+**Human Approval Required** remain disabled. The server derives the binding
+integrity fields from the selected published workflow version and tool schemas.
 
 ## 3. Point light-gateway at the generated identities
 
