@@ -1,0 +1,110 @@
+document:
+  dsl: "1.0.3"
+  namespace: light-demo
+  name: customer-360-mcp
+  version: "1.0.0"
+  title: Customer 360 Workflow MCP Demo
+  summary: Read a customer profile, preferences, and policies in parallel and append the API responses.
+  tags:
+    demo: workflow-mcp
+    capability: aggregation
+evaluate:
+  language: cel
+input:
+  schema:
+    format: json
+    document:
+      type: object
+      additionalProperties: false
+      required:
+        - customerId
+        - channel
+      properties:
+        customerId:
+          type: string
+          minLength: 1
+          maxLength: 64
+        channel:
+          type: string
+          minLength: 1
+          maxLength: 32
+output:
+  schema:
+    format: json
+    document:
+      type: object
+      additionalProperties: false
+      required:
+        - customerId
+        - results
+      properties:
+        customerId:
+          type: string
+        results:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - source
+              - status
+              - data
+            properties:
+              source:
+                type: string
+              status:
+                type: string
+                const: success
+              data:
+                type: object
+do:
+  - loadCustomerContext:
+      fork:
+        branches:
+          - profile:
+              call: http
+              with:
+                method: GET
+                endpoint:
+                  uri: http://demo-customer-profile-api:8085/customers/${{ customerId }}
+                output: content
+              metadata:
+                endpointRef: customer-360.profile
+          - preferences:
+              call: http
+              with:
+                method: GET
+                endpoint:
+                  uri: http://demo-customer-profile-api:8085/customers/${{ customerId }}/preferences?channel=${{ channel }}
+                output: content
+              metadata:
+                endpointRef: customer-360.preferences
+          - policies:
+              call: http
+              with:
+                method: GET
+                endpoint:
+                  uri: http://demo-customer-profile-api:8085/customers/${{ customerId }}/policies
+                output: content
+              metadata:
+                endpointRef: customer-360.policies
+        compete: false
+      export:
+        as:
+          responses: .output
+  - appendResponses:
+      set:
+        customerId: "${{ customerId }}"
+        results:
+          - source: profile
+            status: success
+            data: "${{ responses.profile }}"
+          - source: preferences
+            status: success
+            data: "${{ responses.preferences }}"
+          - source: policies
+            status: success
+            data: "${{ responses.policies }}"
+      end: true
