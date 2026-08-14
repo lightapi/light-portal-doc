@@ -70,6 +70,12 @@ redirect to that catalog. Opening the catalog from an Instance API applies the
 API-version filter; the operator may then select one or more endpoint and/or
 workflow-backed Tools and choose an active `gtw` instance.
 
+The persistence layer enforces this boundary: new create or update events for
+the legacy Instance API `mcp-router.tools` property are rejected with guidance
+to use the Tool catalog. Historical-import projections remain accepted so an
+existing event store can be rebuilt before the first Tool-catalog publication
+migrates and deactivates those legacy rows.
+
 Portal produces a server-side preview and never asks the operator to enter or
 inspect a digest. A selection containing only endpoints from one API version
 uses `REPLACE_API_SCOPE`: it replaces that API version's endpoint Tools while
