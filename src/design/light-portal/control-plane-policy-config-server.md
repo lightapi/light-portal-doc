@@ -48,7 +48,7 @@ the exact intended property set before property events are emitted.
 `config_snapshot_t` and its snapshot content are immutable deployable artifacts.
 The `current` flag is a projected pointer to one of those immutable artifacts.
 
-For Gateway tools, publication is an explicit Instance Admin action after tool
+For Gateway tools, publication is an explicit Tool-catalog action after tool
 authoring is complete. A single-tool or batch publication pins each current tool
 revision, including its published workflow-version binding, and stages the
 corresponding `mcp-router.yml` entries for the selected Gateway instance. The
@@ -61,6 +61,46 @@ checks. End users neither enter nor see schema, definition, or policy digests on
 the tool form. Portal derives those values from canonical server-side content
 where an internal admission or audit contract still requires them. Config
 Server separately computes the snapshot and artifact digests described below.
+
+### Implemented Gateway Tool publication slice
+
+Gateway Tool publication has one authoring path: the Tool catalog at
+`/app/genai/Tool`. The old Instance API MCP Tool route is a compatibility
+redirect to that catalog. Opening the catalog from an Instance API applies the
+API-version filter; the operator may then select one or more endpoint and/or
+workflow-backed Tools and choose an active `gtw` instance.
+
+Portal produces a server-side preview and never asks the operator to enter or
+inspect a digest. A selection containing only endpoints from one API version
+uses `REPLACE_API_SCOPE`: it replaces that API version's endpoint Tools while
+preserving Tools from other APIs and all workflow Tools. Mixed selections and
+workflow Tools use `ADD_OR_UPDATE`, which preserves every unselected Tool.
+
+`GatewayToolPublicationUpdatedEvent` stores the exact compiled
+`mcp-router.tools` array and its exact source-binding records. Consequently,
+event replay projects the event payload and does not re-resolve mutable Tool,
+API, Instance API, or Workflow records. Publications share the ordered
+`hostId + instanceId` event stream, so a competing stale publication is rejected
+at append instead of becoming a projection failure. Synchronous projection:
+
+- records the immutable attempt in `gateway_tool_publication_t`;
+- writes the complete desired array to the instance-level
+  `instance_property_t` row for `mcp-router.tools`;
+- records the endpoint or published Workflow version pin for each Tool in
+  `gateway_tool_binding_t`; and
+- deactivates legacy `instance_api_property_t` rows for the same property so
+  the Gateway has one configuration source.
+
+On the first Tool-catalog publication, Portal folds the active legacy
+per-Instance-API Tool arrays into the new instance-level array before those
+legacy rows are deactivated. Existing API Tools are therefore preserved during
+the one-path migration.
+
+The publication response is `STAGED`. It deliberately does not create or
+activate a snapshot. An Instance Admin creates the immutable config snapshot
+and moves the instance's current snapshot pointer in the existing snapshot
+workflow. A later Tool or Workflow change has no effect on the live Gateway
+until another Tool publication is staged and another snapshot is activated.
 
 ## Context
 
