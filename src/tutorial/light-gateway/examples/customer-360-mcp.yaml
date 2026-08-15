@@ -68,7 +68,7 @@ do:
               with:
                 method: GET
                 endpoint:
-                  uri: http://demo-customer-profile-api:8085/customers/${{ customerId }}
+                  uri: http://demo-customer-profile-api:8085/customers/${{customerId}}
                 output: content
               metadata:
                 endpointRef: customer-360.profile
@@ -77,7 +77,7 @@ do:
               with:
                 method: GET
                 endpoint:
-                  uri: http://demo-customer-profile-api:8085/customers/${{ customerId }}/preferences?channel=${{ channel }}
+                  uri: http://demo-customer-profile-api:8085/customers/${{customerId}}/preferences?channel=${{channel}}
                 output: content
               metadata:
                 endpointRef: customer-360.preferences
@@ -86,7 +86,7 @@ do:
               with:
                 method: GET
                 endpoint:
-                  uri: http://demo-customer-profile-api:8085/customers/${{ customerId }}/policies
+                  uri: http://demo-customer-profile-api:8085/customers/${{customerId}}/policies
                 output: content
               metadata:
                 endpointRef: customer-360.policies
@@ -107,4 +107,3 @@ do:
           - source: policies
             status: success
             data: "${{ responses.policies }}"
-      end: true

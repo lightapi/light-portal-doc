@@ -1,0 +1,93 @@
+# Workflow Editor
+
+Use Workflow Editor to create, validate, test, version, and publish workflow
+definitions. The Help button on the editor opens this page in a new tab.
+
+## Define the workflow contract
+
+The form fields write directly into the YAML definition. For a new workflow,
+start with:
+
+- **DSL Version**, **Namespace**, **Name**, **Version**, **Title**, and
+  **Summary** for the top-level `document` object
+- **Evaluation Language** for `evaluate.language`; workflow-backed MCP tools
+  currently require `cel`
+- **Input Schema** and **Output Schema** for inline JSON Schema documents
+- categories and tags selected from the portal reference tables
+
+For example, enabling Input Schema creates this structure in the YAML editor:
+
+```yaml
+input:
+  schema:
+    format: json
+    document:
+      type: object
+      additionalProperties: false
+      required:
+        - customerId
+      properties:
+        customerId:
+          type: string
+```
+
+## Add workflow tasks
+
+Use the Step Palette to select a task type, enter a task name, and add it to the
+workflow. New definitions use the `do` task list. The editor inserts each task
+into the existing task list instead of creating a competing `steps` section.
+
+The palette includes Ask, Assert, HTTP, OpenAPI, JSON-RPC, OpenRPC, gRPC, MCP,
+Rule, Agent, child Workflow, Fork, Switch, Condition, Set, Export, and Wait
+starters. A Condition starter is a named switch skeleton, and an Export starter
+combines a minimal `set` task with its task-level `export` mapping. Step IDs keep
+their entered letter case, so names such as `loadCustomerContext` round-trip
+unchanged.
+
+Use the YAML editor for task-specific settings that are not exposed by a form.
+The Visual Graph reflects the task structure and lets you inspect the resulting
+flow. Parallel work is represented by a `fork` task with named branches.
+
+After inserting or selecting a fork in the Steps list or Visual Graph, use the
+**Fork Branches** panel to rename its branches or add another branch. New
+branches start with a minimal `set` task that can be replaced with the intended
+call or other task configuration. Branch names must be unique and may contain
+letters, numbers, underscores, and hyphens. The editor keeps at least two
+branches in a fork.
+
+For an endpoint call, first open the endpoint-backed Tool in **GenAI > Tools**
+and use **Workflow Access** to grant it to this workflow and environment. In
+the fork panel, select **Add Step** on the intended branch, change Reference
+Type to **Endpoints**, and select the granted capability. The editor replaces
+only that branch's placeholder and generates an executable `call: http` task
+with a logical `lightapi://` URI and a pinned Tool version and LightAPI digest.
+It never stores the endpoint UUID or an environment URL in workflow YAML.
+
+The Endpoints list is workflow-aware. A Tool is absent when its grant is
+revoked, is for another workflow/version/environment, its LightAPI document is
+invalid, or its pinned version or digest is stale. Runtime execution performs
+the same check before resolving the logical URI and sending the request.
+
+## Validate and test
+
+**Validate** first parses the YAML in the browser and checks that it has a
+workflow task container. It then calls the portal workflow validation service
+for the supported server-side contract checks. Validation does not currently
+apply the complete workflow specification schema.
+
+After saving a draft, use **Test** to start it with test input and inspect
+processes, tasks, assignments, audit records, and final output in the Runtime
+Test panel.
+
+## Import, save, and publish
+
+- **Import** loads a YAML, YML, or JSON workflow file into the editor.
+- **Export** downloads the current definition as YAML.
+- **Save** stores the current draft.
+- **Publish Version** makes a saved version immutable and available according
+  to its catalog and ownership settings.
+- **Create New Version** copies a published version into a new editable draft.
+
+Publishing a definition is separate from making it visible in the Workflow
+Catalog. Enable catalog visibility only when the workflow should be discoverable
+by other authorized portal users.
