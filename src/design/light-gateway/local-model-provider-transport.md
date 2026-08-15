@@ -210,7 +210,7 @@ whose effective policy permits private HTTP.
 
 ## Network Profile Contract
 
-The current production projection materializes one `ProviderConfig` for each
+The current values-backed configuration materializes one `ProviderConfig` for each
 `providerId` and rejects conflicting materialization. Keep that ownership rule:
 each Provider endpoint declares exactly one immutable Network Profile, and each
 Provider Deployment references one Provider endpoint. Deployments that share a
@@ -300,7 +300,7 @@ A CA certificate is public material, but it is security-sensitive trust
 configuration. Project only a versioned reference and SHA-256 digest. Resolve
 the PEM bundle at runtime from a managed configuration mount or configuration
 service. Do not place the PEM repeatedly in every Provider Deployment payload,
-and never put a client private key in a projection.
+and never put a client private key in `values.yml`.
 
 This keeps publications small, makes rotation explicit, and lets every replica
 verify that the resolved bundle matches the published digest. A standalone or
@@ -378,7 +378,7 @@ depend on:
   price are not ambiguous.
 
 Deferring these shapes until the TLS client or live runner is implemented would
-reopen the coordinated projection contract.
+reopen the coordinated values-backed configuration contract.
 
 ## Validation Rules
 
@@ -679,13 +679,13 @@ Use overlap rather than a flag day:
 
 1. Publish a new trust-bundle version and digest containing the current and next
    CA when the authority changes.
-2. Verify every LLM gateway replica resolved the advertised digest, rebuilt the
-   affected provider client, discarded the old pool, and acknowledged the new
-   publication.
+2. Request `llm-router` reload for each selected LLM gateway instance and verify
+   that it resolved the advertised digest, rebuilt the affected provider client,
+   and discarded the old pool.
 3. Rotate sidecar server certificates.
 4. Prove conformance and health through every eligible endpoint.
 5. Remove the old CA through another versioned publication and repeat the
-   acknowledgement check.
+   explicit reload and verification check.
 
 Expose certificate expiry and rotation status without logging private-key
 material.
@@ -817,7 +817,7 @@ administrators must not submit or edit `PASS` evidence.
 It has not been removed from the system. The current database still stores
 state, digest, validity, and result evidence; command handlers still support
 pending, completion, and due-refresh transitions; and the production gateway
-projection still requires a complete `ConformanceResult`. Routing checks its
+configuration still requires a complete `ConformanceResult`. Routing checks its
 digest, provider protocol, physical model, tested operation, expiry, state, and
 capability evidence.
 
@@ -889,8 +889,8 @@ are the same or when the isolation-manifest digest is absent.
 
 The trusted runner signs the canonical result with a runner-held key. The
 gateway verifies the signature against public keys loaded from a protected
-runner trust store that is independent of the evidence database; the projection
-may select an approved key ID but cannot introduce a new trusted key. Signature
+runner trust store that is independent of the evidence database; the values
+snapshot may select an approved key ID but cannot introduce a new trusted key. Signature
 verification happens before state, expiry, operations, model, capabilities,
 endpoint identity, and transport identity checks. The existing self-digest
 remains useful for canonical integrity but is not accepted as proof of producer
@@ -946,7 +946,7 @@ accepted by the operator.
 
 ### Publication
 
-The immutable projection carries identifiers, versions, policy, DNS names,
+The immutable `values.yml` snapshot carries identifiers, versions, policy, DNS names,
 ports, address constraints, material digests, and approved runner key IDs. It
 cannot introduce runner public keys, and it never carries private keys. Trust
 bundles may be delivered through the existing secret/config mechanism or
@@ -975,15 +975,16 @@ The compiler rejects:
 
 ### Clean Cutover
 
-Because projection structures are deny-unknown-fields and digest-bound, this is
-a coordinated control-plane and gateway contract change. Reuse the established
-publication cutover procedure:
+Because the compiled configuration structures are deny-unknown-fields and
+digest-bound, this is a coordinated control-plane and gateway contract change.
+Reuse the established publication cutover procedure:
 
 1. retain the complete pre-cutover artifact set;
 2. stop publication while mixed schemas could be emitted;
 3. deploy readers and writers that understand the new contract;
 4. publish one complete root with regenerated conformance evidence;
-5. assert the expected generation and digest on every replica; and
+5. explicitly reload `llm-router` on each selected instance and assert the
+   expected generation and digest; and
 6. pair binary rollback with restoration of the previous records.
 
 ## Runtime Failure Semantics
@@ -1154,7 +1155,7 @@ authenticate the model endpoint or protect against every internal observer.
   contracts.
 - Extend `ConformanceResult` with evidence kind, deployment revision, endpoint,
   transport, physical-runtime, capacity, sidecar, signer, and signature binding.
-- Thread the complete shapes through Portal DB, commands, projection, runtime
+- Thread the complete shapes through Portal DB, commands, values-backed publication, runtime
   configuration, client-reuse digest generation, signature verification, and
   audit.
 - Preserve `public_tls` as the default and current behavior.
@@ -1263,7 +1264,7 @@ authenticate the model endpoint or protect against every internal observer.
     models are warmed before eligibility, and protected lanes do not share a
     capacity domain.
 12. A trust-bundle digest change rebuilds every affected client and drops its
-    old connection pool before the publication is acknowledged.
+    old connection pool when the selected instance reload succeeds.
 13. Certificate rotation, runner-key rotation, and paired control-plane rollback
     are rehearsed.
 14. Logs, metrics, errors, and conformance evidence contain no prompt text,
@@ -1282,7 +1283,7 @@ authenticate the model endpoint or protect against every internal observer.
   sharing a `providerId` share that complete endpoint configuration.
 - A private CA bundle is resolved from managed configuration by versioned
   reference and verified against a published digest; PEM and private keys are
-  not repeated in deployment projections. The resolved digest is part of
+  not repeated in deployment configuration values. The resolved digest is part of
   provider-client reuse identity.
 - An operator may select private HTTP to another computer when the selected
   Network Zone permits it. It is credential-free in the first release, and

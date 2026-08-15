@@ -15,7 +15,7 @@ Alias before retiring the model.
 
 ## What retirement means
 
-Retirement is a soft deletion from the active LLM control-plane projection. It
+Retirement is a soft deletion from the active LLM control-plane configuration. It
 preserves event history for audit and replay, but excludes the retired records
 from new publications.
 
@@ -143,7 +143,8 @@ the selected `llm-gateway` instance. Check that:
 - `assistant-dev` resolves to the replacement Deployment first;
 - the retiring Deployment is no longer referenced by an active route;
 - provider, credential, pricing, and capability validation succeeds; and
-- the target gateway applies or acknowledges the new publication.
+- the target gateway starts from the promoted snapshot or successfully reloads
+  `llm-router`.
 
 Call `/v1/models` and `/v1/chat/completions` through `llm-gateway` with the
 stable Alias. Repeat the agent tool-calling tests. Keep this routed state for a
@@ -193,7 +194,7 @@ model.
 
 Portal control-plane changes are authored and validated only in the local
 `portal-config-loc/all-in-lt` database. Import the reviewed retirement event
-file there, verify the projections and live gateway behavior, and then export a
+file there, verify the read models and live gateway behavior, and then export a
 new global snapshot to recreate the canonical `events.json`.
 
 Use that exported `events.json` to recreate the databases for
@@ -226,7 +227,7 @@ Before import, validate that:
 - the publication contains neither the retired Deployment nor a stale Alias
   route to it.
 
-Generate the file from current local projections immediately before the
+Generate the file from current local read models immediately before the
 change. A previously generated retirement file becomes stale as soon as one of
 its aggregates or the publication version changes.
 

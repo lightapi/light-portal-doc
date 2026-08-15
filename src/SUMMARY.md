@@ -44,6 +44,7 @@
     - [Global And Tenant Knowledge Bases For Shared Agent Retrieval](./design/light-portal/knowledge-base.md)
     - [Workflow Version and Publication](./design/light-portal/workflow-version-publication.md)
     - [Endpoint Tools and Workflow Access](./design/light-portal/endpoint-tool-workflow-access.md)
+    - [API Version Publication To Gateway](./design/light-portal/api-version-gateway-publication.md)
   - [Light Gateway](./design/light-gateway.md)
     - [Local Model Provider Transport For LLM Gateway](./design/light-gateway/local-model-provider-transport.md)
   - [Claim Org Role Bootstrap](./design/claim-org-role-bootstrap.md)
