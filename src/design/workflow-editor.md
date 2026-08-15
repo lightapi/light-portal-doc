@@ -211,6 +211,19 @@ agentic workflow design:
 The palette should create minimal valid YAML fragments. Users can then edit the
 full YAML when advanced options are needed.
 
+The YAML cursor, Steps list, and Visual Graph share one selected top-level
+workflow step. Moving the cursor anywhere inside a `do` item selects that step
+in the other views. When a step is selected, the palette offers insertion
+immediately before or after it; with the cursor outside a recognized step, it
+appends to the workflow. Invalid or incomplete YAML must not cause an
+unstructured text insertion. If the selected anchor is no longer present, the
+editor reports the stale selection instead of silently appending. Step identity
+and container priority are shared by the cursor, Steps list, Visual Graph, and
+insertion path, including `name`/`id`-shaped and map-shaped legacy containers.
+An explicit fork-branch insertion target remains active while the YAML cursor
+moves and is cleared only after insertion, a different explicit selection, or
+the user chooses **Top level**.
+
 ## Reference Panel
 
 The editor should help authors reference existing catalog objects instead of
@@ -487,6 +500,30 @@ versions should remain immutable for auditability; create a new canonical
 version instead of rewriting published history. The rollout gate is zero
 unresolved legacy drafts that are expected to be published, plus an explicit
 owner disposition for every remaining invalid stored definition.
+
+### Known Debt: Secret Keyword Screening On Existing Definitions
+
+The authoring guard screens `existingDefinition` with the secret *key* pattern
+in addition to the secret *value* pattern, and it matches anywhere in the text.
+Any definition that merely mentions a word such as `authorization` — an HTTP
+header name, an `authorizationPolicy` field, or the word inside a free-text
+`description` — is refused with
+`WORKFLOW_AUTHORING_SECRET_IN_EXISTING_DEFINITION` even though it carries no
+credential. This is pre-existing behaviour rather than a regression from
+schema-backed validation: the guard has always applied the key pattern to the
+whole definition with a substring match, so tightening the pattern's anchoring
+did not change which definitions are refused.
+
+The debt is that a keyword screen is the wrong instrument for a document body.
+Key-name matching is appropriate where a key name is being inspected, which is
+the sanitizer's per-key path; for definition text only the value pattern
+distinguishes an actual credential from a field name. Resolving this means
+screening `existingDefinition` with the value pattern alone, and it must be
+taken as its own change with its own test coverage, because relaxing a guard
+that currently fails closed is a security-relevant decision that should not
+ride along with an unrelated fix. Until then, authors revising a definition
+that names an authorization concept must strip the wording or start from a new
+draft.
 
 ## Phased Implementation
 
