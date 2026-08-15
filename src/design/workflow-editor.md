@@ -95,7 +95,7 @@ building blocks:
 
 | Component | Recommended library | Responsibility |
 | --- | --- | --- |
-| Source editor | CodeMirror 6 with JSON/YAML extensions | Edit YAML/JSON, validate against the Light-Fabric workflow schema, provide autocomplete, lint markers, folding, and hover help. |
+| Source editor | CodeMirror 6 with JSON/YAML extensions | Edit YAML/JSON, provide immediate parse diagnostics, folding, and lint markers, and display authoritative server validation results. |
 | Visual graph | React Flow / xyflow | Render workflow states as nodes and transitions as edges, with custom node components for agentic task types. |
 | Property panels | Schema-backed React forms, optionally JSONForms | Edit selected node/task properties without forcing users to hand-edit every YAML field. |
 | State manager | Existing portal state pattern or Zustand if a local editor store is needed | Hold the canonical workflow document, parsed model, diagnostics, selected node, dirty state, and test run state. |
@@ -112,14 +112,12 @@ Serverless Workflow schema, while still letting Portal define first-class
 visual treatments for Light-Fabric task types such as `agent`, `mcp`, `ask`,
 `assert`, `rule`, `switch`, and future LLM or approval-oriented steps.
 
-CodeMirror should use a custom JSON Schema derived from the CNCF Serverless
-Workflow schema plus Light-Fabric agentic extensions. For JSON definitions,
-use a CodeMirror 6 JSON Schema integration such as `codemirror-json-schema` to
-provide linting, autocomplete, and hover details. For YAML definitions, reuse
-the existing portal-view CodeMirror YAML setup where possible and add schema
-validation through a YAML language-server bridge or equivalent worker-backed
-integration. The goal is Monaco-like schema assistance without Monaco's bundle
-cost.
+CodeMirror should continue to provide immediate YAML parse diagnostics while
+the server applies the canonical Agentic Workflow JSON Schema. The browser may
+later use schema-derived autocomplete and hover information, but it must not
+carry an independently maintained schema or become the authoritative validator.
+This keeps validation behavior consistent for editor actions and AI-generated
+drafts without adding a large schema-validation runtime to `portal-view`.
 
 React Flow should not own the persisted shape. It owns layout, selection, edge
 creation, and node interaction. The persisted workflow definition should remain
@@ -136,6 +134,40 @@ Recommended sync behavior:
 5. Let property-panel changes update the model through schema-aware controls.
 6. Serialize model changes back into the YAML document using stable formatting.
 7. Keep conflict handling explicit when source edits and graph edits race.
+
+## Canonical Schema Ownership And Distribution
+
+The canonical schema is
+`workflow-specification/schema/workflow.yaml`. It is a Draft 2020-12 JSON
+Schema expressed as YAML and identifies the supported Agentic Workflow DSL
+with its `$id`. Its local `$ref` values resolve through `#/$defs`, so runtime
+validation does not require network access.
+
+`workflow-query` should carry an immutable copy at
+`src/main/resources/schema/workflow-1.0.3.yaml`. A neighboring manifest should
+record at least:
+
+- the schema `$id` and DSL version;
+- the SHA-256 digest of the exact bundled bytes;
+- the source repository and full source commit;
+- the pinned upstream Open Workflow commit and digest.
+
+A synchronization script copies the schema and provenance from an explicit
+`workflow-specification` checkout and regenerates the manifest. A verification
+test recomputes the digest and rejects a missing, malformed, or mismatched
+resource. Schema updates must therefore be deliberate code changes reviewed
+with their source commit and conformance evidence.
+
+Production code must not fetch the schema from GitHub, follow the moving
+`master` branch, or fall back to a remote copy. Remote retrieval introduces
+startup availability, latency, supply-chain, and version-drift risks. GitHub
+may be used by CI to detect an available specification update, but the running
+service always uses its bundled resource.
+
+The schema is loaded and compiled once by a thread-safe
+`WorkflowSchemaValidator`. The validator verifies the manifest and schema
+identity during initialization. A missing or invalid schema prevents schema
+validation from reporting success.
 
 Mermaid can be used for documentation or a lightweight read-only preview, but
 it is not the long-term authoring surface. JSONForms can be useful inside
@@ -262,13 +294,13 @@ The first generic editor can reuse existing workflow definition APIs. Later
 phases should add editor-friendly endpoints only when they remove real UI
 complexity.
 
-Phase B adds the validation endpoint and keeps the reference catalog composed
-from existing read models. A single combined catalog endpoint remains optional
-if the multiple list queries become noisy or slow.
+Phase B uses the existing validation endpoint and keeps the reference catalog
+composed from existing read models. A single combined catalog endpoint remains
+optional if the multiple list queries become noisy or slow.
 
 | API or table | Purpose |
 | --- | --- |
-| `validateWfDefinition` | Server-side validation using the workflow query service parser and, later, the same schema as `light-workflow`. |
+| `validateWfDefinition` | Authoritative YAML, bundled JSON Schema, runtime-profile, and reference validation. Returns stable problem locations plus the schema id and digest. |
 | `formatWfDefinition` | Optional canonical formatting if the workflow parser supports round-trip formatting. |
 | Existing catalog queries | Fetch endpoint, tool, rule, agent, and workflow labels for the reference panel. |
 | `getWorkflowReferenceCatalog` | Optional future consolidation into one reference-panel query. |
@@ -278,9 +310,183 @@ if the multiple list queries become noisy or slow.
 | `skill_workflow_t` | Link skills to workflow definitions without embedding workflow YAML in skills. |
 | `saveSkillWorkspace` | Composite command that saves skill metadata, taxonomy, tool links, workflow links, and optional draft workflow updates from one workspace action. |
 
-Server-side validation should be authoritative. Client-side validation is useful
-for responsiveness but should not be the only guard before saving or testing a
-workflow definition.
+Server-side validation is authoritative. Client-side parsing remains useful for
+responsiveness, but it is not sufficient before validating, saving, testing, or
+publishing a workflow definition. Those editor actions fail closed when the
+validation endpoint or bundled schema is unavailable; the UI must not translate
+an unavailable validator into a successful result.
+
+### Validation Pipeline
+
+`validateWfDefinition` applies checks in a stable order so authors see syntax
+and structural failures before runtime-specific findings:
+
+1. Reject a blank definition, malformed YAML, duplicate mapping keys, and a
+   non-object root.
+2. Apply the stricter AI-authoring and runtime policy checks first when that
+   profile is requested, so repair guidance prioritizes actionable policy and
+   authorization failures over JSON Schema `oneOf` branch detail.
+3. Convert the safely parsed YAML value to a Jackson tree and validate it with
+   the bundled Draft 2020-12 schema.
+4. Normalize, de-duplicate, and cap schema failures into deterministic problems
+   containing severity, instance path, schema path or keyword, and message.
+5. Apply the remaining Light runtime capability checks, including supported
+   expression languages, task kinds, call variants, and transports.
+6. Validate authorization-filtered Tool references and durable Tool pins.
+
+Schema acceptance and runtime executability are distinct. The JSON Schema
+defines a valid Agentic Workflow document; runtime checks may still reject a
+schema-valid feature that the deployed Light Workflow runtime does not execute.
+Policy and authorization checks must therefore remain after schema validation
+rather than being replaced by it.
+
+The response includes `schemaId`, `schemaVersion`, and `schemaDigest` when the
+bundled schema loads, even when the definition fails. A schema-load failure is
+returned as a normal blocking validation problem with empty identity fields so
+the Portal fails closed. Policy problems retain priority; schema problems are
+sorted, de-duplicated, and capped so repeated validation produces stable,
+bounded output. The Portal problems panel should show the instance path and
+message without exposing Java implementation details.
+
+### AI-Assisted Authoring
+
+Ask AI uses the same bundled schema snapshot and `WorkflowSchemaValidator` as
+the Validate button. A validation-equivalent prompt form strips annotation-only
+JSON Schema fields such as descriptions, titles, comments, examples, and
+defaults while retaining every constraint and `$ref`; it is placed in the
+trusted system-message prefix with the full schema's id and digest. User intent,
+existing definitions, and authorization-filtered Tool descriptions remain
+bounded, sanitized data in a separate user message; Tool descriptions and their
+schemas are never treated as instructions.
+
+The preferred model response contains the workflow definition as a JSON object
+inside the existing authoring result envelope. The server validates that object
+and serializes it to canonical YAML only after it passes. Providers that support
+strict structured output may receive the workflow schema as the `definition`
+subschema, but local deterministic validation is still mandatory because
+provider capabilities and supported JSON Schema keywords vary.
+
+Schema text is part of the complete prompt budget. The generator must bound the
+assembled schema, authoring context, existing definition, approved operations,
+and requested output against the selected model's context window; the existing
+authoring-context byte limit alone is not enough. A provider may cache the
+static schema prefix, but correctness cannot depend on prompt caching.
+
+After the first model response, the server applies canonical schema, runtime,
+policy, and Tool-authorization validation. It may make one bounded repair
+request containing the same schema identity, the rejected candidate, and a
+limited deterministic error list. A second failure rejects the draft rather
+than looping or returning an invalid proposal. If the repair prompt does not fit
+the complete prompt budget, the original validation failure is returned instead
+of replacing it with a prompt-size error.
+
+Authoring provenance records the workflow schema id, digest, bundled schema
+version, prompt-template version, source Tool schema digests, model, request
+digest, and generated-definition digest. Human review and the existing
+post-approval definition-digest check remain required.
+
+## Schema Validation And AI Authoring Implementation Plan
+
+Status: implemented on 2026-08-14 across `workflow-query`, `workflow-command`,
+and `portal-view`. The stages below remain the maintenance and verification
+contract for future schema upgrades.
+
+### S1: Pin The Resource
+
+Owners: `workflow-specification`, `workflow-query`, `workflow-command`.
+
+- Add the versioned schema and manifest under `workflow-query` resources.
+- Add the explicit synchronization script and digest verification test.
+- Run the existing `workflow-specification` Draft 2020-12 and fixture
+  conformance checks before accepting a synchronized update.
+
+Gate: the service test suite proves the resource is valid Draft 2020-12, has the
+expected `$id`, contains only resolvable local references, and matches the
+manifest digest.
+
+### S2: Make Validation Schema-Backed
+
+Owner: `workflow-query`.
+
+- Add the singleton `WorkflowSchemaValidator` and compile the resource once.
+- Invoke it from `ValidateWfDefinition` after safe YAML parsing. Run the
+  AI-profile and authorization checks first so bounded repair feedback retains
+  actionable policy failures ahead of schema branch diagnostics.
+- Return stable schema locations, keywords, messages, and schema identity.
+- Replace tests that accept legacy `steps`-only or incomplete documents with
+  canonical fixtures, while retaining explicit rejection coverage for those
+  old shapes.
+
+Gate: every valid specification fixture passes, every invalid fixture fails,
+and targeted tests independently cover schema-invalid/runtime-valid and
+schema-valid/runtime-unsupported definitions.
+
+### S3: Enforce The Editor Boundary
+
+Owner: `portal-view`.
+
+- Display server schema paths in the existing Problems panel.
+- Make Validate, Save, Test, and Publish stop when authoritative validation is
+  unavailable or returns a schema error.
+- Keep immediate browser YAML diagnostics, but do not duplicate the canonical
+  validator or schema copy in the frontend bundle.
+
+Gate: component tests prove schema errors are visible and no persistence or test
+request is sent after a failed or unavailable authoritative validation.
+
+### S4: Ground And Validate Ask AI
+
+Owners: `workflow-query`, `portal-view`.
+
+- Add the compact pinned schema and identity to the trusted prompt prefix.
+- Bump the prompt-template version and enforce a complete prompt budget.
+- Prefer a structured workflow object, validate it locally, serialize it to
+  YAML, and allow at most one validation-guided repair.
+- Add schema identity to authoring provenance and display it in the review
+  dialog.
+
+Gate: tests capture the prompt's exact schema id and digest, reject an invalid
+first and repaired response, accept a valid repaired response, preserve Tool
+authorization boundaries, and verify the applied YAML against the same bundled
+validator.
+
+### S5: Persistence Admission Hardening
+
+Owner: `workflow-command`.
+
+The editor validation call protects the normal UI path but is not a security
+boundary for direct command callers. Create, update, and publish commands apply
+the identical schema snapshot before persistence alongside their existing Tool,
+runtime, and AI-authoring admission rules. Without a shared Maven artifact, the
+command service carries the same generated resource and manifest through the
+same synchronization process; the parity gate compares the two bundled schema
+identities and bytes to prevent drift. Definition conformance failures remain
+client input errors, while failure to load or compile the bundled schema is a
+logged server error and must never be attributed to the submitted definition.
+
+Gate: command tests reject schema-invalid definitions without relying on a prior
+Portal query call, and a cross-repository check proves query and command schema
+ids and digests are identical.
+
+### Persisted Legacy Workflow Rollout
+
+Enabling canonical admission is intentionally a compatibility break for stored
+definitions that use legacy roots such as `steps`, `tasks`, or `states` instead
+of the specification's required `document` and `do` roots. Those definitions
+remain readable, but the editor reports them as invalid and publish admission
+rejects an unchanged legacy draft. Owners can update a draft by replacing its
+definition with canonical YAML; after that update passes validation, it can be
+published normally.
+
+Before enabling this enforcement in an environment with existing workflow
+data, inventory persisted definitions by host, workflow id, and version using
+the same pinned schema digest deployed to query and command services. Notify
+owners of invalid drafts, migrate or re-author each definition, and validate
+the replacement through the editor before publishing. Existing published
+versions should remain immutable for auditability; create a new canonical
+version instead of rewriting published history. The rollout gate is zero
+unresolved legacy drafts that are expected to be published, plus an explicit
+owner disposition for every remaining invalid stored definition.
 
 ## Phased Implementation
 
@@ -290,9 +496,9 @@ workflow definition.
 - Replace create/update workflow definition textarea navigation with the editor
   where practical.
 - Keep YAML visible and canonical.
-- Reuse the existing portal-view CodeMirror editor stack with the Light-Fabric
-  workflow schema for YAML/JSON validation, autocomplete, hover help, folding,
-  and parse markers.
+- Reuse the existing portal-view CodeMirror editor stack for YAML parsing,
+  folding, and parse markers, and display authoritative schema findings returned
+  by the server.
 - Parse YAML client-side to render a step outline and problems panel.
 - Add import/export and basic validation before save.
 
@@ -304,7 +510,7 @@ workflow definition.
 - Add schema-backed property panels for selected steps. Use dropdowns for
   catalog references and constrained enums instead of free-text fields where
   Portal already has authoritative labels.
-- Add server-side validation through `validateWfDefinition`.
+- Complete schema-backed server validation through `validateWfDefinition`.
 - Add runtime diagnostics that compare MCP tool references with gateway
   `tools/list` or the Rust agent `/diagnostics/tools` endpoint when a gateway
   target is selected.
