@@ -42,31 +42,16 @@ Portal publication history confirms the configuration application to the
 selected instance. It is not proof that a particular running replica loaded the
 revision.
 
-### 2. Confirm the selected replica applied it
+### 2. Confirm the selected gateway loaded the snapshot
 
-Before sending a billable model request, confirm that the replica reports an
-`ACKNOWLEDGED` row for the intended publication ID, sequence, and root digest.
-Operators with database access can use:
+Before sending a billable model request, restart the selected gateway or
+explicitly reload the `llm-router` module. Require a successful standard
+startup/reload result and verify that it reports the intended immutable
+config-snapshot version.
 
-```sql
-SELECT gateway_publication_id,
-       gateway_instance,
-       acknowledgement_state,
-       sequence_id,
-       root_digest,
-       material_generation,
-       applied_at
-  FROM llm_gateway_publication_ack_t
- WHERE host_id = :host_id
-   AND environment = :environment
-   AND gateway_publication_id = :gateway_publication_id
-   AND gateway_instance = :gateway_instance;
-```
-
-Use the equivalent acknowledgement view provided by your operations platform
-when direct database access is unavailable. Stop if the row is absent or its
-state is `PENDING`, `FAILED`, or `DIVERGENT`. Alias discovery alone is not proof
-of the intended revision because an older snapshot can expose the same Alias.
+Stop if startup or reload fails. Alias discovery alone is not proof of the
+intended revision because an older snapshot can expose the same Alias. A failed
+reload leaves the previous last-known-good LLM runtime active.
 
 ### 3. Provision the provider key only on the gateway
 
