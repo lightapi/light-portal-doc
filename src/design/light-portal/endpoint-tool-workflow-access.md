@@ -2,8 +2,12 @@
 
 ## Status
 
-Implemented for the REST/HTTP first slice; MCP and JSON-RPC palette builders
-remain later protocol extensions of the same identity and grant model.
+Implemented for the REST/HTTP first slice, with qualification still pending.
+MCP and JSON-RPC palette builders remain later protocol extensions of the same
+identity and grant model. Authentication metadata must explicitly resolve to
+`type: none`; authenticated, unspecified-authentication, or
+Portal-policy-protected HTTP endpoints remain fail-closed until delegated
+credential support is implemented.
 
 ## Purpose
 
@@ -37,8 +41,8 @@ The related designs are [Agent Skill And API Endpoint Discovery](../agent-skill-
 8. A workflow invoking a Tool is independent from a Tool implemented by a
    workflow. These are different relationships.
 9. The Workflow Editor lists only Tools granted to the current workflow.
-10. Runtime authorization uses the Tool grant and the existing endpoint access
-    controls.
+10. Runtime authorization uses the Tool grant and refuses to bypass endpoint
+    access controls: protected endpoints are not callable in the first slice.
 
 ## Capability Flow
 
@@ -167,6 +171,12 @@ sections relevant to the operation, including:
 - capability classification and tags; and
 - agent progressive-disclosure metadata.
 
+Generated HTTP operations always carry explicit authentication metadata.
+OpenAPI security requirements produce a protected `custom` marker, while an
+operation that is public after applying operation-level overrides produces
+`type: none`. Imported LightAPI operations without an explicit `none` contract
+remain protected.
+
 Example:
 
 ```yaml
@@ -197,11 +207,11 @@ operations:
             type: string
 ```
 
-The Tool page provides **Validate** and **Test** actions. Validation checks the
-LightAPI schema and endpoint relationship. Testing lets the administrator
-select an environment and run an example or test sequence. Privileged,
-destructive, or confirmation-required operations must not run without the
-required approval.
+Tool save validates the LightAPI schema and endpoint relationship. A dedicated
+**Validate** action and the richer **Test** workspace remain follow-up work.
+Testing will let the administrator select an environment and run an example or
+test sequence. Privileged, destructive, or confirmation-required operations
+must not run without the required approval.
 
 ## Workflow Access Grant
 
@@ -230,6 +240,11 @@ workflow_tool_grant_t
 `workflow_version` is present, the grant applies only to that immutable
 workflow version. The Tool version and LightAPI digest pin the reviewed
 capability contract.
+
+There is one active grant aggregate for each Tool/workflow pair.
+`workflow_version` is mutable scope on that aggregate: null applies to all
+versions and a value narrows it to one version. Definition-wide and
+version-specific grants therefore cannot coexist for the same Tool/workflow.
 
 The grant is created and changed through Portal commands and events. Projection
 tables are never edited directly.
@@ -274,7 +289,7 @@ From `/app/serviceEndpoint`, an administrator can:
 
 - inspect the protocol-native endpoint and generated schemas;
 - open its mapped Tool;
-- see whether the Tool is valid and tested; and
+- see the Tool's persisted validation status; and
 - grant selected endpoint Tools through the same Tool grant command.
 
 This page does not maintain a second workflow-access flag.
@@ -284,10 +299,14 @@ This page does not maintain a second workflow-access flag.
 From `/app/genai/Tool`, an administrator can:
 
 - review and enrich the LightAPI document;
-- validate and test the Tool;
+- see save-time validation results;
 - select one workflow or workflow version;
 - grant or revoke workflow access; and
 - see which workflows currently use the Tool.
+
+A dedicated **Validate** action and downstream **Test** workspace remain a
+follow-up; this slice does not present save-time validation as execution test
+evidence.
 
 The normal action is named **Workflow Access**. It is not part of
 `executionPlacement`, because execution placement describes how the Tool itself
@@ -306,6 +325,7 @@ Each result contains enough trusted data to create a task:
 
 - `toolId` and Tool version;
 - `capabilityRef`;
+- the grant's allowed environments and resolved/runtime-selected environment;
 - API name and version;
 - protocol-native endpoint key;
 - protocol, method, and invocation mapping;
@@ -318,6 +338,14 @@ endpoint, capability, tags, or description.
 
 Selecting a Tool creates the protocol-specific call task. The author does not
 type an endpoint UUID, URL, method, or Tool name manually.
+
+For REST/HTTP, the generated task carries logical path inputs plus query,
+header, and body mappings. The runtime resolves those templates from workflow
+context and applies them to the downstream request after resolving the physical
+endpoint from the pinned LightAPI operation. The resolved URI must retain the
+Portal API version target's scheme, host, and effective port. Absolute and
+protocol-relative LightAPI endpoints that select another authority fail before
+dispatch.
 
 ## Fork Branch Editor
 
@@ -346,17 +374,32 @@ Tool and evaluates:
 2. the pinned Tool version and LightAPI digest;
 3. Tool and endpoint lifecycle state;
 4. the selected environment;
-5. endpoint scope, permission, and rule configuration; and
-6. caller or delegated-user policy required by the endpoint.
+5. the endpoint URI from the validated LightAPI operation and selected
+   environment; and
+6. whether authentication explicitly resolves to `type: none`, and whether the
+   endpoint has active scope/rule configuration or role, group, user, position,
+   or attribute permission rows.
 
 A missing, revoked, inactive, or mismatched grant fails before a downstream
-request is sent.
+request is sent. In the first REST/HTTP slice, non-`none` or missing LightAPI
+authentication or active endpoint scope/rule/RBAC/ABAC permission configuration
+also fails closed.
+Grant creation performs the same scope, rule, role, group, user, position, and
+attribute checks, so an operator receives an explicit rejection instead of a
+grant that later disappears from the callable catalog. Portal and runtime
+operation selection both match endpoint ID, HTTP protocol, method, lifecycle,
+and explicit unauthenticated status, then choose the first operation by key.
+Grant validation sources the method from the linked Portal endpoint rather than
+the Tool's optional `apiMethod` metadata; a missing endpoint method is reported
+as a distinct validation error.
+Delegated credential resolution is required before those protected endpoints
+can be enabled.
 
-The workflow identity authorizes use of the Tool. The initiating agent or user
-remains in the execution and audit context so endpoint policies can apply any
-required caller-specific restrictions.
+The workflow identity authorizes use of an unprotected Tool. A later delegated
+credential extension must preserve the initiating agent or user in the
+execution and audit context before protected endpoints are callable.
 
-## Acceptance Criteria
+## Pending Qualification Criteria
 
 - The database enforces one canonical endpoint key per host and API version.
 - REST, MCP, and hybrid endpoint producers generate deterministic keys.
