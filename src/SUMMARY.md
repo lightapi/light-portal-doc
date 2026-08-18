@@ -47,6 +47,7 @@
     - [API Version Publication To Gateway](./design/light-portal/api-version-gateway-publication.md)
   - [Light Gateway](./design/light-gateway.md)
     - [Local Model Provider Transport For LLM Gateway](./design/light-gateway/local-model-provider-transport.md)
+  - [Light Workflow Tool Access Approval](./design/light-workflow/workflow-tool-access-approval.md)
   - [Claim Org Role Bootstrap](./design/claim-org-role-bootstrap.md)
   - [Master OAuth Host Tenant Login](./design/master-oauth-host-tenant-login.md)
   - [Schema Registry](./design/schema-registry.md)

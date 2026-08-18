@@ -55,27 +55,37 @@ call or other task configuration. Branch names must be unique and may contain
 letters, numbers, underscores, and hyphens. The editor keeps at least two
 branches in a fork.
 
-For an endpoint call, first open the endpoint-backed Tool in **GenAI > Tools**
-and use **Workflow Access** to grant it to this workflow and environment. In
-the fork panel, select **Add Step** on the intended branch, change Reference
-Type to **Endpoints**, and select the granted capability. The editor replaces
-only that branch's placeholder and generates an executable `call: http` task
-with a logical `lightapi://` URI and a pinned Tool version and LightAPI digest.
-It never stores the endpoint UUID or an environment URL in workflow YAML.
+For an endpoint call, select **Endpoints** in Reference Type and choose an
+eligible capability. The list includes granted and requestable endpoint Tools
+and labels each one with its access state. The editor generates an executable
+`call: http` task with a logical `lightapi://` URI plus the exact Tool ID,
+capability, version, LightAPI digest, and environment pin. It never stores an
+environment URL in workflow YAML.
 
-The Endpoints list is workflow-aware. A Tool is absent when its grant is
-revoked, is for another workflow/version/environment, its LightAPI document is
-invalid, or its pinned version or digest is stale. Runtime execution performs
-the same check before resolving the logical URI and sending the request.
+You may insert requestable or pending Tools and save the draft. Select
+**Request Tool Access**, review the grouped exact pins and usage locations,
+enter a justification, and submit the request. The built-in **Grant Tools to
+Workflow** process assigns one approval task to the `genai-admin` role. The
+first administrator who claims it can approve or reject the complete Tool set
+from the normal Human Tasks page. Approval is atomic: if any Tool changed or
+became ineligible, no grants are created and the request becomes stale.
+
+The editor polls only while an approval is pending and displays the request and
+approval workflow instance IDs. After the transaction commits, the status
+changes to **GRANTED** and testing becomes available. A rejection or stale
+request remains visible so the author can update the draft and submit a new
+request. Tool Admin's Workflow Access dialog is intentionally read-only except
+for revoking existing grants.
 
 ## Validate and test
 
-**Validate** first parses the YAML in the browser and checks that it has a
-workflow task container. It then calls the portal workflow validation service
-for the supported server-side contract checks. Validation does not currently
-apply the complete workflow specification schema.
+**Validate** first parses the YAML in the browser and then performs server-side
+draft validation. Missing grants are warnings, so an incomplete draft can be
+saved while approval is pending. **Test** and **Publish Version** use execution
+validation instead and fail closed unless every referenced Tool ID,
+capability, version, digest, and requested environment matches an active grant.
 
-After saving a draft, use **Test** to start it with test input and inspect
+Use **Test** to start a fully granted draft with test input and inspect
 processes, tasks, assignments, audit records, and final output in the Runtime
 Test panel.
 
