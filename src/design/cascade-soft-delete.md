@@ -1,466 +1,370 @@
-# Cascade Soft Delete
+# Policy-Driven Cascade Delete
 
-With the recent refactor, relying on `ON DELETE CASCADE` is no longer suitable after implementing **soft deletes**, because soft delete is an `UPDATE` operation (`SET active = FALSE`) and not a true `DELETE` from the database.
+Portal projection tables use soft deletion for recoverable domain state and
+hard deletion for non-restorable runtime or credential state. PostgreSQL
+`ON DELETE CASCADE` alone cannot implement this model because a parent soft
+delete is an `UPDATE ... SET active = FALSE`, not a physical `DELETE`.
 
-The pattern we should follow in an **Event Sourcing / Event-Driven Architecture** with soft deletes is:
+This design keeps database-level cascading, but replaces column-shape inference
+with an explicit relationship policy. The trigger remains generic: table names
+and actions live in data, not in PL/pgSQL branches.
 
-### 1. The Principle of Causality (or Domain Consistency)
+## Decision
 
-When a parent entity (e.g., `role_t`) is soft-deleted, all its dependent children entities (e.g., `role_user_t`, `role_permission_t`, etc.) must also be soft-deleted to maintain domain consistency. This cascade logic must be implemented **in the application layer** (the projection service or command handler or database).
+Every relationship traversed from a soft-deleted parent has one declared
+action:
 
-### 2. Implementation in the Command/Event Handler/Database
+| Action | Delete behavior | Restore behavior | Intended use |
+| --- | --- | --- | --- |
+| `SOFT_DELETE` | Set the child `active = FALSE` and record cascade deletion metadata | Restore only rows retired by that parent cascade | Recoverable domain and configuration state |
+| `HARD_DELETE` | Physically delete matching child rows | None | Credentials, tokens, authorization codes, and other non-restorable runtime state |
+| `IGNORE` | Leave the child unchanged | None | Relationships whose lifecycle is intentionally independent |
 
-#### Strategy A: Event Amplification
+The action is selected by an explicit policy row. The trigger must not infer a
+hard delete merely because a child is missing `active` or `delete_ts`. Missing
+or incomplete metadata is a deployment error, not permission to destroy data.
 
-The command handler that received the initial command/event (e.g., `DeleteRoleCommand` -> `RoleDeletedEvent`) should not directly perform the cascading *database* updates. Instead, it should be responsible for **emitting new cascading events** for each child entity.
+## Why the Current Inference Is Unsafe
 
-1.  **Incoming Command:** Generate a `RoleDeletedEvent` (for a specific `role_id`).
-2.  **Emitting Child Events:** It then emits an event for each dependent child, such as `RoleUserRemovedEvent(role_id, user_id)` and `RolePermissionRemovedEvent(role_id, permission_id)`.
-3.  **Event Store:** Push an array of events to event_store_t and outbox_message_t tables in a transaction.
-4.  **Event Processor:** All events will be processed in the same transaction to update parent table and child tables together. 
+The current `cascade_relationships_v` selects a relationship when both tables
+have `delete_ts`. The current `smart_cascade_soft_delete()` function then
+unconditionally reads and writes all of these child columns:
 
-**Pro:** Decoupled, explicit, audit trail for every change.
-**Con:** More complex event processing, increased event volume; Need to refactor all delete command handlers to emit more events and it is significant code change and long term maintenance work.
+- `active`;
+- `delete_ts`;
+- `delete_user`;
+- `update_ts`;
+- `update_user`.
 
-#### Strategy B: Direct Application-Level Cascade
+That contract is inconsistent. For example, `auth_client_token_t` has
+`delete_ts` but no `active`. Projecting a `ClientDeletedEvent` therefore tries
+to run an invalid dynamic statement and fails with PostgreSQL `SQLSTATE 42703`.
+The projection transaction rolls back and the event is captured in the DLQ.
 
-In a service that primarily acts as a projection (CQRS read model) and is tightly coupled with its projection logic, the simplest approach is to bundle the cascading logic directly into the parent handler's processing.
+Adding only `active` to credential tables is not sufficient. Every reader and
+authorization path would also need to filter it, and restoration could revive
+credentials that should remain revoked.
 
-1.  **Incoming Event:** `RoleDeletedEvent`.
-2.  **Event Processor:** The `deleteRole(conn, event)` method would execute the parent soft delete (`UPDATE role_t SET active=FALSE`).
-3.  **Cascading Updates:** Immediately after, within the same transaction, it would execute multiple cascading `UPDATE` statements on the child tables. Make sure that only the active flag is updated based on the primary key for child tables. 
+## Policy Registry
 
-```java
-// Inside deleteRole(Connection conn, Map<String, Object> event)
-// 1. Soft delete the parent
-// UPDATE role_t SET active = FALSE WHERE ...
-// 2. Soft delete the children in the same transaction
-// UPDATE role_user_t SET active = FALSE, update_user = ?, update_ts = ? WHERE host_id = ? AND role_id = ?
-// UPDATE role_permission_t SET active = FALSE, update_user = ?, update_ts = ? WHERE host_id = ? AND role_id = ?
+Add a schema-owned table named `cascade_relationship_policy_t`. It is static
+database metadata delivered by canonical DDL and forward-only upgrade patches;
+it is not an event-backed Portal entity and is not editable through Portal UI.
+
+Recommended logical contract:
+
+```sql
+CREATE TABLE cascade_relationship_policy_t (
+    parent_schema       VARCHAR(63) NOT NULL DEFAULT 'public',
+    parent_table        VARCHAR(63) NOT NULL,
+    child_schema        VARCHAR(63) NOT NULL DEFAULT 'public',
+    child_table         VARCHAR(63) NOT NULL,
+    constraint_name     VARCHAR(63) NOT NULL,
+    delete_action       VARCHAR(16) NOT NULL,
+    restore_action      VARCHAR(16) NOT NULL DEFAULT 'NONE',
+    policy_description  VARCHAR(1024),
+    update_user         VARCHAR(255) NOT NULL DEFAULT SESSION_USER,
+    update_ts           TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (
+        parent_schema,
+        parent_table,
+        child_schema,
+        child_table,
+        constraint_name
+    ),
+    CHECK (delete_action IN ('SOFT_DELETE', 'HARD_DELETE', 'IGNORE')),
+    CHECK (restore_action IN ('RESTORE', 'NONE')),
+    CHECK (
+        (delete_action = 'SOFT_DELETE' AND restore_action = 'RESTORE')
+        OR (delete_action IN ('HARD_DELETE', 'IGNORE') AND restore_action = 'NONE')
+    )
+);
 ```
 
-**Pro:** Simple, fast, maintains transactional integrity easily.
-**Con:** Tightly couples the projection logic; no explicit events for child deletion in the event store; Many db provider update and long term maintenace work. 
+The registry is release-owned and authoritative: installation stages the full
+canonical inventory, upserts it, and deletes rows absent from that inventory in
+the same transaction. There is deliberately no runtime `enabled` switch. To
+suspend traversal, a release must classify the relationship as `IGNORE` with a
+reviewed rationale; an ad hoc disabled row would make replay behavior depend on
+mutable environment state.
 
+The migration removes the earlier `enabled` column. Although the canonical
+view is dropped and recreated in the same transaction, this is a breaking
+metadata change for external SQL consumers that selected the column directly;
+reporting queries and dashboards must remove that dependency before rollout.
 
-#### Strategy C: Direct Database-Level Cascade
+The foreign-key constraint name is part of the key because the same parent and
+child tables can have multiple relationships with different column mappings.
+The resolved relationship view must join this registry to the live PostgreSQL
+catalog and obtain the composite parent/child column arrays from the referenced
+constraint. A stale policy whose constraint no longer exists must fail schema
+validation.
 
-Create a trigger in database to manage the cascade soft delete for child tables. This can be individual trigger on each table or a centralized trigger to apply on all tables. 
+## Resolved Relationship Contract
 
+Replace the current inference-only view with a policy-resolved view, retaining
+the useful catalog-derived foreign-key mapping. Each policy row exposes at
+least:
 
-**Pro:** Simple, fast, maintains transactional integrity easily. Minimum code change in app logic and easy to implement and maintain. 
-**Con:** Need to make sure that the project team is aware of the logic to void confusions.
+- parent and child schema/table;
+- constraint name and OID;
+- ordered parent and child column arrays;
+- `delete_action` and `restore_action`;
+- booleans for every required soft-delete column;
+- the foreign key's PostgreSQL delete action.
 
-Create a cascade_relationships_v view based on the foreign keys. 
+Validation rules:
 
-```
--- create a view to simplify the foreign key relationship. 
+1. The named foreign-key constraint must exist and match the configured parent
+   and child tables.
+2. `SOFT_DELETE` requires the parent and child to have `active`, `delete_ts`,
+   `delete_user`, `update_ts`, and `update_user`.
+3. `HARD_DELETE` requires an `ON DELETE CASCADE` foreign key. This makes the
+   physical child lifecycle explicit in both the policy and relational schema.
+   Every foreign key that references the hard-deleted child must also use
+   `ON DELETE CASCADE`; otherwise a retained downstream row could abort the
+   parent soft-delete after earlier child mutations have already run.
+4. `IGNORE` performs no child mutation.
+5. A partially implemented soft-delete contract is rejected by the schema
+   gate.
+6. Every public foreign key whose parent has the core `active` and `delete_ts`
+   lifecycle markers must be classified, regardless of the child's columns.
+   Column shape validates the selected action but never removes a relationship
+   from discovery, so active-only and columnless children cannot disappear from
+   the reviewed inventory.
+7. Unclassified candidate relationships fail the gate rather than acquiring a
+   default destructive action.
+8. For a `SOFT_DELETE` child, `delete_user` must be wide enough for every
+   possible per-FK ownership token: `14 + 33n` characters for `n` soft parent
+   relationships. Unbounded text types satisfy this rule automatically.
 
-DROP VIEW IF EXISTS cascade_relationships_v;
+Consequently, adding an FK whose parent has `active` and `delete_ts` can block a
+deployment when the parent lacks the remaining audit columns or the FK has no
+canonical classification. That failure is intentional. Operators must complete
+the parent contract or add a reviewed policy; they must not bypass validation.
+The transactional installer leaves the prior validated trigger set intact.
 
-CREATE VIEW cascade_relationships_v AS
-WITH fk_details AS (
-    SELECT 
-        pn.nspname::text AS parent_schema,
-        pc.relname::text AS parent_table,
-        cn.nspname::text AS child_schema,
-        cc.relname::text AS child_table,
-        c.conname::text AS constraint_name,
-        c.oid AS constraint_id,
-        cc.oid AS child_table_oid,
-        pc.oid AS parent_table_oid,
-        unnest.parent_col,
-        unnest.child_col,
-        unnest.ord
-    FROM pg_constraint c
-    JOIN pg_class pc ON c.confrelid = pc.oid
-    JOIN pg_namespace pn ON pc.relnamespace = pn.oid
-    JOIN pg_class cc ON c.conrelid = cc.oid
-    JOIN pg_namespace cn ON cc.relnamespace = cn.oid
-    CROSS JOIN LATERAL (
-        SELECT 
-            unnest(c.confkey) AS parent_col,
-            unnest(c.conkey) AS child_col,
-            generate_series(1, array_length(c.conkey, 1)) AS ord
-    ) unnest
-    WHERE c.contype = 'f'
-)
-SELECT
-    fd.parent_schema,
-    fd.parent_table,
-    fd.child_schema,
-    fd.child_table,
-    fd.constraint_name,
-    -- Human readable mapping
-    string_agg(
-        format('%I → %I', 
-            (SELECT attname FROM pg_attribute 
-             WHERE attrelid = fd.parent_table_oid
-               AND attnum = fd.parent_col),
-            (SELECT attname FROM pg_attribute 
-             WHERE attrelid = fd.child_table_oid
-               AND attnum = fd.child_col)
-        ), 
-        ', ' ORDER BY fd.ord
-    ) AS foreign_key_mapping,
-    -- Structured data for trigger
-    jsonb_object_agg(
-        (SELECT attname FROM pg_attribute 
-         WHERE attrelid = fd.parent_table_oid
-           AND attnum = fd.parent_col),
-        (SELECT attname FROM pg_attribute 
-         WHERE attrelid = fd.child_table_oid
-           AND attnum = fd.child_col)
-    ) AS foreign_key_json,
-    -- Arrays for easier processing
-    array_agg(
-        (SELECT attname FROM pg_attribute 
-         WHERE attrelid = fd.parent_table_oid
-           AND attnum = fd.parent_col)
-        ORDER BY fd.ord
-    ) AS parent_columns,
-    array_agg(
-        (SELECT attname FROM pg_attribute 
-         WHERE attrelid = fd.child_table_oid
-           AND attnum = fd.child_col)
-        ORDER BY fd.ord
-    ) AS child_columns,
-    COUNT(*) AS column_count,
-    fd.child_table_oid,
-    fd.parent_table_oid,
-    -- Check for required columns
-    EXISTS (
-        SELECT 1 FROM pg_attribute a
-        WHERE a.attrelid = fd.parent_table_oid
-          AND a.attname = 'delete_ts'
-          AND NOT a.attisdropped
-    ) AS parent_has_delete_ts,
-    EXISTS (
-        SELECT 1 FROM pg_attribute a
-        WHERE a.attrelid = fd.child_table_oid
-          AND a.attname = 'delete_ts'
-          AND NOT a.attisdropped
-    ) AS child_has_delete_ts,
-    EXISTS (
-        SELECT 1 FROM pg_attribute a
-        WHERE a.attrelid = fd.parent_table_oid
-          AND a.attname = 'delete_user'
-          AND NOT a.attisdropped
-    ) AS parent_has_delete_user,
-    EXISTS (
-        SELECT 1 FROM pg_attribute a
-        WHERE a.attrelid = fd.child_table_oid
-          AND a.attname = 'delete_user'
-          AND NOT a.attisdropped
-    ) AS child_has_delete_user
-FROM fk_details fd
--- Only include relationships where both tables have deletion tracking
-WHERE EXISTS (
-    SELECT 1 FROM pg_attribute a
-    WHERE a.attrelid = fd.parent_table_oid
-      AND a.attname = 'delete_ts'
-      AND NOT a.attisdropped
-) AND EXISTS (
-    SELECT 1 FROM pg_attribute a
-    WHERE a.attrelid = fd.child_table_oid
-      AND a.attname = 'delete_ts'
-      AND NOT a.attisdropped
-)
-GROUP BY 
-    fd.parent_schema, fd.parent_table,
-    fd.child_schema, fd.child_table,
-    fd.constraint_name, fd.constraint_id, 
-    fd.child_table_oid, fd.parent_table_oid
-ORDER BY fd.parent_schema, fd.parent_table, fd.child_schema, fd.child_table;
+The policy table is the authority. Column shape validates an action; it does
+not select the action.
+
+## Generic Trigger Behavior
+
+Create a generic `smart_cascade_delete()` function and recreate
+`trg_cascade_soft_ops` to call it. The old
+`smart_cascade_soft_delete()` function can be removed after no triggers depend
+on it.
+
+When a parent transitions from `active = TRUE` to `active = FALSE`, the
+function processes its policies in deterministic order:
+
+```text
+SOFT_DELETE
+  UPDATE child
+     SET active = FALSE,
+         delete_ts = cascade timestamp,
+         delete_user = exact per-FK cascade token set,
+         update_ts = cascade timestamp,
+         update_user = database user
+   WHERE foreign-key columns match OLD parent values
+     AND (active = TRUE OR already cascade-owned)
+
+HARD_DELETE
+  DELETE FROM child
+   WHERE foreign-key columns match OLD parent values
+
+IGNORE
+  no operation
 ```
 
-To test the view above.
+All statements execute inside the projection transaction. If any action fails,
+the parent and all previously processed children roll back together.
 
-```
-SELECT * FROM cascade_relationships_v 
-WHERE parent_table = 'api_t' AND child_table = 'api_version_t';
-```
+The delete path must be idempotent:
 
-And the result. 
+- an independently inactive soft child is unchanged;
+- an already cascade-owned child records an additional parent FK token once;
+- a missing hard child is a successful no-op;
+- replaying the same parent event does not recreate or reactivate children.
 
-```
-parent_schema parent_table child_schema child_table   constraint_name                   foreign_key_mapping                foreign_key_json                           parent_columns       child_columns        column_count child_table_oid parent_table_oid parent_has_delete_ts child_has_delete_ts parent_has_delete_user child_has_delete_user 
-------------- ------------ ------------ ------------- --------------------------------- ---------------------------------- ------------------------------------------ -------------------- -------------------- ------------ --------------- ---------------- -------------------- ------------------- ---------------------- --------------------- 
-public        api_t        public       api_version_t api_version_t_host_id_api_id_fkey host_id → host_id, api_id → api_id {"api_id": "api_id", "host_id": "host_id"} ["host_id","api_id"] ["host_id","api_id"] 2            360279          360268           true                 true                true                   true                  
+### Restore
 
-```
+When a parent transitions from `active = FALSE` to `active = TRUE`, only
+`SOFT_DELETE` relationships with `restore_action = 'RESTORE'` participate.
+Only children carrying the exact token for the restored parent FK participate.
+Restoration removes only that token; a child becomes active only when its token
+set is empty. This keeps a child with two inactive parents inactive until both
+parents have been restored, in either restoration order. Children retired
+independently never acquire a cascade token and stay inactive.
 
+`HARD_DELETE` children are never restored. New tokens or credentials require
+new domain commands and events after the parent is active again.
 
-Create a function for update active to true and false. 
+This is intentionally asymmetric: a reversible parent state transition can
+permanently revoke a hard-delete child. That behavior is limited to explicitly
+reviewed credentials and runtime authorization state, where restoration would
+be a security defect. It is never inferred from missing columns.
 
-```
-CREATE OR REPLACE FUNCTION smart_cascade_soft_delete()
-RETURNS TRIGGER AS $$
-DECLARE
-    fk_record RECORD;
-    where_clause TEXT;
-    query_text TEXT;
-    column_index INT;
-    current_user_name TEXT;
-    deletion_context TEXT;
-    deletion_context_pattern TEXT;
-    delete_timestamp TIMESTAMP;
-BEGIN
-    -- Get current user
-    current_user_name := current_user;
-    
-    -- Handle SOFT DELETE (active = false)
-    IF NEW.active = FALSE AND OLD.active = TRUE THEN
-        -- Generate deletion timestamp
-        delete_timestamp := CURRENT_TIMESTAMP;
-        
-        -- Set deletion context
-        deletion_context := format('PARENT_CASCADE_%s_%s', 
-            TG_TABLE_NAME, 
-            to_char(delete_timestamp, 'YYYYMMDD_HH24MISSMS')
-        );
-        
-        -- Update parent with deletion context if columns exist
-        IF EXISTS (
-            SELECT 1 FROM information_schema.columns 
-            WHERE table_schema = TG_TABLE_SCHEMA 
-              AND table_name = TG_TABLE_NAME 
-              AND column_name = 'delete_user'
-        ) THEN
-            NEW.delete_user := deletion_context;
-        END IF;
-        
-        IF EXISTS (
-            SELECT 1 FROM information_schema.columns 
-            WHERE table_schema = TG_TABLE_SCHEMA 
-              AND table_name = TG_TABLE_NAME 
-              AND column_name = 'delete_ts'
-        ) THEN
-            NEW.delete_ts := delete_timestamp;
-        END IF;
-        
-        -- Update parent's update columns
-        NEW.update_ts := delete_timestamp;
-        NEW.update_user := current_user_name;
-        
-        FOR fk_record IN
-            SELECT *
-            FROM cascade_relationships_v
-            WHERE parent_schema = TG_TABLE_SCHEMA
-              AND parent_table = TG_TABLE_NAME
-        LOOP
-            -- Build WHERE clause
-            where_clause := '';
-            FOR column_index IN 1..fk_record.column_count LOOP
-                IF column_index > 1 THEN
-                    where_clause := where_clause || ' AND ';
-                END IF;
-                where_clause := where_clause || format(
-                    '%I = $1.%I',
-                    fk_record.child_columns[column_index],
-                    fk_record.parent_columns[column_index]
-                );
-            END LOOP;
-            
-            -- Add condition to only update currently active records
-            where_clause := where_clause || ' AND active = TRUE';
-            
-            -- Cascade the soft delete with context
-            query_text := format(
-                'UPDATE %I.%I 
-                 SET active = FALSE,
-                     delete_ts = $2, 
-                     delete_user = $3,
-                     update_ts = $2,
-                     update_user = $4
-                 WHERE %s',
-                fk_record.child_schema,
-                fk_record.child_table,
-                where_clause
-            );
-            
-            EXECUTE query_text USING OLD, delete_timestamp, deletion_context, current_user_name;
-        END LOOP;
-        
-    -- Handle RESTORE (active = true)
-    ELSIF NEW.active = TRUE AND OLD.active = FALSE THEN
-        -- Only restore children that were deleted by parent cascade
-        
-        FOR fk_record IN
-            SELECT *
-            FROM cascade_relationships_v
-            WHERE parent_schema = TG_TABLE_SCHEMA
-              AND parent_table = TG_TABLE_NAME
-        LOOP
-            -- Pattern to match cascade deletions
-            deletion_context_pattern := format('PARENT_CASCADE_%s_%%', TG_TABLE_NAME);
-            
-            -- Build WHERE clause
-            where_clause := '';
-            FOR column_index IN 1..fk_record.column_count LOOP
-                IF column_index > 1 THEN
-                    where_clause := where_clause || ' AND ';
-                END IF;
-                where_clause := where_clause || format(
-                    '%I = $1.%I',
-                    fk_record.child_columns[column_index],
-                    fk_record.parent_columns[column_index]
-                );
-            END LOOP;
-            
-            -- Only restore cascade-deleted records
-            where_clause := where_clause || 
-                ' AND delete_user LIKE $2 AND active = FALSE';
-            
-            -- Restore the records
-            query_text := format(
-                'UPDATE %I.%I 
-                 SET active = TRUE,
-                     delete_ts = NULL, 
-                     delete_user = NULL,
-                     update_ts = CURRENT_TIMESTAMP,
-                     update_user = $3
-                 WHERE %s',
-                fk_record.child_schema,
-                fk_record.child_table,
-                where_clause
-            );
-            
-            EXECUTE query_text USING OLD, deletion_context_pattern, current_user_name;
-        END LOOP;
-        
-        -- Clear parent's deletion context
-        IF EXISTS (
-            SELECT 1 FROM information_schema.columns 
-            WHERE table_schema = TG_TABLE_SCHEMA 
-              AND table_name = TG_TABLE_NAME 
-              AND column_name = 'delete_user'
-        ) THEN
-            NEW.delete_user := NULL;
-        END IF;
-        
-        IF EXISTS (
-            SELECT 1 FROM information_schema.columns 
-            WHERE table_schema = TG_TABLE_SCHEMA 
-              AND table_name = TG_TABLE_NAME 
-              AND column_name = 'delete_ts'
-        ) THEN
-            NEW.delete_ts := NULL;
-        END IF;
-        
-        -- Update parent's update columns
-        NEW.update_ts := CURRENT_TIMESTAMP;
-        NEW.update_user := current_user_name;
-    END IF;
-    
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-```
+The implementation uses `PARENT_CASCADE:` followed by comma-separated MD5
+tokens derived from the parent schema, parent table, and FK constraint. Restore
+removes the exact relationship token; it does not use a broad table-name match
+that could erase another active cascade owner.
 
+Rows retired before this migration carry the historical
+`PARENT_CASCADE_<parent_table>_<timestamp>` marker. Restore recognizes that
+exact literal table prefix, while all new deletions use per-FK tokens. This
+compatibility path is required until every legacy cascade-owned row has either
+been restored or retired through the new policy.
 
-Install the trigger.
+## Initial Authentication Policies
 
-```
--- Apply cascade triggers only to tables that have BOTH active AND delete_ts columns
-DO $$
-DECLARE
-    table_record RECORD;
-    has_active_column BOOLEAN;
-    has_delete_ts_column BOOLEAN;
-BEGIN
-    FOR table_record IN
-        SELECT 
-            n.nspname AS schema_name,
-            c.relname AS table_name,
-            c.oid AS table_oid
-        FROM pg_class c
-        JOIN pg_namespace n ON c.relnamespace = n.oid
-        WHERE c.relkind = 'r'  -- Regular tables only
-          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
-          AND EXISTS (
-              SELECT 1 FROM pg_constraint con
-              JOIN pg_class ref ON con.confrelid = ref.oid
-              WHERE con.contype = 'f'
-                AND ref.oid = c.oid
-          )
-    LOOP
-        -- Check if table has required columns
-        SELECT EXISTS (
-            SELECT 1 FROM pg_attribute a
-            WHERE a.attrelid = table_record.table_oid
-              AND a.attname = 'active'
-              AND NOT a.attisdropped
-        ) INTO has_active_column;
-        
-        SELECT EXISTS (
-            SELECT 1 FROM pg_attribute a
-            WHERE a.attrelid = table_record.table_oid
-              AND a.attname = 'delete_ts'
-              AND NOT a.attisdropped
-        ) INTO has_delete_ts_column;
-        
-        IF NOT (has_active_column AND has_delete_ts_column) THEN
-            RAISE NOTICE 'Skipping %.% - missing required columns (active: %, delete_ts: %)', 
-                table_record.schema_name, table_record.table_name,
-                has_active_column, has_delete_ts_column;
-            CONTINUE;
-        END IF;
-        
-        -- Drop existing trigger if it exists
-        EXECUTE format(
-            'DROP TRIGGER IF EXISTS trg_cascade_soft_ops ON %I.%I',
-            table_record.schema_name, table_record.table_name
-        );
-        
-        -- Create new trigger
-        EXECUTE format(
-            'CREATE TRIGGER trg_cascade_soft_ops
-             AFTER UPDATE OF active ON %I.%I
-             FOR EACH ROW
-             EXECUTE FUNCTION smart_cascade_soft_delete()',
-            table_record.schema_name, table_record.table_name
-        );
-        
-        RAISE NOTICE 'Created cascade trigger on %.%', 
-            table_record.schema_name, table_record.table_name;
-    END LOOP;
-END $$;
-```
+The implementation inventory must verify exact constraint names before seeding
+rows. The intended actions for the known authentication relationships are:
 
-The above appoach has the following benefits.
+| Parent | Child | Action | Reason |
+| --- | --- | --- | --- |
+| `auth_client_t` | `auth_provider_client_t` | `SOFT_DELETE` | Recoverable client/provider configuration |
+| `auth_client_t` | `auth_ref_token_t` | `HARD_DELETE` | The row contains a full bearer JWT and dereference must be revoked |
+| `auth_client_t` | `auth_client_token_t` | `HARD_DELETE` | Revoke non-restorable client credentials |
+| `auth_provider_client_t` | `auth_code_t` | `HARD_DELETE` | Authorization codes must not survive retirement |
+| `auth_provider_client_t` | `auth_refresh_token_t` | `HARD_DELETE` | Refresh tokens must be revoked, not restored |
+| `auth_provider_client_t` | `auth_session_t` | `HARD_DELETE` | Provider-client retirement revokes non-restorable authorization sessions |
+| `auth_provider_t` | `auth_provider_key_t` | `IGNORE` | Preserve keys across reversible host-driven retirement; runtime lookup requires an active provider and host |
+| `host_t` | `auth_code_t` | `HARD_DELETE` | Revoke tenant authorization codes even when `host_id` differs from `auth_host_id` |
+| `host_t` | `auth_ref_token_t` | `HARD_DELETE` | Revoke persisted bearer JWTs on host retirement |
+| `host_t` | `auth_refresh_token_t` | `HARD_DELETE` | Revoke tenant refresh tokens even when `host_id` differs from `auth_host_id` |
+| `host_t` | `auth_session_t` | `HARD_DELETE` | Revoke tenant sessions even when `host_id` differs from `auth_host_id` |
+| `user_t` | `auth_code_t` | `HARD_DELETE` | User deactivation is a revocation boundary; redemption does not recheck `user_t.active` |
+| `user_t` | `auth_refresh_token_t` | `HARD_DELETE` | User deactivation must revoke issued refresh credentials |
+| `user_t` | `auth_session_t` | `HARD_DELETE` | User deactivation must revoke active authorization sessions |
 
-* Clean separation: delete_ts/delete_user are dedicated to soft delete tracking
+These rows belong in the migration, not in conditional branches inside the
+trigger.
 
-* Clear semantics: Easy to understand and query
+Fifty-nine `IGNORE` relationships are also deliberate. The self-references on
+`customer_t.referral_id` and `employee_t.manager_id` describe hierarchy, not
+lifecycle ownership. The `user_host_t` relationships preserve recoverable
+customer and employee identity details while a host membership is inactive;
+membership eligibility is governed by `user_host_t.active`. Hard-deleting those
+identity rows would make a later membership reactivation incomplete. These
+exceptions are canonical policy decisions, not temporary disabled cascades.
 
-* No interference: Doesn't conflict with update_ts/update_user for normal updates
+Twenty-five of the `IGNORE` rows cover active-only children that do not
+implement the complete five-column soft-delete audit contract. Their lifecycle
+remains command-owned or independently retained; the validator makes that
+decision visible rather than silently dropping them from candidate discovery.
 
-* Intelligent restoration: Can restore only cascade-deleted records
+Twenty-nine more `IGNORE` rows cover children with neither `active` nor
+`delete_ts`, including immutable snapshots, audit evidence, retained message
+history, and status-driven operational records. The three columnless
+`auth_session_t` relationships are deliberately different: they are
+`HARD_DELETE` revocation boundaries through provider-client, tenant-host, and
+user ownership. The `auth_code_t` and `auth_refresh_token_t` session foreign
+keys also use `ON DELETE CASCADE`, so credentials issued under a different
+client or user within the same session cannot block session revocation.
 
-* Audit trail: Complete history of who deleted what and when
+Provider signing keys are the remaining deliberate exception. A host-driven
+provider retirement is reversible, so it preserves keys and restores the
+provider without forcing key regeneration. Both Java and Rust authentication
+lookups join the provider and host and require both to be active, preventing an
+inactive key from being used. A direct `AuthProviderDeletedEvent` remains a
+destructive domain operation and explicitly deletes the provider keys in the
+projection handler.
 
+The `host_t` references from `auth_code_t` and `auth_refresh_token_t` are hard
+revocation boundaries. In the Master-OAuth-Host flow their `host_id` is the
+tenant while `auth_host_id` owns the provider-client relationship, so the
+transitive provider-client cascade cannot revoke them. The equivalent `user_t`
+relationships are also `HARD_DELETE` because neither redemption path rechecks
+`user_t.active`.
 
-This approach ensures you only restore child entities that were cascade-deleted, maintaining data integrity while providing a clear audit trail.
+## Event-Sourcing Semantics
 
+The parent domain event remains the only event required for database-level
+cascading. Child mutations are derived projection state and do not create
+additional events. This preserves these properties:
 
-### 3. Special Handler for deletion of Host and Org 
+- the event store remains the canonical source of parent intent;
+- parent and child projection changes are atomic;
+- replay produces the same child state under the same policy version;
+- a projection failure is retained in the DLQ without mutating the canonical
+  event payload.
 
-Due to the significant tables that needs to be updated when deleting a host or an org, we need to rely on the cascade delete of the database. So deletion of host or org will be implemented as hard delete and it should be warned to users on the UI interface. 
+Because policy changes can alter replay results, policy rows are release-owned
+schema metadata. Historical patch files are immutable; changes require a new
+forward-only patch and regression qualification against both fresh and upgraded
+schemas.
 
-### 4. Add delete_ts column to reverse cascade soft delete
+## Trigger Installation
 
-After cascade soft delete for role_t, all children entities will be marked as active = false. When add back the same role again, we need to mark all the cascade delete children entities to active = true. However, we need to avoid updating the rows that were soft deleted individually. By adding a delete_ts, we can use it to find out all related children entities that are cascade deleted. 
+Install the parent trigger only on tables with the complete parent contract:
+`active`, `delete_ts`, `delete_user`, `update_ts`, and `update_user`. A trigger
+is useful only when at least one non-`IGNORE` policy names that table as a parent.
 
-### 5. Update queries to add active = true condition
+Installation must:
 
-We need to update some queries in the db provider to add conditions for each joining table with active = true so that only active rows will be returned. 
+1. validate all policy rows;
+2. reject unclassified candidate relationships;
+3. drop/recreate the trigger deterministically on eligible parents;
+4. verify that no trigger still calls the retired function;
+5. run safely more than once.
 
+## Operational Recovery
 
-**Conclusion:**
+For a projection event already in the DLQ:
 
-Based on our team discussion, we are going to: 
+1. Deploy the canonical DDL/patch and recreate the generic triggers.
+2. Verify the policy row and live resolved relationship.
+3. Verify that the failed parent row remains at its pre-event aggregate version.
+4. Use **Replay original** for the unchanged canonical event.
+5. Confirm the parent version/active state, child revocation or retirement, and
+   failure resolution.
 
-* Adopt the third option that use db trigger to do that same like the hard cascade delete. 
-* Change the org and host delete to hard delete. 
-* Update some queries to add condition to check the active = true. 
+Do not edit the DLQ payload or manually advance the parent projection.
+
+## Alternatives Rejected
+
+### Hard-coded table branches in the trigger
+
+This keeps policy hidden in procedural code, requires a function edit for every
+new relationship, and makes destructive behavior difficult to inventory.
+
+### Infer hard delete from missing columns
+
+An incomplete migration is indistinguishable from intentional hard-delete
+semantics. Treating absence as authorization to delete can destroy recoverable
+domain data.
+
+### Add `active` to every child
+
+This is unsafe unless every read and authorization path also filters `active`.
+It also allows restoration of credentials that should be permanently revoked.
+
+### Application-level table lists
+
+Application handlers can implement the behavior, but duplicated relationship
+lists drift across processors. The database already owns the foreign-key graph
+and executes projection transactions, so a validated database policy is the
+smaller consistency boundary.
+
+## Acceptance Criteria
+
+- No trigger contains hard-coded domain table names.
+- Every public foreign key from a parent with `active` and `delete_ts` has an
+  explicit `SOFT_DELETE`, `HARD_DELETE`, or `IGNORE` policy.
+- Soft actions cannot install unless both tables satisfy the complete column
+  contract.
+- Hard actions cannot install unless the referenced FK is `ON DELETE CASCADE`.
+- Client deletion succeeds with zero or many client-token rows and physically
+  removes those rows.
+- Provider/client retirement revokes authorization codes and refresh tokens.
+- Tenant-host retirement revokes authorization codes and refresh tokens when
+  `host_id` differs from `auth_host_id`.
+- Host-driven provider retirement preserves signing keys while active-provider
+  and active-host lookup guards prevent their use until restoration.
+- Restore reactivates only children retired by the matching soft cascade and
+  waits for every parent cascade token to clear; it never recreates
+  hard-deleted state.
+- Fresh-install and historical-upgrade schemas resolve to identical policies,
+  views, functions, and triggers.
+- Original DLQ events replay successfully after deployment without payload
+  mutation.
