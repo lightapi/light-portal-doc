@@ -11,7 +11,7 @@ operators, and retained rollout evidence.
 - Use `ALLOWLIST` for every canary. `ALL` is an expansion action, not a shortcut.
 - Never remove a host from the allowlist while it owns an active request,
   barrier, pause, deferred transaction, or quarantine.
-- Disable `executionEnabled` before rolling back worker or command code.
+- Disable `executionEnabled` before rolling back query processor or command code.
 - Do not drop replay tables during application rollback.
 - Do not rewind database/Kafka offsets, edit graph revisions, or delete
   canonical failures to make a canary pass.
@@ -43,15 +43,15 @@ rollout:
 
 Add `KAFKA`, `portal-query`, and the Kafka group only at the Kafka capture
 stage. Read, plan, dry-run, and execution APIs reject requests outside this
-exact boundary. The worker claim query independently matches the host,
-projection, and consumer group before it can claim an existing request.
+exact boundary. The direct query claim independently matches the host, replay
+request, and immutable plan hash before it can claim an existing request.
 
 ## Ordered Rollout
 
 1. **Schema:** Apply the fresh DDL or all dated patches through Phase 11 twice
    in a disposable database, then once in the target environment. Record
    `SCHEMA/VERIFIED` evidence.
-2. **Dormant code:** Deploy both adapters, worker, APIs, UI, and operations hooks
+2. **Dormant code:** Deploy both adapters, direct processor, APIs, UI, and operational monitoring
    with all gates off and `rollout.mode: DISABLED`.
 3. **Database capture:** Enable `captureEnabled` for one database projection
    group and one non-production host. Compare canonical transaction membership,
@@ -160,7 +160,7 @@ or deferred work remain.
 ## Rollback
 
 1. Stop new execute requests and set `executionEnabled: false`.
-2. Run the `ROLLBACK` preflight. If blocked, retain the current worker and give
+2. Run the `ROLLBACK` preflight. If blocked, retain the current processor and give
    every active scope an operator-owned recovery plan.
 3. Disable dry-run, planning, Kafka publication, and capture in that order.
 4. Preserve canonical tables, payload keys, objects, attempts, audit, backfill

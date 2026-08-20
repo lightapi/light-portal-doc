@@ -64,8 +64,8 @@ executor as live processing without rewinding PostgreSQL or Kafka offsets.
   scope is repaired.
 - Require an immutable plan, a reason, authorization, and a distinct approver
   before execution.
-- Start replay capture, APIs, and the asynchronous worker by default after the
-  schema is present.
+- Start replay capture and APIs by default after the schema is present; execute
+  only from an explicit operator request.
 - Keep configuration small enough that a developer can understand the entire
   replay setup from one screen.
 
@@ -115,7 +115,7 @@ PostgreSQL or Kafka live projection processor
                   plan -> approve -> execute
                               |
                               v
-                    asynchronous replay worker
+                 direct command-to-query call
                               |
                               v
                        projection tables
@@ -132,7 +132,7 @@ replay schema and services are deployed:
 2. canonical failure capture;
 3. replay query and command APIs;
 4. the built-in approval state machine;
-5. the asynchronous replay worker.
+5. the request-thread replay processor invoked by the execute command.
 
 Replay and repair are different operations. Exact replay is appropriate when
 the event was valid and the projection handler was defective or temporarily
@@ -311,9 +311,9 @@ safe error sizes use reviewed application defaults. They do not need operator
 properties during early development. They can become advanced production
 configuration later without changing the public replay contract.
 
-The worker identity is derived from the deployed service identity plus a
-per-process instance identifier. Developers do not configure a separate replay
-client ID merely to start the worker.
+The processor identity is derived from the deployed service identity plus a
+per-process instance identifier. The end-user bearer token is forwarded from
+command to query; there is no replay worker client identity.
 
 Gateway endpoint roles remain in Light Gateway access-control configuration,
 not `event-replay.yml`.
@@ -322,7 +322,7 @@ not `event-replay.yml`.
 
 An emergency may require replay execution to pause while diagnosis continues.
 Examples include a projection-handler regression, database overload, an
-incompatible rolling deployment, repeated worker failures, or an authorization
+incompatible rolling deployment, repeated processor failures, or an authorization
 incident. These conditions do not justify disabling event validation or
 failure capture.
 
@@ -333,7 +333,7 @@ timestamp, and change evidence. Pausing:
 
 - makes the execute endpoint reject new execution requests with
   `REPLAY_EXECUTION_PAUSED`;
-- prevents workers from claiming new replay requests;
+- prevents query from claiming a replay request for direct execution;
 - does not interrupt an already-running database transaction unsafely;
 - does not stop command-side event validation or canonical failure capture;
 - does not hide candidates, plans, attempts, or status APIs;
@@ -341,26 +341,22 @@ timestamp, and change evidence. Pausing:
 - does not delete or alter durable replay state;
 - does not require a service restart.
 
-Scheduled requests remain durable while paused; approved but unscheduled plans
+Requests with committed intent remain durable while paused; approved plans
 remain available only until their immutable expiry. An in-flight transaction
 finishes or rolls back under its existing database fence. Changing `enabled`
-back to `true` and pushing the configuration resumes worker claims and queued,
-non-expired work. Removing gateway permission may prevent new operator
-requests, but it is not a substitute for pausing an already-approved worker
-queue.
+back to `true` does not auto-resume anything: an operator explicitly retries
+the request. Removing gateway permission prevents new operator requests but
+does not alter durable state.
 
 `EventReplayConfig` must be a reloadable light-4j module. Config reload clears
 the cached `event-replay` document, and command handlers read the current value
-before every execute transition. The wake-up dispatcher and claimant read the
-current value before starting or claiming work rather than retaining only the
-startup snapshot. Like `AuditConfig`, it compares the cached configuration-map
+before every execute transition, and query checks it again before claiming the
+named request. Like `AuditConfig`, it compares the cached configuration-map
 identity on each `load()`/`current()` access and rebuilds its immutable snapshot
-after `ConfigReloadHandler` clears the cache. No replay-specific callback or
-light-4j framework change is required. A transition from `false` to `true`
-schedules a drain when it is observed by the next notification, command/status
-read, or periodic recovery scan. With no other activity, queued approved work
-resumes within the 60-second recovery interval. The effective execution state
-is exposed through health/status together with the config-server version or
+after `ConfigReloadHandler` clears the cache. No replay-specific callback,
+listener, or drain is required. A transition from `false` to `true` permits the
+next explicit operator retry. The effective execution state is exposed through
+health/status together with the config-server version or
 generation, reload timestamp, and process instance ID. The deployment health
 aggregator reports the expected replicas, their effective values and
 generations, and whether they agree. A multi-instance pause is complete only
@@ -841,72 +837,25 @@ Replay requests use row locks, monotonic fencing tokens, leases, and advisory
 scope locks. A lease provides liveness and abandoned-work recovery; it never
 overrides a database lock or permits two workers to execute the same item.
 
-The replay execution components are registered only in `hybrid-query` and start
-automatically after the replay schema is available. The execute API durably
-schedules work and returns; it does not run projection SQL on the HTTP thread.
+Replay executes only from the explicit operator command. `hybrid-command`
+commits the `INSTALLING_BARRIER` intent, then calls the `processEventReplay`
+query service directly through `HybridQueryClient` with the same user bearer
+token. Query claims exactly `(hostId, replayRequestId, planHash)` and runs the
+existing fenced processor on that request thread. It never scans for unrelated
+eligible work.
 
-### Worker wake-up and idle behavior
+There is no replay listener, polling scan, drain executor, automatic retry, or
+reserved listener connection. The outer browser request normally ends at the
+gateway's five-second timeout while the internal command-to-query request keeps
+running. Event Admin resolves that ambiguity by polling the durable request
+every three seconds. An expired lease makes a request explicitly retryable;
+reenabling replay does not start it automatically.
 
-`event_replay_request_t` is the durable work queue. In the same database
-transaction that changes an approved request to `INSTALLING_BARRIER`, the
-execute command calls `pg_notify('event_replay_ready', replayRequestId)`. A
-PostgreSQL notification is delivered only after commit, so a listener cannot
-wake for work that later rolls back. The notification is only a wake-up hint;
-the durable request row remains the source of truth.
+Replay configuration follows the standard light-4j lazy reload contract used
+by `AuditConfig`. Command checks the circuit breaker before committing a new
+intent, and query checks it again before claiming the named request.
 
-Replay configuration follows the standard light-4j lazy reload contract used by
-`AuditConfig`: `ConfigReloadHandler` clears the registered module's cached
-document, and the next `EventReplayConfig.current()` observes the new map
-identity and rebuilds the configuration. A replay notification observes the new
-value immediately through `requestDrain`; when no notification or request
-arrives, the 60-second recovery scan is the bounded config-observation path.
-An observed `false -> true` transition schedules a coalesced drain. This avoids
-both a one-second claim loop and a replay-specific change to the shared
-light-4j config-reload framework.
-
-Each `hybrid-query` replica uses a lightweight virtual thread blocked on
-`LISTEN event_replay_ready`. It does not run a one-second claim loop. The
-listener may use a dedicated PostgreSQL connection or a shared internal
-notification dispatcher that multiplexes application channels. A blocked
-virtual thread consumes no polling CPU. When notified, it submits a drain task
-that claims durable requests through the existing `SKIP LOCKED`, fencing, and
-lease protocol. Several replicas may wake for the same notification, but only
-one can claim a request.
-
-The current implementation reserves one connection from the application data
-source for the lifetime of each query replica. Size the pool for peak ordinary
-query/projection concurrency plus this listener connection; a pool size of one
-is invalid for a query replica. Some PostgreSQL driver versions may pin the
-listener virtual thread's carrier while `getNotifications` waits. This is
-bounded to the single listener and is not a reason to fan out one listener per
-channel.
-
-`LISTEN` requires session affinity. The listener connection must reach
-PostgreSQL directly or through a session-pooling endpoint; PgBouncer transaction
-or statement pooling is unsupported for this connection even when ordinary
-queries use it. Startup sends a uniquely identified self-test notification and
-requires the listener to observe it within a bounded interval. Failure marks
-listener health degraded and reports the connection/pool mode; the 60-second
-scan preserves correctness but must not mask a permanently broken notification
-path.
-
-PostgreSQL notifications are not durable. On startup, after listener reconnect,
-and once every 60 seconds while execution is enabled, each replica performs a
-recovery scan for an executable request. The 60-second interval is a reviewed
-application default, not another development configuration property. After a
-worker drains the available requests, it returns to the blocked listener. This
-reduces an idle replica from one empty query per second to at most one recovery
-query per minute while preserving immediate normal execution.
-
-While `event-replay.enabled=false`, notifications may still wake the listener,
-but `requestDrain` intentionally drops those wake-up hints and no drain task may
-claim work. Durable request rows are not dropped. Changing it back to `true` is
-observed by the next notification or other config access, or within 60 seconds
-by the periodic recovery scan. Kafka deployments use the same PostgreSQL replay
-control plane and therefore use this wake-up mechanism as well; it is
-independent of the live Pub/Sub source.
-
-### Replay worker operational status
+### Direct replay operational status
 
 Each `hybrid-query` replica exposes the following replica-local administrative
 endpoint:
@@ -918,30 +867,26 @@ GET /adm/event-replay/status
 The endpoint returns `application/json`. It is an observation endpoint only: it
 does not list replay candidates, create or approve a plan, or start replay
 execution. Its purposes are to confirm that a replica loaded the expected
-execution-pause configuration, verify that its PostgreSQL `LISTEN/NOTIFY`
-worker is healthy, and provide enough evidence to confirm a fleet-wide pause.
+execution-pause configuration, report direct-request mode, and expose
+blocked-scope incident state.
 
 A healthy response has the following shape:
 
 ```json
 {
-  "status": "HEALTHY",
+  "status": "UP",
   "effectiveEnabled": true,
   "configGeneration": "6b68d2...",
   "configReloadTimestamp": "2026-07-23T18:20:31.123Z",
   "processInstanceId": "019...",
-  "listenerConnectionRequirement": "DIRECT_OR_SESSION_POOLING",
-  "dedicatedListenerConnections": 1,
-  "listenerConnected": true,
-  "selfTestPassed": true,
-  "detail": "LISTEN/NOTIFY self-test passed",
-  "lastConnectedTimestamp": "2026-07-23T18:19:02.456Z",
-  "lastNotificationTimestamp": "2026-07-23T18:20:10.789Z",
-  "lastRecoveryScanTimestamp": "2026-07-23T18:20:02.456Z",
-  "reconnectCount": 0,
-  "notificationCount": 4,
-  "recoveryScanCount": 1,
-  "drainRunCount": 5
+  "executionMode": "DIRECT_REQUEST",
+  "listenerConnectionRequirement": "NONE",
+  "dedicatedListenerConnections": 0,
+  "orderedScopeStatusAvailable": true,
+  "blockedOrderedScopeCount": 0,
+  "blockedScopeIncidentThresholdSeconds": 900,
+  "blockedScopeIncident": false,
+  "detail": "event replay executes only on an operator request"
 }
 ```
 
@@ -949,30 +894,17 @@ The fields have these meanings:
 
 | Field | Meaning |
 | --- | --- |
-| `status` | Dispatcher lifecycle or health: `STARTING`, `SELF_TESTING`, `HEALTHY`, `DEGRADED`, or `STOPPED`. |
+| `status` | `UP` when direct execution is enabled, otherwise `PAUSED`. |
 | `effectiveEnabled` | Effective value of `event-replay.enabled` on this replica. `false` pauses execution and claiming only. |
 | `configGeneration` | SHA-256-derived identity of the effective replay configuration. Replicas with the same intended config must report the same generation. |
 | `configReloadTimestamp` | Time this process last observed the current configuration generation. |
 | `processInstanceId` | Unique identity of this running query replica, used to distinguish reports across restarts and replicas. |
-| `listenerConnectionRequirement` | Required PostgreSQL connection mode. The value is `DIRECT_OR_SESSION_POOLING`; transaction pooling cannot preserve `LISTEN` session affinity. |
-| `dedicatedListenerConnections` | Number of JDBC connections permanently reserved by this replica's listener; currently `1`. |
-| `listenerConnected` | Whether the dedicated PostgreSQL listener session is currently connected. |
-| `selfTestPassed` | Whether the session-affinity `LISTEN/NOTIFY` self-test passed on the current listener session. |
-| `detail` | Human-readable lifecycle or degradation detail, including the failure type when degraded. |
-| `lastConnectedTimestamp` | Most recent successful listener connection time, or `null` before the first connection. |
-| `lastNotificationTimestamp` | Most recent received replay-ready notification time, or `null` if none has been received. |
-| `lastRecoveryScanTimestamp` | Most recent periodic durable-work recovery scan time, or `null` before the first scan. |
-| `reconnectCount` | Number of listener reconnection attempts after listener failures. |
-| `notificationCount` | Number of PostgreSQL replay-ready notifications received by this process. Notifications are coalescible wake-up hints, not the durable work record. |
-| `recoveryScanCount` | Number of periodic recovery scans used to find work after a lost notification or listener failure. |
-| `drainRunCount` | Number of coalesced worker drain runs scheduled by startup, notification, resume, reconnect, or recovery. It is not expected to equal `notificationCount`. |
-
-Before the dispatcher is installed, the endpoint reports `status=STARTING`,
-`listenerConnected=false`, `selfTestPassed=false`, and the configuration and
-connection-requirement fields. Listener timestamps and counters are added once
-the dispatcher exists. A `DEGRADED` status commonly means that the listener
-connection failed, its self-test failed, or a transaction-pooling proxy broke
-session affinity. The `detail` field identifies the observed condition.
+| `executionMode` | Always `DIRECT_REQUEST`; no background worker discovers work. |
+| `listenerConnectionRequirement` | Always `NONE`. |
+| `dedicatedListenerConnections` | Always `0`. |
+| `blockedOrderedScopeCount` | Number of scopes whose live projection is deferred by an active barrier. |
+| `blockedScopeIncident` | Whether the oldest blocked scope exceeded the reviewed 900-second incident threshold. |
+| `detail` | Human-readable direct-execution or pause state. |
 
 For fleet-wide pause confirmation, an operator or aggregator polls every target
 query replica and verifies all of the following:
@@ -982,17 +914,10 @@ query replica and verifies all of the following:
 - every response has the intended `configGeneration`; and
 - there are no missing or stale replicas.
 
-A missing or stale response never confirms a pause. Listener health is separate
-from pause confirmation: a replica can report `DEGRADED` while still finding
-durable work through the 60-second recovery scan.
-
-For that reason, listener degradation does not fail the service's normal
-liveness endpoint. Restarting an otherwise healthy query service would disrupt
-unrelated APIs without repairing an unsupported connection-pooling mode. The
-administrative status endpoint must instead be monitored separately. It exposes
-no event payload or PII, but it reveals internal execution state, so the gateway
-or deployment ingress must protect it with the same administrative access
-controls used for other `/adm` routes.
+A missing or stale response never confirms a pause. The administrative status
+endpoint exposes no event payload or PII, but it reveals internal execution
+state, so the gateway or deployment ingress protects it with the same
+administrative access controls used for other `/adm` routes.
 
 Request states are:
 
@@ -1135,10 +1060,10 @@ schema.
   `PAYLOAD_UNAVAILABLE` or `PAYLOAD_DIGEST_MISMATCH`.
 - **Dependency gap:** report the exact missing aggregate version, graph
   revision, or transaction and keep the plan non-executable.
-- **Worker crashes before commit:** database rollback leaves the item pending;
-  lease recovery starts a new fenced attempt.
-- **Worker crashes after commit:** projection result and attempt outcome are
-  already atomic; recovery observes completion.
+- **Query process crashes before commit:** database rollback leaves the item
+  pending; after lease expiry an operator retry starts a new fenced attempt.
+- **Query process crashes after commit:** projection result and attempt outcome
+  are already atomic; durable status observes completion.
 - **Replay handler still fails:** stop the ordered plan, record the attempt,
   and keep the affected scope quarantined.
 - **Plan expires or becomes stale:** require a new plan and approval.
@@ -1148,7 +1073,7 @@ schema.
   and keep the ordered scope quarantined for retry or cancellation.
 - **Emergency execution pause:** push `event-replay.enabled=false` to all
   command and query instances, verify their effective health/status, and stop
-  new execute transitions and worker claims while validation, capture, query
+  new execute transitions and direct query claims while validation, capture, query
   APIs, planning, approval, and durable state remain available.
 
 ## Security and Privacy
@@ -1190,9 +1115,8 @@ Recommended bounded-cardinality metrics are:
   backpressure activations;
 - active barriers, deferred transactions, quarantined scopes, and abandoned
   attempts;
-- worker heartbeat and claim failures;
-- replay listener connection/reconnection state, notification wake-ups, and
-  recovery-scan claims.
+- direct execution attempts, expired leases, and fencing failures;
+- active barriers, oldest blocked-scope age, and operator retries.
 
 Logs include request ID, failure ID, projection, consumer group, attempt,
 counts, and safe result code. They exclude payloads and unbounded exception
@@ -1212,8 +1136,8 @@ The schema migration creates the canonical failure, repair, replay request,
 item, attempt, lease, barrier, deferred-work, and audit tables. After both the
 schema and updated services are present:
 
-1. replay validation, capture, APIs, and worker startup are active;
-2. `hybrid-query` starts canonical capture and the replay worker;
+1. replay validation, capture, APIs, and direct execution are active;
+2. `hybrid-query` starts canonical capture without a replay execution thread;
 3. `hybrid-command` accepts plan and state-transition commands;
 4. new failed transactions appear in Event Admin;
 5. gateway endpoint roles determine who may operate them.
@@ -1234,14 +1158,12 @@ must verify them together with the canonical failure and replay tables.
 
 `event-replay.enabled` defaults to `true`. Config-server reload applies changes
 without restart. `hybrid-command` enforces the current value at execute time;
-every `hybrid-query` worker enforces it before claiming work. Health/status
+every `hybrid-query` direct request enforces it before claiming work. Health/status
 reports the effective value for each instance.
 
-The schema migration also installs the `event_replay_ready` notification
-contract. `hybrid-query` establishes its listener before its startup recovery
-scan so work committed during startup cannot be stranded. Listener loss marks
-health degraded and reconnects with bounded backoff; the recovery scan remains
-the correctness fallback.
+`event_replay_ready` remains harmless schema history but has no runtime
+producer or listener. A committed non-terminal intent is resumed only by an
+explicit operator retry after its lease expires.
 
 Startup fails with a clear schema error when required replay tables are absent.
 It must not silently downgrade to a partially working mode.
@@ -1362,27 +1284,21 @@ canonical capture remains authoritative.
   verify canonical lock ordering and that a gap in one scope prevents every
   member from executing.
 - Verify deferred work drains in source order.
-- Kill a worker before and after commit and prove one committed outcome.
-- Verify an execute commit emits `event_replay_ready`, wakes the listener, and
-  begins execution without waiting for the recovery interval.
-- Drop a notification and restart or reconnect the listener; verify the startup
-  or 60-second recovery scan claims the durable request.
-- Run several `hybrid-query` replicas, wake all of them, and prove
-  `SKIP LOCKED` plus fencing permits one committed execution.
-- Leave the system idle and verify there is no one-second claim loop and no more
-  than one scheduled recovery query per minute per replica.
+- Kill a direct query request before and after commit and prove one committed
+  outcome; retry is unavailable until the lease expires.
+- Invoke two direct requests for the same plan and prove fencing permits one
+  active execution and rejects late stale writes.
+- Leave the system idle and verify there is no replay listener, polling scan,
+  execution executor, or permanently borrowed replay connection.
 - Push `event-replay.enabled=false` and verify every command/query instance
   reports the effective value, config generation, reload timestamp, and
   instance ID without restart; verify the fleet aggregator refuses to confirm
   pause while a replica is missing or stale.
-- Verify the execute endpoint returns `REPLAY_EXECUTION_PAUSED` and workers stop
-  new claims without stopping capture, planning, approval, status, or an
+- Verify the execute endpoint returns `REPLAY_EXECUTION_PAUSED` and query stops
+  new direct claims without stopping capture, planning, approval, status, or an
   in-flight transaction.
-- Push `event-replay.enabled=true` and verify queued approved work resumes
-  immediately without waiting for the periodic scan or duplicating an attempt.
-- Run the listener through a direct/session-pooled connection and verify the
-  startup self-test. Route it through transaction pooling and verify health is
-  degraded while the recovery scan still preserves correctness.
+- Push `event-replay.enabled=true` and verify no work resumes until the operator
+  retries it.
 - Cross the internal capture soft and hard watermarks; verify alerting and that
   source progress stops before an uncaptured replay payload is lost.
 
@@ -1418,15 +1334,15 @@ barrier installation, repair-aware execution, resolution, and deferred drain.
 For Kafka pub/sub, it additionally proves validation before projection,
 canonical capture before source-offset commit, idempotent redelivery, retained
 source coordinates, no live-topic republish, and no consumer-offset rewind.
-Gateway rules remain deployment-defined independently for all twelve replay
+Gateway rules remain deployment-defined independently for all thirteen replay
 endpoints, with two distinct authenticated users used for repair approval and
 replay-plan approval.
 
 The deployable evidence and exact commands are maintained in the R9
 qualification record under the implementation repository. `/adm/event-replay/status`
-is polled on every query replica after deployment to confirm listener health,
-effective execution state, config generation, reload timestamp, and instance
-identity; a missing or stale replica never confirms a fleet pause.
+is polled on every query replica after deployment to confirm direct execution
+mode, effective execution state, config generation, reload timestamp, and
+instance identity; a missing or stale replica never confirms a fleet pause.
 
 ## Future Production Hardening
 

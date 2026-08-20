@@ -41,7 +41,7 @@ hard condition clears.
    PostgreSQL data filesystem.
 2. Stop unrelated disk growth and add capacity if needed.
 3. Do not manually truncate replay tables or audit evidence.
-4. Allow the retention worker to remove only eligible resolved payloads and
+4. Allow the scheduled retention task to remove only eligible resolved payloads and
    aged metadata. Resume processors only after `database_free_ratio` exceeds
    the hard boundary.
 
@@ -51,7 +51,7 @@ hard condition clears.
    the external DLQ merely because publication failed.
 2. Repair Kafka connectivity/topic/ACL configuration.
 3. Preserve the terminal row until its outcome has been copied to immutable
-   audit evidence. The retention worker performs that copy before deletion.
+   audit evidence. The scheduled retention task performs that copy before deletion.
 4. Confirm backlog age and terminal-failure gauges fall after recovery.
 
 ### Stuck fallback pause acknowledgement
@@ -70,6 +70,15 @@ hard condition clears.
 2. Build a dependency-closure follow-up plan containing the owner failure.
 3. Execute the exact approved hash. Do not delete deferred rows or change the
    barrier owner manually.
+
+Direct execution has no background recovery. If a request remains
+`INSTALLING_BARRIER` or `RUNNING`, inspect `leaseExpiresAt`. Event Admin offers
+Retry only after that lease expires; a query-process crash can therefore make
+the operator wait up to about 30 minutes. Live projection for the affected
+scope remains deferred during that interval. Alert when
+`oldest_blocked_scope_age_seconds` reaches 900 seconds. If safe retry cannot
+recover the request, use the separately approved `RELEASE_WITH_GAP` procedure;
+never edit the lease, fence, or barrier rows manually.
 
 ### Repeated `STALE_PLAN` or `LEASE_LOST`
 
@@ -90,7 +99,7 @@ hard condition clears.
 ### Cleanup or object reconciliation failed
 
 1. Check `event_replay.cleanup_failures` and `reconciliation_failures` plus the
-   worker error type. Payload and identifiers are deliberately absent from logs.
+   task error type. Payload and identifiers are deliberately absent from logs.
 2. Repair database/object connectivity and retry. Cleanup batches are
    resumable and use `SKIP LOCKED`.
 3. An object is deleted as orphaned only when it uses the managed `replay/v1/`
@@ -106,7 +115,6 @@ measurement, object-store listing support, dashboards, and alerts are verified.
 Enable one query node first. Multiple nodes are safe because cleanup candidates
 are locked with `FOR UPDATE SKIP LOCKED`.
 
-To roll back the worker, set `operations.enabled` false and restart. Do not roll
+To roll back scheduled cleanup, set `operations.enabled` false and restart. Do not roll
 back schema additions or remove retention evidence. Capture, planning, and
 execution gates remain independent.
-
