@@ -138,9 +138,11 @@ importer --convert --filename snapshot.json --targetHostId ... --adminUserId ...
 - `--enrichment`, `-e`: JSON string or `@file` containing enrichment rules.
 - `--dry-run`: parse, mutate, validate, and report without writing.
 - `--fail-fast`: stop on the first failed event. Default is continue.
-- `--batch-size`: number of events per transaction. Default is `1` for Java
-  compatibility. Snapshot imports should use a larger value, such as `500`,
-  after validation passes.
+- `--batch-size`: soft event-count target for one physical database commit.
+  It never defines logical transaction membership. Every event in the
+  snapshot-derived JSON array receives a distinct singleton logical
+  transaction. See
+  [Fast Snapshot-Derived Database Bootstrap](./light-portal/database-recreation-event-bootstrap.md).
 - `--summary-json`: print machine-readable summary.
 
 ### Convert Options
@@ -417,15 +419,16 @@ WHERE id = 1
 RETURNING next_offset - $1
 ```
 
-For import mode, keep Java's isolation behavior by default: one event per
-transaction and one `transaction_id` per event. When `--batch-size` is greater
-than `1`, reserve enough offsets for the batch and write the batch in one
-transaction with one `transaction_id`.
+The supported snapshot-derived array contains synthetic events without source
+transaction metadata. Preserve Java's isolation semantics by assigning one
+singleton logical transaction per event, with ordinal `0` and count `1`.
 
-If a batched transaction fails because of a validation or constraint error, roll
-back the batch and retry its events one at a time unless `--fail-fast` is set.
-This keeps fast-path imports efficient without losing the Java tool's ability to
-identify the bad event and continue later events.
+`--batch-size` may place several singleton append requests in one physical
+PostgreSQL commit, but it must retain a distinct generated `transaction_id` for
+every event. If a physical commit chunk fails, roll it back and retry its events
+individually for diagnosis unless `--fail-fast` is set. Import of true canonical
+event history with original multi-event transaction membership is outside this
+snapshot-import design.
 
 ### Insert SQL
 
@@ -719,8 +722,9 @@ Test cases:
 6. Verify failed event rolls back without blocking later events.
 7. Verify unique-constraint collisions are categorized as exact duplicate or
    failed conflict.
-8. Verify `--batch-size` imports multiple events in one transaction and falls
-   back to one-event isolation when a batch fails.
+8. Verify `--batch-size` packs singleton append requests into physical commit
+   chunks while retaining a distinct transaction ID, ordinal `0`, and count `1`
+   for every event, then falls back to per-event diagnostics when a chunk fails.
 9. Convert a snapshot and import the resulting event list into an empty DB.
 10. Compare embedded table dependency order against live PostgreSQL metadata.
 
@@ -763,8 +767,9 @@ Test cases:
 
 - Include an embedded table dependency graph in the first release and keep
   database metadata mode as a validation/refresh path.
-- Implement `--batch-size` during import parity work. Default to `1` for Java
-  behavior, but support larger batches for initial snapshot imports.
+- Implement `--batch-size` as a physical commit target during import parity
+  work. Default conservatively and treat every snapshot-derived event as a
+  singleton logical transaction.
 - Support stdin/stdout in both modes so operators can run
   `importer convert ... --output - | importer import --filename -`.
 - Formalize replacement/enrichment as versioned `serde` schemas while accepting
