@@ -40,7 +40,7 @@ A flattened, merged view of all properties for the snapshot. This table represen
 ## Backend Implementation
 
 ### Stored Procedure (`create_snapshot`)
-Located in `portal-db/postgres/sp_tr_fn.sql`.
+Located in `portal-db/postgres/ddl.sql`.
 This procedure performs the heavy lifting:
 1.  Validates the instance and retrieves scope data (product, environment, etc.).
 2.  Creates the snapshot header record.

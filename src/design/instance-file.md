@@ -206,9 +206,7 @@ Required behavior:
 Expected implementation surfaces:
 
 - `portal-db/postgres/ddl.sql`
-- `portal-db/postgres/ddl-dbvis.sql`
 - New `portal-db/postgres/patch_*.sql`
-- `portal-db/postgres/sp_tr_fn.sql`
 - `light-portal/db-provider` persistence for create, update, query, snapshot, clone, and replay flows
 - `light-config-server` snapshot `/files` and `/certs` query behavior through `ConfigServerQueryPersistenceImpl`
 - `portal-service/crates/portal-core` snapshot file and cert queries
