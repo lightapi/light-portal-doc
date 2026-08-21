@@ -1060,6 +1060,21 @@ Exit gate:
 - schema dependency scans find zero cross-boundary function, trigger, view,
   foreign-key, or cascade-policy references.
 
+Implementation evidence (2026-08-21): Phase 6 deletes the Portal operational
+JDBC surface, makes `portal-db/postgres/ddl.sql` control-plane-only, and keeps
+`portal-db/postgres/knowledge/ddl.sql` as the canonical operational schema.
+The installer migrates only the versioned
+`data-migration-relations-v1.txt` allowlist and proves row-count parity before
+capturing legacy-only tables as dependency-free, owner-only
+`knowledge_rollback_evidence`. Portal and Light Knowledge deployment identities
+use database-scoped credentials; the local Rust topology has separate
+`light-knowledge` and `light-knowledge-admin` services, recurring signed
+snapshot application, and no control-event database credential. The
+`run-knowledge-operational-boundary-phase6-gate.sh` suite covers the frozen
+action contract, fresh Config Server, upgraded Config Server rollback evidence,
+fresh Knowledge schema, independent backup/restore, cross-boundary catalog
+scans, installer packaging, and two-instance network isolation.
+
 ### Phase 7: Production qualification and cleanup
 
 Owners: operations and the participating service teams.
