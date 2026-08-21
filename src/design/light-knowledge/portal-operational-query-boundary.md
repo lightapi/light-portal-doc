@@ -824,6 +824,23 @@ Exit gate:
 - every Knowledge routine resolves only local relations;
 - current application behavior is unchanged.
 
+Implementation evidence as of 2026-08-21 is the canonical
+`portal-db/postgres/knowledge/ddl.sql`, idempotent `roles.sql`, and forward-only
+`patch_20260821_02_canonical_knowledge_boundary.sql`. The
+`run-light-knowledge-phase1-boundary-gate.sh` CI gate creates both a fresh
+Knowledge database and a legacy clone-and-filter fixture, applies the upgrade,
+checks exact owned-relation inventory, local routine/trigger dependencies,
+role isolation, the registered embedding-view divergence, and semantic schema
+fingerprint parity. `light-portal-install/postgres-db/init-knowledge.sh` now
+applies the packaged canonical DDL directly; its narrowly scoped data-only copy
+exists only to preserve Knowledge-owned state while upgrading a legacy
+single-database installation. The independently networked topology initializes
+Config Server from the root Portal DDL and Knowledge from the canonical
+Knowledge DDL, runs the boundary schema gate, and proves that each service-side
+probe can resolve only its own database. The event-store index and transitional
+projector membership remain intentionally in place until Phase 2 snapshot
+parity permits their removal.
+
 ### Phase 2: Replace event delivery and cross-database command access
 
 Owners: `light-portal`, Config Server, `light-fabric/apps/light-knowledge`,
@@ -851,6 +868,42 @@ Owners: `light-portal`, Config Server, `light-fabric/apps/light-knowledge`,
 - After parity and rollback qualification, remove
   `LIGHT_KNOWLEDGE_CONTROL_EVENT_DATABASE_URL`, the event-store partial index,
   event-consumer code, event cursor/inbox/quarantine tables, and projector grants.
+
+The Phase 2 implementation uses
+`getKnowledgeAudienceSnapshot` on `hybrid-query` as the Config Server
+publisher and `POST /v1/knowledge/admin/control-snapshots:apply` as the private
+loader. `light-portal-install` runs a bounded bootstrap sync before starting
+`light-knowledge`, then refreshes the five-minute lease every minute; the
+publisher reads the complete replica set and its event watermark in one
+repeatable-read transaction. Each tombstone is version-bound to a terminal row
+in that same payload. The
+publisher and loader share only the snapshot signing key, and the loader writes through
+`light_knowledge_snapshot_loader_role`. Local development may reuse the
+interactive Portal bearer token and explicitly ignore its expiry. Production
+must use a dedicated short-scope service token (`portal.r portal.w`) for this
+Config Server-to-`light-knowledge-admin` bootstrap call. That token must also
+be bound to the target host and carry the existing `admin` or `host-admin`
+role required by both services; the token is forwarded in memory and is never
+stored in either database.
+
+Operational commands are sent by `hybrid-command` to
+`POST /v1/knowledge/admin/commands` with the exact UI bearer token and
+`Idempotency-Key`. Existing Portal input, tenant, role, and control-plane
+validation runs before delegation. The admin service repeats audience,
+scope/role, host/environment, object-visibility, body-size, and idempotency
+checks; reusing an idempotency key for a different action or payload fails with
+`409 KNOWLEDGE_COMMAND_IDEMPOTENCY_CONFLICT`. It replaces any actor field with
+a non-reversible opaque reference, and
+inserts the Knowledge-local job. Promotion commits the pointer, pointer
+history, and `knowledge_promotion_receipt_t` row in one Knowledge transaction;
+the private `promotion-receipts` endpoint exposes that terminal operational
+evidence without a Portal database read.
+
+The deployment keeps `light-knowledge` and `light-knowledge-admin` as separate
+services and containers. Retrieval replicas can therefore scale for agent
+query traffic without scaling the Portal-only administration surface, database
+pool, or JWT/JWKS workload. The admin listener remains private and is not
+published through the runtime retrieval listener.
 
 Exit gate:
 
