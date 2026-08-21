@@ -44,6 +44,7 @@
     - [Global And Tenant Entity Scope](./design/light-portal/global-tenant-entity-scope.md)
     - [Global And Tenant Knowledge Bases For Shared Agent Retrieval](./design/light-portal/knowledge-base.md)
       - [Portal Operational Access Boundary](./design/light-knowledge/portal-operational-query-boundary.md)
+        - [Operations Runbook](./design/light-knowledge/portal-operational-query-boundary-runbook.md)
     - [Workflow Version and Publication](./design/light-portal/workflow-version-publication.md)
     - [Endpoint Tools and Workflow Access](./design/light-portal/endpoint-tool-workflow-access.md)
     - [API Version Publication To Gateway](./design/light-portal/api-version-gateway-publication.md)

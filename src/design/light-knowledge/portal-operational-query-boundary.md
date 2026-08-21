@@ -1088,7 +1088,22 @@ Owners: operations and the participating service teams.
   SQL fixtures, and retained tables only after the rollback window.
 - Publish the operational runbook for API outage, stale or rejected
   configuration snapshots, database restore, credential rotation, and service
-  rollback.
+  rollback. The normative procedure is the
+  [Light Knowledge Operational Boundary Runbook](./portal-operational-query-boundary-runbook.md).
+
+Implementation evidence (2026-08-21): Phase 7 removes the disabled
+`enabled`/shadow/cutover/legacy-authority configuration and comparison code from
+the Portal client and deployment packages. A machine-checked qualification
+format requires exactly seven consecutive UTC daily windows, declared Portal
+and Knowledge SLO results, zero authorization-scope/denial/redaction/pool
+failures, bounded acknowledgement lag, versioned services, and the compatible
+snapshot/checkpoint/object-manifest restore tuple. Retained Config Server
+rollback tables are not removed by startup or installation: the separate
+operator cleanup command validates the completed evidence, requires an exact
+confirmation, records its SHA-256 in the invocation, prints captured row counts,
+and drops only the owner-only rollback-evidence schema. The readiness gate can
+be completed in CI; the seven-day production exit gate remains an operational
+observation and cannot be predeclared by the implementation.
 
 Exit gate:
 
