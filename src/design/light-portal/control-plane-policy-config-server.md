@@ -5,28 +5,30 @@
 Proposed target architecture.
 
 This document defines how Light Portal publishes immutable policy and runtime
-configuration to independently operated workloads such as Agent and Gateway.
-It also defines how publication identity is shared with the internal Workflow
-and Knowledge services without pretending that those services are external
-Config Server clients.
+configuration to independently operated workloads such as Agent, Gateway, and
+Knowledge. It also defines how publication identity is shared with the internal
+Workflow service.
 
 ## Decision Summary
 
 Light Portal is the policy authoring and publication control plane. Agent,
-Gateway, and other independently operated application runtimes are external
-policy consumers. They receive configuration only from Config Server and have
-no Light Portal database credentials.
+Gateway, Knowledge, and other independently operated application runtimes are
+Config Server policy consumers. They receive control-plane configuration only
+from Config Server and have no Light Portal database or event-store credentials.
 
-Workflow and Knowledge are internal platform services. In the current
-architecture they consume Portal events and read the event-backed projections
-needed to admit and pin work. They also write their own operational tables.
-Those accesses use dedicated least-privilege database roles; neither service
-may insert or update event-backed authoring projections directly. Moving their
-internal policy views to Config Server is an optional future decoupling step,
-not a requirement of this external publication contract.
+Workflow remains an internal platform service in the current architecture. It
+may consume Portal events and read the event-backed projections needed to admit
+and pin work, and it writes its own operational tables through dedicated
+least-privilege roles. Knowledge instead loads its audience-specific immutable
+policy through Config Server, and its API/job roles write only service-owned
+operational data. It does not consume Portal events or create an independent
+Portal policy authority. Its snapshot-loader role may materialize the content-
+minimized Knowledge audience fields as published control replicas in its
+operational database for local constraints and transactionally consistent
+runtime queries.
 
 Config Server renders the immutable configuration snapshot selected as current
-for an authenticated external workload instance. The caller has read-only
+for an authenticated Config Server workload instance. The caller has read-only
 access to its own audience-specific `values.yml` document.
 
 Publishing a policy consists of:
@@ -36,7 +38,7 @@ Publishing a policy consists of:
 3. emitting events that create or update the target instance properties;
 4. waiting until those events and required internal views have been projected
    completely;
-5. creating an immutable configuration snapshot for every external target
+5. creating an immutable configuration snapshot for every Config Server target
    instance;
 6. validating and digesting the snapshots; and
 7. moving the target instances' current pointers to the new snapshots as one
@@ -140,7 +142,7 @@ The existing configuration subsystem already provides useful foundations:
 Config Server already resolves effective values from the selected current
 snapshot by host, environment, service ID, configuration phase, and property
 type. This design extends that mechanism into the only supported policy delivery
-path for external runtime services.
+path for Config Server runtime services.
 
 ## Terminology
 
@@ -159,10 +161,11 @@ path for external runtime services.
 
 ## Goals
 
-- Prevent external runtimes from using Light Portal database tables as a
+- Prevent Config Server runtimes from using Light Portal database tables as a
   control-plane policy source.
-- Define safe internal database boundaries for Workflow and Knowledge while
-  preserving event sourcing for authoring state.
+- Define safe database boundaries for internal Workflow and the independently
+  operated Knowledge data plane while preserving event sourcing for authoring
+  state.
 - Publish only the policy fields required by each runtime audience.
 - Preserve an immutable policy identity for every session and request.
 - Reuse the existing instance-property and configuration-snapshot model.
@@ -189,7 +192,8 @@ path for external runtime services.
 - This design does not require all audiences to receive identical policy
   documents.
 - This design does not require Knowledge and Workflow operational state to move
-  out of the shared PostgreSQL deployment immediately.
+  out of the shared PostgreSQL deployment immediately; logical roles and policy
+  delivery boundaries still apply when databases are physically colocated.
 
 ## Trust Boundary
 
@@ -219,9 +223,10 @@ audience.
 Config Server must never resolve policy from live authoring tables on behalf of
 a runtime. It serves immutable snapshot content only.
 
-### External runtime services
+### Config Server audience runtimes
 
-Agent, Gateway, and other independently operated application runtimes:
+Agent, Gateway, Knowledge, and other independently operated application
+runtimes:
 
 - load configuration from Config Server;
 - validate the delivered identity, schema, and digest;
@@ -232,23 +237,25 @@ Agent, Gateway, and other independently operated application runtimes:
 They have no Light Portal database credentials and use their own storage where
 persistence is required.
 
-### Internal Workflow and Knowledge services
+### Knowledge and internal Workflow services
 
-Knowledge and Workflow are platform services, not external applications. They
-currently use the same physical PostgreSQL deployment as Light Portal and may
-read the event-backed projections necessary to resolve and pin internal work.
+Knowledge is a Config Server audience. It loads and validates an immutable
+Knowledge-specific configuration and policy snapshot at startup and on an
+explicit refresh. It has no Portal event-store or authoring-projection
+credential. Its database role is restricted to Knowledge-owned operational data
+such as ingestion jobs, sync runs, documents, chunks, derived search indexes,
+index generations, and runtime evidence. A separate snapshot-loader role is the
+only writer of published control replicas. Operational rows pin the exact
+configuration snapshot, publication, and policy digests admitted for the work.
 
-Knowledge may use its database role for Knowledge-owned operational data such
-as ingestion jobs, sync runs, documents, chunks, index generations, and runtime
-evidence. Workflow may use its database role for Workflow-owned operational data
-such as workflow instances, tasks, attempts, leases, artifacts, and execution
-history.
-
-These reads are read-only and must select an immutable definition, version, and
-digest at admission. All authoring mutations still enter through commands and
-events; Workflow and Knowledge never insert or update event-backed projection
-rows. Direct writes are limited to explicitly operational state owned by the
-service.
+Workflow remains an internal platform service in the current architecture. It
+may read the explicitly granted event-backed projections needed to resolve and
+pin internal work and may write Workflow-owned operational data such as
+workflow instances, tasks, attempts, leases, artifacts, and execution history.
+Those reads select an immutable definition, version, and digest at admission.
+All authoring mutations still enter through commands and events; Workflow never
+inserts or updates event-backed projection rows. Direct writes are limited to
+explicitly operational state owned by the service.
 
 Workflow versions use one stable `wfDefId` for their complete history. A user
 may save a `DRAFT` version repeatedly. Publishing that version freezes its YAML;
@@ -258,16 +265,19 @@ This permits an operator to roll a tool back to a previously published workflow
 version without inventing a second workflow identity. Portal provides a
 side-by-side, normalized YAML comparison between versions.
 
-The shared database roles must be least-privilege roles restricted to the exact
-projection reads and operational writes each service needs. They must not be
-database superusers. A future physical database split may deliver the same
-internal policy views through events or Config Server without changing their
-semantic contracts.
+Every database role must be least privilege and must not be a database
+superuser. Workflow roles are restricted to enumerated projection reads and
+operational writes. Knowledge roles are restricted to its operational database:
+the loader may write published control replicas, while API/job roles may write
+only service-owned operational state. None can read Portal authoring,
+event-store, or projection tables.
 
 ## Required Invariants
 
-1. An external runtime never queries a Light Portal domain or projection table
-   to resolve control-plane policy. Internal Workflow and Knowledge may read
+1. A Config Server runtime never queries a Light Portal domain or projection table
+   to resolve control-plane policy. Knowledge receives policy only through
+   Config Server; only its loader writes published control replicas, and other
+   Knowledge roles write only operational tables. Internal Workflow may read
    explicitly granted event-backed projections and write explicitly granted
    operational tables.
 2. Config Server never renders runtime configuration from mutable authoring
@@ -294,10 +304,11 @@ semantic contracts.
     which they were authorized.
 13. Rollback selects an existing immutable snapshot. It does not edit that
     snapshot or reverse authoring events.
-14. An unavailable Config Server does not cause an external runtime to accept
+14. An unavailable Config Server does not cause a runtime to accept
     unknown or unvalidated policy.
-15. Workflow and Knowledge never mutate event-backed authoring projections
-    directly; operational writes are not authoring shortcuts.
+15. Workflow never mutates event-backed authoring projections directly, and
+    Knowledge cannot read or mutate them; operational writes are not authoring
+    shortcuts.
 16. A tool may bind only to a published workflow version. A published workflow
     version is immutable and remains addressable by its stable `wfDefId` and
     version string.
@@ -317,8 +328,8 @@ Immutable domain policy snapshot
 Publication target compiler
       /-------------------------\
       v                          v
-External workload         Internal service view
-projection                (Workflow/Knowledge)
+Config Server audience    Internal service view
+projection                (Workflow)
       |                          |
       v                          v
 immutable publication      event-backed projection
@@ -403,9 +414,9 @@ The Gateway projection may contain:
 It must not contain Agent prompts, memory content, Knowledge documents, or
 provider secret material.
 
-### Internal Knowledge policy view
+### Knowledge projection
 
-The internal Knowledge policy view may contain:
+The Config Server Knowledge audience projection may contain:
 
 - Agent-to-Knowledge-Base authorization bindings;
 - tenant, environment, and ownership constraints;
@@ -435,14 +446,15 @@ Gateway provider credentials, or authoring-only Portal metadata. Workflow pins
 the exact definition, binding, endpoint target set, and policy digests accepted
 for an invocation so a later projection update cannot change in-flight work.
 
-These internal views are still explicit, least-privilege projections. Their
-current delivery mechanism is the shared event/projection boundary. They may be
-published through Config Server later if Workflow or Knowledge is separated
-from the Portal trust domain.
+The Knowledge projection is published through Config Server and follows the
+same immutable snapshot, validation, acknowledgement, last-known-good, and
+rollback contract as other independently operated runtimes. The Workflow view
+remains an explicit least-privilege internal projection until Workflow adopts a
+Config Server audience contract of its own.
 
 ## Publication Data Contract
 
-Each external audience projection must carry a common envelope. Internal views
+Each Config Server audience projection must carry a common envelope. Internal views
 must retain the equivalent publication and policy identity with the work they
 admit. The field names below are normative even if the transport representation
 evolves.
@@ -517,13 +529,13 @@ and revocation state match exactly.
 
 ### 4. Compile audience projections
 
-The publisher generates external Agent/Gateway projections and coordinated
-internal Workflow/Knowledge views from explicit schemas and field allowlists.
-Each target is canonicalized and digested independently.
+The publisher generates Agent, Gateway, and Knowledge audience projections plus
+the coordinated internal Workflow view from explicit schemas and field
+allowlists. Each target is canonicalized and digested independently.
 
 ### 5. Stage instance properties
 
-For every external target instance, the publisher first persists an immutable
+For every Config Server target instance, the publisher first persists an immutable
 staged target manifest containing:
 
 - `publicationId`, target identity, audience, and source watermark;
@@ -603,7 +615,7 @@ previous target mapping and is projected through the same all-target operation.
 
 ### 9. Acknowledge runtime application
 
-Each external runtime reports or exposes:
+Each Config Server runtime reports or exposes:
 
 - current configuration snapshot ID;
 - publication ID;
@@ -637,14 +649,14 @@ revocation epoch, and the validity window. `If-None-Match` is supported. The
 acknowledgement request contains identifiers, digests, timestamp, and a bounded
 stable result code; it never contains the rendered document or secrets.
 
-The legacy `/configs` API remains a migration path for existing clients. An
-external workload must not select live configuration by supplying
+The legacy `/configs` API remains a migration path for existing clients. A
+Config Server workload must not select live configuration by supplying
 `productId`, `productVersion`, host, environment, service, audience, or instance
 query parameters.
 
 ### Current configuration
 
-An external runtime requests current configuration using a workload JWT and,
+The runtime requests current configuration using a workload JWT and,
 where required by the deployment, mTLS. Config Server derives:
 
 - host;
@@ -684,7 +696,7 @@ debug, error, and acknowledgement paths must never log the rendered YAML body.
 
 ## Runtime Loading And Enforcement
 
-At startup, an external runtime:
+At startup, a Config Server runtime:
 
 1. authenticates to Config Server using its workload identity;
 2. requests the current configuration for its bound instance;
@@ -692,12 +704,20 @@ At startup, an external runtime:
    validity window;
 4. compiles the audience policy into its local enforcement representation;
 5. stores the immutable policy in service-owned storage when necessary;
-6. atomically replaces its in-memory current configuration; and
+6. atomically replaces its in-memory current configuration and, for Knowledge,
+   the complete version-matched published control-replica set; and
 7. records acknowledgement and health evidence.
 
 During operation, the runtime polls, watches, or refreshes Config Server with a
 conditional request. A candidate is fully parsed and validated before it
 replaces the current in-memory object.
+
+The Knowledge artifact is a complete replica inventory with explicit
+tombstones, aggregate control versions, source event watermark, and a manifest
+digest. Knowledge stages and validates the entire set, rejects a regressing
+release/watermark/version, and activates the replica set and applied-snapshot
+pointer in one Knowledge transaction. Partial delivery cannot delete state, and
+snapshot application never creates jobs or repeats historical external effects.
 
 If Config Server is unavailable, the runtime may use its cryptographically
 validated last known good snapshot only while `now < expiresAt`, allowing a
@@ -753,15 +773,15 @@ publishing a newer version does not revoke the older one.
 
 ## Coordinated Multi-Service Releases
 
-External Agent/Gateway runtimes cannot be assumed to refresh at the same
-instant, and internal Workflow/Knowledge projections may advance on a different
+Agent, Gateway, and Knowledge runtimes cannot be assumed to refresh at the same
+instant, and the internal Workflow projection may advance on a different
 checkpoint. The publication protocol therefore uses a shared release manifest
 containing:
 
 - publication ID and release version;
 - domain policy snapshot and digest;
 - required audience targets;
-- external target instance and configuration snapshot IDs;
+- Config Server target instance and configuration snapshot IDs;
 - internal view identifiers and projection checkpoints where they participate;
 - each audience content digest;
 - compatibility generation;
@@ -771,14 +791,14 @@ containing:
 
 Adjacent releases should normally support an overlap window:
 
-- an old Agent may call a new Gateway or internal Knowledge view;
-- a new Agent may call an old Gateway or internal Knowledge view; and
+- an old Agent may call a new Gateway or Knowledge runtime;
+- a new Agent may call an old Gateway or Knowledge runtime; and
 - the receiver can distinguish compatible transition traffic from an unknown
   or forged publication.
 
 If overlap is impossible, activation requires a two-phase rollout: prefetch and
-validate all external targets, verify required internal views are pinable, then
-activate traffic only after every required external audience acknowledges
+validate all Config Server targets, verify required internal views are pinable,
+then activate traffic only after every required runtime audience acknowledges
 readiness.
 
 ## Security Requirements
@@ -859,7 +879,7 @@ design:
 - `ConfigsGetHandler` trace logging can emit the entire rendered YAML result;
   that must be removed before policy or secret references use this path; and
 - `config-query` can read a historical snapshot by `hostId` and `snapshotId`,
-  but that Portal query operation is not an external workload-identity API.
+  but that Portal query operation is not a Config Server workload-identity API.
 
 The current snapshot schema also lacks an immutable staged publication target,
 coordinated release manifest, property-set/content/artifact digests, source
@@ -897,15 +917,16 @@ These Workflow projection reads are accepted internal service access, not a
 reason to publish Workflow through Config Server now. The required fixes are
 least-privilege roles, immutable admission pinning, removal of the legacy live
 definition fallback, and an explicit inventory/test of every grant. Knowledge
-requires the same read-projection/write-operational classification before its
-role is narrowed.
+follows a different boundary: Config Server supplies its immutable policy and
+its database roles are restricted to snapshot-loader writes of published
+control replicas and service-owned operational state.
 
 ## Migration Plan
 
 ### Phase 1: Publication contract
 
-- Define the common policy envelope, external Agent/Gateway schemas, and the
-  coordinated identity carried by internal Workflow/Knowledge views.
+- Define the common policy envelope, Agent/Gateway/Knowledge audience schemas,
+  and the coordinated identity carried by the internal Workflow view.
 - Define canonical serialization and digest rules.
 - Add immutable staged target manifests, publication/release metadata, and
   target snapshot linkage.
@@ -915,7 +936,7 @@ role is narrowed.
 
 - Implement deterministic effective-policy resolution.
 - Compile audience projections through explicit allowlists.
-- Freeze each external target's complete resolved configuration, desired
+- Freeze each Config Server target's complete resolved configuration, desired
   property changes, and every inherited input version/digest.
 - Emit correlated, idempotent instance-property events.
 - Verify projection checkpoints and exact property-set digests before snapshot
@@ -935,13 +956,19 @@ role is narrowed.
 
 ### Phase 4: Runtime consumers
 
-- Add typed Config Server policy loaders to external Agent and Gateway
+- Add typed Config Server policy loaders to Agent, Gateway, and Knowledge
   runtimes.
 - Persist immutable pinned policies in service-owned storage where needed.
-- Inventory Workflow and Knowledge database access; grant read-only projection
-  access and service-owned operational writes through separate roles.
-- Pin their internal policy views at work admission and remove mutable fallback
-  reads during execution.
+- Implement staged, atomic Knowledge control-replica materialization with
+  complete inventory/tombstones, ordering, backfill, replay publication,
+  last-known-good, acknowledgement, and event-versus-snapshot parity gates.
+- Remove Knowledge event-consumer and Portal projection access; restrict the
+  loader to published replicas and other roles to service-owned operational
+  writes and reads.
+- Inventory Workflow database access and grant only required read-only
+  projection access plus service-owned operational writes.
+- Pin the Knowledge configuration snapshot and Workflow internal policy view at
+  work admission and remove mutable fallback reads during execution.
 - Carry publication and policy identity on cross-service calls.
 - Add runtime acknowledgement and divergence metrics.
 
@@ -955,10 +982,12 @@ role is narrowed.
 
 ### Phase 6: Boundary enforcement
 
-- Remove Portal database credentials from Agent and Gateway deployments.
+- Remove Portal database credentials from Agent, Gateway, and Knowledge
+  deployments.
 - Replace the local Workflow superuser credential with a dedicated role and
-  restrict Workflow/Knowledge to enumerated projection reads and operational
-  writes. Deny direct authoring-projection mutation.
+  restrict Workflow to enumerated projection reads and operational writes. Deny
+  direct authoring-projection mutation. Restrict Knowledge to its snapshot-
+  loader and service-owned operational database roles.
 - Add network and database policy enforcing these differentiated boundaries.
 - Prove configuration delivery across independently operated environments.
 - Run rollback, partial outage, stale snapshot, and mixed-generation exercises.
@@ -967,27 +996,31 @@ role is narrowed.
 
 The design is complete when:
 
-1. Agent and Gateway start and serve authorized traffic without Portal database
-   credentials. Knowledge and Workflow use only enumerated read-only projections
-   and service-owned operational tables through non-superuser roles.
-2. Each external workload can retrieve only its own audience projection from
+1. Agent, Gateway, and Knowledge start and serve authorized traffic without
+   Portal database credentials. Knowledge uses only its Config Server audience
+   snapshot, published control replicas, and service-owned operational tables;
+   Workflow uses only enumerated read-only projections and service-owned
+   operational tables through non-superuser roles.
+2. Each Config Server workload can retrieve only its own audience projection from
    Config Server; query parameters cannot override workload identity.
 3. A publication produces immutable snapshots for all required target
    instances from one declared event watermark.
 4. No current pointer changes when any required projection or validation fails.
-5. A successful release exposes matching publication identity across external
-   snapshots and participating internal policy views.
+5. A successful release exposes matching publication identity across Config
+   Server audience snapshots and participating internal policy views.
 6. Existing sessions remain pinned to their original domain policy snapshot
    after a new release.
 7. Rollback and forward activation work by pointer movement without modifying
    historical snapshot content.
 8. Config Server unavailability preserves last known good behavior only until
    the signed `expiresAt` lease and fails closed afterward.
-9. An external runtime rejects a snapshot with the wrong host, audience,
+9. A Config Server runtime rejects a snapshot with the wrong host, audience,
    instance, schema, digest, signature, or validity window.
-10. External runtime database access is denied. Workflow and Knowledge prove
-    least-privilege projection reads, immutable work pinning, operational-only
-    writes, and denial of direct authoring-projection mutation.
+10. Portal database access is denied to Agent, Gateway, and Knowledge. Knowledge
+    proves immutable Config Server snapshot loading, atomic published-replica
+    materialization and pinning, and otherwise operational-only database access.
+    Workflow proves least-privilege projection reads, immutable work pinning,
+    operational-only writes, and denial of direct authoring-projection mutation.
 11. Concurrent inherited- or instance-configuration changes cannot contaminate
     a staged publication, and activation/rollback changes all target pointers
     through one event-backed transaction.
@@ -997,12 +1030,13 @@ The design is complete when:
 This architecture adds a publication compiler and coordinated release state,
 but it establishes a clean company and security boundary. Light Portal owns
 authoring and immutable publication. Config Server owns read-only delivery.
-External Agent/Gateway workloads own enforcement and runtime state without
-Portal database access. Internal Workflow/Knowledge services own operational
-state and consume narrowly scoped event-backed projections.
+Agent, Gateway, and Knowledge workloads own enforcement and runtime state
+without Portal database access. Knowledge receives its narrow policy projection
+from Config Server; internal Workflow consumes narrowly scoped event-backed
+projections.
 
 The result is independently deployable services, reproducible authorization,
-safe rollback, and no external runtime dependency on Light Portal database
-tables for control-plane policy. The accepted Workflow/Knowledge shared-database
-topology remains an explicit internal contract that can later be replaced by
-event or Config Server delivery without changing pinned policy identities.
+safe rollback, and no Config Server runtime dependency on Light Portal database
+tables for control-plane policy. The accepted Workflow shared-database topology
+remains an explicit internal contract that can later be replaced by Config
+Server delivery without changing pinned policy identities.

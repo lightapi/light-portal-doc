@@ -23,30 +23,36 @@ platform ownership and global visibility from tenant enablement and avoids
 silently changing every Agent's context.
 
 Keep the product and administration experience in Light Portal, but run
-projection, ingestion, and retrieval in one independently deployable
+indexing, ingestion, and retrieval in one independently deployable
 `light-knowledge` service under `light-fabric/apps`. Build its API on the
 `light-axum` framework and ship one long-running container by default. Inside
-that process, supervise the retrieval API, durable Portal-event consumer,
-runtime projection, lightweight job scheduler, and on-demand build tasks as
-separate lifecycle components. Retain the build engine as reusable library and
+that process, supervise the retrieval API, Config Server configuration loader,
+lightweight job scheduler, and on-demand build tasks as separate lifecycle
+components. Retain the build engine as reusable library and
 CLI/Kubernetes-Job functionality for exceptional heavy or offline work, but do
 not require an idle worker deployment in the normal topology.
 
 Keep authoritative Knowledge Base administration in the Config Server
-PostgreSQL database, and materialize the runtime authorization projection plus
-all high-volume Knowledge data-plane state in a logically separate `knowledge`
-database. A deployment may place both logical databases in one PostgreSQL
-database for a small installation or use separate databases or PostgreSQL
-instances for stronger isolation. The target runtime behavior and transaction
-boundaries are identical across those deployment modes, but compatibility mode
-still adopts the new explicit two-pool delivery boundary rather than preserving
-the predecessor project-loop's single physical transaction. Every retrieval
-request resolves Knowledge Base state, source state, Agent bindings,
-retrieval-profile selection, and strategy qualification from one
-transactionally consistent snapshot in `knowledge`; it never joins to Config
-Server. Security-removing control-plane actions do not report effective
-completion until that projection acknowledges them, and a projection whose
-heartbeat or sequence is stale beyond policy fails closed.
+PostgreSQL database. Light Portal projects committed control-plane events,
+compiles a least-privilege Knowledge audience document, and publishes it as an
+immutable Config Server snapshot. `light-knowledge` loads and validates that
+snapshot at startup and on explicit refresh, then atomically materializes its
+content-minimized published control replicas in the Knowledge database; it does
+not consume Portal events or query Portal projection tables. All high-volume
+Knowledge data-plane state
+resides in a logically separate `knowledge` database. A deployment may place
+both logical databases in one PostgreSQL instance for a small installation or
+use separate instances for stronger isolation, but Light Knowledge still uses
+the Config Server API rather than a Config Server database connection.
+
+Every retrieval request pins one immutable applied configuration snapshot, then
+reads its version-matched published control replicas for Knowledge Base state,
+source state, Agent bindings, retrieval-profile selection, and strategy
+qualification together with the active generation, ACL revisions, and
+candidates from one transactionally consistent Knowledge-database snapshot.
+Security-removing control-plane actions do not report effective completion until
+the required Light Knowledge instances acknowledge the new Config Server
+snapshot. An expired or otherwise invalid applied policy fails closed.
 
 Use a generally available PostgreSQL release with pgvector as the initial
 metadata, lexical-search, vector, authorization, graph-projection, and job-state
@@ -287,12 +293,13 @@ tag does not weaken an earlier authorization invariant.
     equivalent locator.
 17. **[P1a]** Operational ingestion records are rebuildable from source and control-plane
     configuration. They are not treated as Portal-authored business state. A
-    Portal event replay rebuilds configuration and projections only; it does not
-    prove that target-environment documents, chunks, embeddings, indexes, or
-    object-store artifacts exist. A logical publication into another environment
-    creates new target commands and resource identities, while only an exact
-    disaster-recovery restore preserves the original identities and effective
-    generation.
+    Portal event replay rebuilds Portal authoring projections only; a separate
+    validated publication creates the immutable Config Server Knowledge
+    snapshot. Neither operation proves that target-environment documents,
+    chunks, embeddings, indexes, or object-store artifacts exist. A logical
+    publication into another environment creates new target commands and
+    resource identities, while only an exact disaster-recovery restore preserves
+    the original identities and effective generation.
 18. **[P1a]** Every retrieval audit distinguishes the nullable owner host of the
     Knowledge Base from the non-null consumer host whose Agent issued the
     query.
@@ -418,10 +425,11 @@ tag does not weaken an earlier authorization invariant.
     hops, visited nodes and edges, paths, tokens, wall time, and memory. Empty,
     disconnected, pruned, or timed-out traversal safely falls back to authorized
     hybrid evidence and never widens retrieval.
-50. **[P1a]** Runtime authorization is resolved from one transactionally
-    consistent knowledge-service database snapshot. A cross-database join,
-    best-effort cache, or stale control-plane projection cannot authorize a
-    request; projection lag beyond its signed heartbeat lease fails closed.
+50. **[P1a]** Runtime authorization pins one validated immutable Config Server
+    Knowledge snapshot and resolves operational ACL and generation state from one
+    transactionally consistent knowledge-service database snapshot. A
+    cross-database join, mutable fallback read, or expired policy snapshot cannot
+    authorize a request.
 51. **[P2]** ACL state has an immutable identity and sequence independent of a
     document content version. An ACL-only change publishes a new ACL revision,
     and every segment membership references the exact revision it enforces.
@@ -464,12 +472,16 @@ Portal administrator│ Knowledge Bases, Sources,       │
                                    v
                     Config Server PostgreSQL database
                     authoritative commands and events
-                                   │ read/catch-up
+                                   │
+                                   v
+                    immutable Knowledge configuration
+                    served by the Config Server API
+                                   │ load/refresh
                                    v
              ┌─────────────────────────────────────────────┐
              │ one long-running light-knowledge container  │
              │                                             │
-             │ durable event consumer -> runtime projection│
+             │ config -> published replicas -> enforcement │
 Controller ─>│ bounded control handler      │              │
              │                              v              │
 Confluence ─>│ connector ─┐       durable job queue        │
@@ -495,7 +507,8 @@ The default deployment contains only `light-knowledge`. Its internal components
 remain explicit rather than being folded into HTTP handlers:
 
 - the REST and MCP retrieval API;
-- one durable Portal-event consumer and idempotent runtime projector;
+- one typed Config Server loader with staged replica materialization, atomic
+  apply, and last-known-good handling;
 - one lightweight job supervisor that waits without polling aggressively,
   performs recovery and scheduled reconciliation, and starts bounded job tasks;
 - on-demand connector, parsing, chunking, ACL, embedding, compaction, migration,
@@ -510,15 +523,16 @@ Kubernetes Job for large Confluence, SharePoint, migration, restore, or
 backfill work. That escape hatch is execution on demand, not a required
 always-running second service.
 
-The single process keeps a read-only control-plane event pool and distinct
-Knowledge API, projector, and job pools and database roles for
-accidental-misuse containment, query attribution, and auditing. A narrowly
-scoped acknowledgement client may call the Portal command API; it does not gain
-general Config Server write access. This does not preserve process-level
-credential isolation: a complete process compromise can reach every credential
-held by the container. Production deployments that require that stronger
-boundary must select the optional external job-execution mode and prove
-contract parity with the embedded engine.
+The single process keeps a read-only Config Server client and distinct Knowledge
+API and job database pools and roles for accidental-misuse containment, query
+attribution, and auditing. It has no control-plane event-store or Portal
+projection credential. A narrowly scoped client may acknowledge configuration
+application through the Config Server API and may call approved Portal command
+APIs; it does not gain general Config Server write access. This does not
+preserve process-level credential isolation: a complete process compromise can
+reach every credential held by the container. Production deployments that
+require that stronger boundary must select the optional external job-execution
+mode and prove contract parity with the embedded engine.
 
 Indexing is admitted behind bounded semaphores and separate database and gateway
 lanes so it cannot consume the final capacity reserved for retrieval. CPU-heavy
@@ -538,13 +552,11 @@ that merged configuration rather than reopening a separately mounted
 
 Only the minimum information needed to reach Config Server remains local or
 embedded: its URI, client authentication, TLS trust, service identity, and
-environment. The merged configuration identifies a control-plane event source
-and a Knowledge data-plane database, while their credentials remain deployment
-secrets. A compatibility deployment may resolve both to one PostgreSQL database;
-an isolated deployment uses different database or instance endpoints. The
-service validates both connections and their expected database identities
-before readiness and refuses a configuration that points the Knowledge write
-roles at the control-plane schema. Delegation and heartbeat secrets, query-cache
+environment. The merged configuration identifies the Knowledge data-plane
+database; its credentials remain deployment secrets. The service validates the
+connection and expected database identity before readiness and refuses a
+configuration that points a Knowledge role at the control-plane schema. It has
+no Config Server PostgreSQL credential. Delegation secrets, query-cache
 keys, connector credentials, and the distinct `kb-index` and `kb-query`
 workload credentials also come from deployment secret references. Direct
 environment values are permitted for local development, but production prefers
@@ -557,30 +569,29 @@ embedding-space identity, object-store roots, and other construction-time
 settings require a coordinated component rebuild or process restart; a generic
 `reload_modules` acknowledgement must not claim they changed in place.
 
-### Durable events and controller commands
+### Configuration publication and controller commands
 
 Portal commands and their committed CloudEvents remain the durable source of
-administrative intent. The embedded consumer establishes PostgreSQL `LISTEN` on
-the control-plane event source before catch-up, but notification is only a wake
-hint. Its durable source cursor and inbox live in `knowledge`. A batch is read
-from Config Server after the local cursor, then the relevant inbox rows,
-runtime projections, jobs, acknowledgements, and new cursor are committed in
-one `knowledge` transaction. Uninterested events still advance that local
-cursor. Because no distributed transaction spans the two databases, a crash
-may reread an event; event ID, aggregate sequence, and payload digest make that
-delivery idempotent. Source retention must exceed maximum supported outage and
-rebuild time, and a cursor older than retained history fails closed into an
-explicit snapshot/reseed workflow rather than skipping missing events.
+administrative intent inside the control plane. Portal projections compile that
+state into a least-privilege Knowledge audience document, create an immutable
+configuration snapshot, and activate it through Config Server. Light Knowledge
+loads only the authenticated Config Server artifact, validates its target,
+schema, publication identity, digests, signature, validity window, and
+compatibility generation, stages the complete control-replica inventory and
+tombstones, then atomically applies the snapshot and replica set or retains the
+last known good set according to policy. It never reads the Portal event stream.
 
 The controller command stream is an optional low-latency operational path, not
-a replacement for committed Portal intent. A Portal UI mutation commits its
-command/event first; the controller may then tell `light-knowledge` to wake and
-catch up to the named event or offset. Direct controller tools may expose
-status, reload, retry, and wake operations. Any tool that creates work returns a
-durable job ID, uses an idempotency key and trusted host/environment scope, and
-never keeps the control stream open for the duration of a build. If the service
-is offline or the WebSocket acknowledgement is lost, replay of the committed
-event still converges to the same projected state and job.
+a replacement for committed Portal intent or Config Server publication. A
+Portal UI mutation commits its command/event and publishes the resulting
+snapshot first; the controller may then tell `light-knowledge` to refresh to the
+named snapshot. Direct controller or administration tools may expose status,
+reload, retry, wake, and job creation operations. Any tool that creates work
+returns a durable job ID, pins the applied snapshot ID, uses an idempotency key
+and trusted host/environment scope, and never keeps the control stream open for
+the duration of a build. If controller delivery is lost, an explicit refresh or
+restart obtains the current immutable snapshot from Config Server; operational
+jobs remain durable in the Knowledge database.
 
 ### Embedded job execution
 
@@ -594,13 +605,15 @@ Each claimed job runs in a bounded supervised task and exits when it reaches a
 terminal, paused, or retryable state. Claims retain lease tokens,
 `FOR UPDATE SKIP LOCKED`, bounded renewal, idempotent effects, and terminal
 compare-and-set updates so several `light-knowledge` replicas can safely share
-the queue. Singleton projection and scheduling work uses a durable consumer
-lease or database advisory leadership with takeover; it is not inferred from a
-container name.
+the queue. Singleton scheduling work uses a durable consumer lease or database
+advisory leadership with takeover; it is not inferred from a container name.
 
 An external CLI or Kubernetes Job invokes the same job engine and claims one
 explicit durable job. It cannot bypass authorization, budgets, leases,
 generation validation, promotion, acknowledgement, audit, or purge contracts.
+It reads the pinned configuration identity and work state from the Knowledge
+job contract, accesses only the Knowledge database and approved object/provider
+dependencies, and has no Portal event-store or projection credential.
 
 ### Database boundary and physical isolation
 
@@ -616,29 +629,34 @@ small deployment colocates them physically:
 Code and migrations target the logical boundary, not the compatibility mode.
 There are no cross-database foreign keys, joins, writes, or distributed
 transactions. Control-plane UUIDs stored in `knowledge` are external identities
-validated through ordered projections and reconciliation. Local foreign keys
-may reference local projection roots. Backup and restore validate the Portal
-event watermark, Knowledge projection cursor, Knowledge checkpoint, and object
-manifest as one compatibility set.
+validated against the immutable Config Server snapshot pinned when work is
+admitted. Local foreign keys may reference snapshot-materialized published
+control-replica roots or Knowledge-owned operational roots, never a remote
+relation. Backup and restore validate the applied Config Server
+publication/snapshot identity, replica manifest digest, Knowledge checkpoint,
+and object manifest as one compatibility set.
 
-Compatibility mode adopts the new two-boundary delivery semantics; it does not
-preserve the predecessor project-loop transaction that reads `event_store_t` and
-writes Knowledge projections through one database transaction. Even when both
-logical roles resolve to one physical database, the service uses the explicit
-control-event and Knowledge pools and accepts idempotent redelivery across their
-commit boundary. Colocated-mode crash-window tests are therefore mandatory,
-not implied by isolated-mode coverage.
+Compatibility mode adopts the same delivery semantics as isolated mode: Light
+Knowledge loads policy through the Config Server API and accesses only its
+Knowledge operational database role. Physical colocation never authorizes a
+direct read of `event_store_t` or a Portal authoring/projection table.
 
-The local effective Knowledge Base projection root carries environment and all
-other immutable or versioned fields required by data-plane constraints.
-Predecessor database functions and triggers that read authoritative
-control-plane tables are repointed for isolation. In particular,
-`validate_knowledge_index_generation_profile()` validates against the local
-embedding-profile projection, and `promote_knowledge_base_generation()` reads
-the local Knowledge Base environment while keeping pointer compare-and-set,
-history, outbox, and acknowledgement evidence in one Knowledge transaction.
-Fresh-schema gates inspect function and trigger dependencies and reject any
-data-plane routine that still resolves a Config Server table.
+Published control replicas carry the content-minimized Knowledge Base, source,
+profile, qualification, policy, and Agent-binding fields required by local
+constraints and queries. The snapshot loader is their sole writer. Operational
+roots carry the external identities and immutable policy/profile digests under
+which their jobs, generations, and artifacts were created. Neither category is
+a Portal administrative write model. Predecessor database functions and
+triggers that read authoritative control-plane tables are changed to validate
+only local replica/operational invariants and caller-supplied expected
+identity/digest values. In particular,
+`validate_knowledge_index_generation_profile()` validates the generation's
+pinned embedding-profile identity and digest, and
+`promote_knowledge_base_generation()` receives the expected environment and
+policy identity from the validated applied snapshot while keeping pointer
+compare-and-set, history, outbox, and acknowledgement evidence in one Knowledge
+transaction. Fresh-schema gates reject every data-plane routine that resolves a
+Config Server table.
 
 `cascade_relationship_policy_t` is also boundary-owned metadata. Policies for
 foreign keys that move with Knowledge data are installed and validated in the
@@ -647,57 +665,55 @@ remain there. Migration removes or relocates obsolete registry rows in the same
 release that moves their constraints, and both fresh and upgraded Config Server
 schema gates must pass `validate_cascade_relationship_policies()`.
 
-Portal's event store is authoritative for the administrative history, but it is
-not joined across databases on the retrieval hot path. The projector scans only
-Knowledge event families through a partial `(event_ts, id)` keyset index and
-drains bounded batches until caught up. Database and transport failures retain
-the cursor for retry. Referential dependency gaps are durably parked while the
-source cursor advances. Retries use a five-second exponential backoff capped at
-five minutes and are dead-lettered after eight attempts with
-`KNOWLEDGE_PROJECTION_GAP_RETRY_EXHAUSTED`; an operator may requeue a repaired
-event through `knowledge.retry_projection_event`. Only deterministic rejected
-event content is dead-lettered immediately. Heartbeat renewal is scheduled
-independently from projection leadership and catch-up work. The knowledge-service
-PostgreSQL database contains a narrow runtime authorization projection with:
+Portal's event store remains authoritative for administrative history inside
+the control plane, but Light Knowledge never reads it. Portal publishes the
+Knowledge audience projection as an immutable Config Server artifact carrying
+Knowledge Base, source, binding, profile, strategy, publication, validity, and
+compatibility data. Each Light Knowledge instance validates and atomically
+applies the artifact, reports its snapshot/publication/digest evidence, and
+retains the last known good snapshot according to the signed validity policy.
+The Knowledge PostgreSQL database does not contain a Portal-event inbox, cursor,
+heartbeat, or event-built runtime authorization projection. It does contain the
+published control replicas required by retrieval and operational joins, keyed
+to the active snapshot and source control versions.
 
-- Knowledge Base owner, environment, effective lifecycle state, active
-  qualified strategies, and control-plane version;
-- source effective state, ACL mode, trust tier, approval state, quota policy,
-  and ACL freshness policy;
-- host-local Agent binding state, retrieval profile, priority, and version; and
-- the last applied Portal event sequence, signed heartbeat time, and projection
-  acknowledgement.
-
-The retrieval API first serializes quota admission in a short read-committed
-transaction that locks the consumer quota row. It then reads the runtime
-authorization projection, active generation pointer, source ACL revisions, and
-candidate rows in one separate transaction at a repeatable snapshot. It never
-authorizes from a Portal-database join or a process-local cache. The projection
-consumer applies events in aggregate order and uses an idempotent inbox;
-applied state and acknowledgement are committed together. A sequence gap parks
-only the affected aggregate and cannot stop progress for unrelated aggregates.
-The signed heartbeat and authorization-lease renewal run on an independent
-timer, so a parked or malformed event cannot expire every healthy binding.
+The retrieval API pins the currently applied immutable configuration snapshot,
+serializes quota admission in a short read-committed transaction that locks the
+consumer quota row, and then reads version-matched published control replicas,
+the active generation pointer, source ACL revisions, and candidate rows in one
+separate transaction at a repeatable snapshot. It authorizes from the pinned
+configuration/replica set plus operational evidence; it never uses a Portal-
+database join or mutable policy fallback. Each admitted job and query audit
+records the snapshot/publication and policy digests it used.
 
 An authorization-removing action such as unbind, source deactivation, Knowledge
-Base deactivation, or strategy revocation is `PENDING` until the knowledge
-database acknowledges the deny fence. The initial SLO is five seconds from
-accepted command to effective deny. The control plane emits a signed heartbeat
-at least every ten seconds; if the knowledge service is more than thirty seconds
-behind the advertised sequence or heartbeat, new retrieval fails closed for the
-affected environment. These are launch ceilings and may be tightened, not
-silently relaxed, by deployment configuration. Portal shows desired versus
-effective state and the measured revocation lag.
+Base deactivation, or strategy revocation is `PENDING` until every required
+Light Knowledge instance acknowledges applying the new configuration snapshot.
+The initial SLO is five seconds from snapshot activation to effective deny. If
+the applied snapshot expires, fails signature/digest validation, or falls
+outside the accepted compatibility generation, new retrieval fails closed for
+the affected scope. Portal shows desired versus applied snapshot identity and
+the measured revocation lag.
 
-Projection and promotion acknowledgements are accepted only from an allowlisted
-Knowledge workload principal. During topology rollback compatibility,
-`KNOWLEDGE_WORKLOAD_PRINCIPALS` admits both the existing `light-knowledge-worker`
-principal and the consolidated `light-knowledge` principal. The consolidated
-principal must pass acknowledgement and five-second deny-fence tests before
-cutover; the worker principal is removed only after the R7 rollback window
-closes. Local, development, installer, and production-like configuration use
-the same identity migration contract rather than environment-specific literal
-names.
+Configuration and promotion acknowledgements are accepted only from an
+allowlisted Knowledge workload principal. During topology rollback
+compatibility, the acknowledgement contract may admit both the existing
+`light-knowledge-worker` principal and the consolidated `light-knowledge`
+principal. The consolidated principal must pass Config Server acknowledgement
+and five-second deny tests before cutover; the worker principal is removed only
+after the rollback window closes. Local, development, installer, and
+production-like configuration use the same identity migration contract rather
+than environment-specific literal names.
+
+Portal never reads or writes Knowledge operational tables while accepting a
+promotion acknowledgement. Light Knowledge signs the exact promotion evidence;
+Portal verifies it and appends an idempotent control-plane event, then returns
+the committed event receipt. Light Knowledge inserts the acknowledgement and
+moves its promotion outbox row to `ACKNOWLEDGED` in one Knowledge-local
+transaction. Work-producing Portal commands use a Portal-local transactional
+delivery outbox and private idempotent Light Knowledge command endpoint after
+the Portal event commit. The detailed migration and lost-response gates are in
+[Portal Operational Access Boundary For Light Knowledge](../light-knowledge/portal-operational-query-boundary.md).
 
 ## Ownership And Event Model
 
@@ -803,8 +819,8 @@ recorded on the publication aggregate, not on the imported Knowledge Base.
 The event-backed configuration must remain usable if the knowledge service is
 temporarily unavailable. Conversely, the retrieval API must continue serving
 the last promoted generation while a new synchronization or reindex is
-running, provided its runtime authorization projection remains within the
-signed freshness lease. A stale projection does not trade availability for an
+running, provided its applied Config Server snapshot remains valid. A last-known-
+good snapshot cannot be used beyond its signed validity policy to create an
 unbounded authorization-revocation window.
 
 ### Cross-environment publication, replay, and restore
@@ -814,18 +830,20 @@ operations and must not share an ambiguous "import events" control:
 
 | Operation | Purpose | Identity and data behavior |
 | --- | --- | --- |
-| Projection replay | Rebuild Portal or knowledge authorization projections for the same environment from authoritative administrative history. | Preserves aggregate identities and versions, suppresses external side effects, and does not recreate operational Knowledge data. |
+| Portal projection replay | Rebuild Portal control-plane projections for the same environment from authoritative administrative history, then publish a new immutable Knowledge configuration snapshot. | Preserves aggregate identities and versions, suppresses external effects, and does not recreate operational Knowledge data or write a Knowledge authorization projection. |
 | Logical environment publication | Create an equivalent Knowledge Base definition in another environment or ownership scope. | Submits new target-environment commands, creates new Knowledge Base/source identities and target-local dependency mappings, and builds a new generation from source or approved canonical source artifacts. |
 | Physical restore | Recover the same environment and administrative history after loss. | Preserves identities only when Portal history, the Knowledge PostgreSQL checkpoint, and the matching versioned object-store checkpoint are restored at compatible watermarks. |
 
 A raw chronological event stream is not a portable Knowledge Base package.
 Historical synchronize, reindex, migration, promotion, rollback, retirement,
-delete, and purge requests must not execute merely because a projection is being
-rebuilt or events are being inspected in another environment. Projection
-application and external-effect dispatch therefore use explicit live versus
-replay/import modes. A replay updates the target projection and inbox/checkpoint
-state without fetching sources, calling an embedding provider, changing an
-active generation pointer, or issuing a second acknowledgement.
+delete, and purge requests must not execute merely because a Portal projection
+is being rebuilt or events are being inspected in another environment. Portal
+projection application and external-effect dispatch therefore use explicit live
+versus replay/import modes. A replay updates only Portal control-plane
+projections; it does not call Light Knowledge, fetch sources, call an embedding
+provider, change an active generation pointer, or issue a runtime
+acknowledgement. Any resulting Knowledge configuration is delivered only by an
+explicit validated Config Server publication.
 
 Logical publication uses a versioned portability manifest derived from accepted
 current desired state, not by rewriting immutable source events. Its two layers
@@ -933,8 +951,9 @@ Physical restore is the only portability mode that preserves resource UUIDs,
 aggregate versions, active pointer, and historical acknowledgement state. It
 uses the backup contract below rather than logical publication, rejects partial
 Portal/database/object-store combinations, and keeps retrieval disabled until
-the restored authorization projection, generation manifest, object versions,
-embedding-space availability, and environment identity are mutually consistent.
+the restored Config Server snapshot identity, generation manifest, object
+versions, embedding-space availability, and environment identity are mutually
+consistent.
 
 For Phase 1a, a clean target fixture means fresh isolated Portal and Knowledge
 schemas, an isolated object-store namespace, and the deterministic fake
@@ -1144,19 +1163,20 @@ Important rules:
   external-secret pattern. config_json contains non-secret provider selectors
   only.
 - The active index generation changes only through an atomic promotion.
-- The event-backed control-plane rows are projected into the
-  knowledge-service database as the narrow runtime authorization projection
-  defined above. That projection is physically local to operational retrieval
-  tables even when Portal's event store is deployed in another database.
+- Knowledge Base, source, Agent binding, profile, and strategy policy is supplied
+  by the validated immutable Knowledge audience snapshot from Config Server and
+  materialized as content-minimized published control replicas. It is not
+  projected from Portal events into the Knowledge database.
 - Control-plane foreign keys to `host_t`, `agent_definition_t`, LLM Alias, and
   other Portal tables remain in Config Server. The Knowledge database does not
-  reproduce those remote constraints. It stores globally unique external IDs
-  in local projection roots, rejects out-of-order or invalid events, and
-  reconciles projection digests and versions against authoritative events.
-- Data-plane foreign keys reference local projection roots such as the effective
-  Knowledge Base, source, profile, and binding rows. They never reference a
-  Config Server table through a foreign data wrapper or application-managed
-  cross-database check on the retrieval path.
+  reproduce remote constraints that require unrelated Portal relations. It
+  stores globally unique external IDs, the permitted local replica constraints,
+  and the configuration snapshot/profile digests pinned by operational work.
+- Data-plane foreign keys reference published control-replica roots or
+  Knowledge-owned operational roots such as jobs, documents, generations,
+  segments, and pointers. They never reference a Config Server table through a
+  foreign data wrapper or application-managed cross-database check on the
+  retrieval path.
 
 ### Operational tables
 
@@ -1185,13 +1205,15 @@ The knowledge service owns operational records:
 | knowledge_embedding_migration_t | Planned target profile, source/candidate generations, estimates, state, snapshot and catch-up watermarks, progress, evaluation evidence, promotion, rollback, and error summary. |
 | knowledge_query_audit_t | Bounded retrieval evidence including strategy/planner versions, segment manifest, graph path/group aggregates, fallback, and exact result identities without embedding values or full document duplication. |
 | knowledge_ingestion_error_t | Per-object retryable or terminal failure with redacted diagnostic details. |
-| knowledge_runtime_authorization_t | Transaction-local projection of effective KB/source/binding/profile/strategy state plus applied event sequence, signed heartbeat, and acknowledgement evidence. |
 
-The Knowledge database also owns content-minimized local projection roots for
-the effective Knowledge Base, source, embedding profile, retrieval profile,
-ingestion policy, strategy qualification, and Agent binding fields required by
-the operational tables. Their names are finalized during schema reconciliation;
-they are explicitly derived rows, not a second administrative write model.
+The Knowledge DDL also contains content-minimized published control replicas for
+Knowledge Bases, sources, profiles, qualifications, policies, and Agent
+bindings. The Config Server snapshot loader is their only writer; their local
+schema, constraints, writer, definition digest, and version gate are recorded in
+the three-category ownership manifest. Operational rows that depend on control-
+plane policy record the applied configuration snapshot ID, publication ID, and
+required policy/profile digests. Derived lexical, vector, segment, and optional
+graph projections remain Knowledge-owned operational artifacts.
 
 Optional strategies may add derived operational tables for extracted entities,
 aliases, relationships, summaries, and evidence contributions. Those tables
@@ -2162,7 +2184,7 @@ The runtime authorization sequence is:
 4. intersect the visible bound set with an optional caller-requested Knowledge
    Base list;
 5. enforce environment, Knowledge Base, source state, source approval, and the
-   runtime authorization projection freshness lease;
+   validity of the pinned Config Server Knowledge snapshot;
 6. build the eligible document set from consumer-tenant policy, each source's
    ACL mode, and the exact current document ACL revision;
 7. run lexical and vector candidate generation within that eligible set;
@@ -2683,7 +2705,7 @@ the strictest selected profile wins for the aggregate request. A caller may
 narrow `RETURN_PARTIAL` to strict failure but cannot opt into partial behavior
 that the binding disallows. Under `RETURN_PARTIAL`, an ACL-stale or unavailable
 KB contributes no candidates, the response status is `PARTIAL`, and a warning
-identifies the skipped authorized KB. Authorization-projection staleness,
+identifies the skipped authorized KB. Invalid or expired configuration,
 authentication failure, an unbound requested ID, or inability to prove owner
 scope always fails the complete request; partial results never bypass a trust
 decision.
@@ -2708,7 +2730,7 @@ The initial frozen error-code mapping is:
 | KNOWLEDGE_STATE_CONFLICT | 409 | No |
 | KNOWLEDGE_UNSUPPORTED_CONTRACT | 422 | No |
 | KNOWLEDGE_QUOTA_EXCEEDED | 429 | Yes |
-| KNOWLEDGE_PROJECTION_STALE | 503 | Yes |
+| KNOWLEDGE_CONFIGURATION_STALE | 503 | Yes |
 | KNOWLEDGE_DEPENDENCY_UNAVAILABLE | 503 | Yes |
 | KNOWLEDGE_DEADLINE_EXCEEDED | 504 | Yes |
 
@@ -2836,7 +2858,7 @@ Use these tabs:
 | Sync Runs | Progress, cursor type, ADD/MODIFY/DELETE/ACL_ONLY/METADATA_ONLY counts, artifact reuse, retries, rate limiting, and redacted errors. |
 | Index Generations | Active and candidate logical generations, ordered BASE/DELTA manifests, segment counts/digests, artifact and embedding reuse, compaction evidence, embedding migrations, watermarks, promotion evidence, rollback deadline, and retention state. |
 | Agent Bindings | Bind or unbind Agents and choose retrieval profile and priority. |
-| Access Policy | Per-source ACL mode, immutable ACL revision/freshness, claim mappings, revocation SLO, authorization-projection lag, trust/change-review policy, and fail-closed diagnostics. |
+| Access Policy | Per-source ACL mode, immutable ACL revision/freshness, claim mappings, revocation SLO, applied configuration snapshot and acknowledgement lag, trust/change-review policy, and fail-closed diagnostics. |
 | Retrieval Playground | Run as the current authorized principal, inspect ranks and citations, and compare profiles. |
 | Quality | Curated questions, expected documents, citation and retrieval metrics, strategy comparisons, latency, cost, and release gates. |
 | Settings | Name, description, environment, retention, desired embedding profile for a first generation or future migration, deactivation, and purge. Runtime profile is read-only and derived from the active generation. |
@@ -3173,7 +3195,7 @@ pointer, acknowledgement, delete, or purge call escapes replay mode.
 The authorization matrix crosses owner scope, consumer host, environment,
 bound/unbound/inactive binding, active/inactive KB/source, UNIFORM/MIRROR source,
 user/group/organization/link subject, allow/deny/unresolved mapping, fresh/stale
-ACL revision, control-plane projection lease, and complete/partial multi-KB
+ACL revision, Config Server snapshot validity, and complete/partial multi-KB
 policy. Every deny case asserts both zero returned content and content-free
 logs/errors. A small deterministic suite runs on each change; the larger
 qualification and load gates run before phase promotion.
@@ -3185,8 +3207,9 @@ At minimum, expose metrics and diagnostics for:
 - synchronization lag and last successful reconciliation by source;
 - ACL discovery age, reconciliation duration/coverage, revocation-visibility lag,
   stale-source fail-closed count, and unsupported provider-permission states;
-- runtime authorization projection event/heartbeat lag, pending deny fences,
-  five-second revocation-SLO violations, and stale-lease request failures;
+- Config Server snapshot/publication identity, refresh and acknowledgement lag,
+  digest or signature rejection, last-known-good use, five-second
+  revocation-SLO violations, and expired-policy request failures;
 - discovered, unchanged, updated, deleted, parsed, embedded, skipped, and
   failed object counts;
 - ADD, MODIFY, DELETE, ACL_ONLY, and METADATA_ONLY classifications; invalidated
@@ -3233,10 +3256,11 @@ At minimum, expose metrics and diagnostics for:
   correlation identifiers.
 
 Retrieval readiness covers the query database, required runtime dependencies,
-and a fresh authorization projection lease. Whether a particular Knowledge
+and a valid applied Config Server snapshot. Whether a particular Knowledge
 Base has a usable promoted generation is a scoped request result, not a reason
-to remove every retrieval replica from service. Projection failure or a stale
-deny fence fails readiness and retrieval closed. A connector or individual job
+to remove every retrieval replica from service. Configuration validation
+failure or an expired applied snapshot fails readiness and retrieval closed. A
+connector or individual job
 failure is reported through component health, metrics, and job state without
 taking healthy retrieval for unrelated sources offline.
 
@@ -3334,14 +3358,15 @@ Before adding further Knowledge phases, consolidate the runtime topology without
 changing persisted domain, event, job, generation, retrieval, or authorization
 contracts:
 
-- extract projection and job execution from the standalone worker binary into
-  reusable library components;
+- extract job execution from the standalone worker binary into reusable library
+  components and retire its Portal-event projection path;
 - embed those components in `light-knowledge` behind mutually exclusive
   `external` and `embedded` execution modes;
 - use the `light-runtime` merged Config Server path for Knowledge configuration
   and deployment secrets instead of a local bootstrap container;
-- cut over projection at a recorded durable offset and heartbeat lease, then
-  cut over job claiming after all old claims drain or expire;
+- publish and validate the Knowledge Config Server audience snapshot, remove the
+  event-consumer credential and cursor/inbox state, then cut over job claiming
+  after all old claims drain or expire;
 - keep the old worker image deployable for one rollback window while proving
   embedded/external parity, then remove it from the default release and
   Compose/Kubernetes topology; and
@@ -3384,8 +3409,9 @@ contracts:
 ### Phase 1a: documentation pilot with full BASE generations
 
 - Add event-backed global and tenant Knowledge Base, Source, retrieval profile,
-  and host-local Agent binding configuration plus the acknowledged runtime
-  authorization projection in the knowledge database.
+  and host-local Agent binding configuration in Portal, compile the Knowledge
+  audience snapshot, and publish it through Config Server with runtime
+  acknowledgement.
 - Implement nullable owner scope, partial uniqueness, effective-catalog reads,
   immutable scope, platform-only global mutation, strategy qualification, and
   one-KB runtime retrieval.
@@ -3576,19 +3602,21 @@ Phase 1a is complete when every P1a criterion passes; later phases add their own
 criteria without postponing the core trust boundary:
 
 - **[P1a]** The default deployment has exactly one long-running Knowledge
-  container. No bootstrap, projector, or idle builder container is required for
-  startup, event convergence, ingestion, maintenance, or retrieval.
+  container. No bootstrap, Portal-event consumer, projector, or idle builder
+  container is required for startup, configuration convergence, ingestion,
+  maintenance, or retrieval.
 - **[P1a]** `light-knowledge` starts from Config Server merged configuration plus
   deployment-secret references. A Config Server outage follows the declared
   last-known-good/startup policy, while a missing required secret fails startup
   without logging its value.
-- **[P1a]** The embedded event consumer establishes notification before catch-up,
-  resumes from its durable offset, advances across uninterested events, preserves
-  per-aggregate gap/idempotency evidence, and converges after notification loss,
-  process restart, and projection-leader failover.
+- **[P1a]** The typed Config Server loader conditionally fetches the authenticated
+  Knowledge audience snapshot, validates its target, schema, digests, signature,
+  validity, and compatibility, stages and atomically applies the complete
+  published control-replica set, acknowledges the result, and converges after
+  refresh loss or process restart without reading Portal events.
 - **[P1a]** Controller delivery loss cannot lose administrative intent. A direct
-  controller work request is idempotent, returns a durable job ID, and either
-  names an already committed Portal event or is limited to a non-authoritative
+  controller work request is idempotent, returns a durable job ID, and pins an
+  already published Config Server snapshot or is limited to a non-authoritative
   runtime operation.
 - **[P1a]** With no eligible job, no build task remains active and the supervisor
   performs no sub-second polling. On notification or fallback reconciliation it
@@ -3597,41 +3625,52 @@ criteria without postponing the core trust boundary:
 - **[P1a]** Concurrent indexing at the maximum admitted embedded capacity keeps
   single-KB retrieval p95 at or below 1,000 ms and cannot consume query-reserved
   database, gateway, memory, or blocking-thread capacity.
-- **[P1a]** Shutdown stops new controller commands, event claims, and job claims;
+- **[P1a]** Shutdown stops new controller commands, configuration refreshes, and
+  job claims;
   drains or safely releases active work within the shared deadline; preserves
-  recoverable leases and idempotency; and closes all API, projection, and job
+  recoverable leases and idempotency; and closes all API and job
   database pools without force-killing the container.
 - **[P1a]** The optional CLI/Kubernetes-Job path runs the same engine and produces
   byte- and row-equivalent job, artifact, generation, acknowledgement, audit,
   and failure results as embedded execution for the same frozen input.
-- **[P1a]** Every retrieval authorization join uses one transactionally
-  consistent runtime projection in the knowledge database. An unacknowledged
-  deny remains visibly PENDING, accepted-to-effective deny meets five seconds,
-  and a projection stale beyond thirty seconds returns no content.
+- **[P1a]** Every retrieval request pins one validated immutable Config Server
+  Knowledge snapshot and uses one transactionally consistent Knowledge-database
+  snapshot for its version-matched published control replicas plus operational
+  ACL, generation, and candidate state. An
+  unacknowledged deny remains visibly PENDING, snapshot-activation-to-effective
+  deny meets five seconds, and invalid or expired policy returns no content.
 - **[P1a]** Authoritative Knowledge administration and events remain in the
-  Config Server database, while runtime projections and high-volume operational
-  state reside behind the logical `knowledge` database boundary. Colocated and
-  isolated deployments produce equivalent projected rows, jobs, generations,
+  Config Server database; Portal publishes their Knowledge audience projection
+  as an immutable Config Server snapshot. High-volume operational and derived
+  search state resides behind the logical `knowledge` database boundary.
+  Colocated and isolated deployments produce equivalent jobs, generations,
   retrieval results, and audit without cross-database joins, foreign keys,
   foreign data wrappers, or distributed transactions.
-- **[P1a]** A crash before or after applying a Config Server event to
-  `knowledge` causes neither loss nor duplicate side effects. A source cursor
-  older than retained event history fails closed and can be restored only
-  through the qualified signed snapshot/reseed procedure.
-- **[P1a]** Compatibility mode uses the same explicit control-event and
-  Knowledge commit boundary as isolated mode and passes both redelivery crash
-  windows even when both pools connect to one physical PostgreSQL database.
+- **[P1a]** A crash before or after applying a Config Server snapshot leaves
+  either the complete prior snapshot or the complete candidate active, causes no
+  duplicate operational side effect, and produces an idempotent acknowledgement.
+- **[P1a]** Compatibility mode uses the same Config Server API and Knowledge-only
+  database role as isolated mode even when the databases are physically
+  colocated; Light Knowledge has no Portal event-store or projection credential.
+- **[P1a]** Portal has no SQL read or write path to Knowledge operational state.
+  Work commands use the Portal transactional delivery outbox and private
+  idempotent Knowledge command API; promotion acknowledgements use signed
+  assertions and Knowledge-local acknowledgement/outbox completion. Lost
+  responses, duplicates, and either-side restarts leave a bounded backlog and
+  converge to `ACKNOWLEDGED` without duplicate effects.
 - **[P1a]** Every data-plane foreign key, trigger, function, and cascade-policy
   registry row resolves only Knowledge-local tables after the split.
   `validate_knowledge_index_generation_profile()` and
   `promote_knowledge_base_generation()` preserve their validation and atomic
-  promotion contracts through local projection roots, and fresh/upgraded
-  Config Server cascade-policy validation remains clean.
-- **[P1a]** Portal acknowledgement authorization admits the consolidated
+  promotion contracts through pinned snapshot/profile digests and local
+  operational roots, and fresh/upgraded Config Server cascade-policy validation
+  remains clean.
+- **[P1a]** Config Server acknowledgement authorization admits the consolidated
   `light-knowledge` workload principal before cutover, admits both old and new
   principals during the rollback window, and removes the worker principal only
-  when rollback support is retired. Development and installer deny-fence smoke
-  tests exercise the real configured principal rather than a local shared ID.
+  when rollback support is retired. Development and installer configuration-
+  application and deny smoke tests exercise the real configured principal
+  rather than a local shared ID.
 - **[P1a]** Production uses a generally available PostgreSQL plus qualified
   pgvector build. PostgreSQL 19 remains non-production until GA and the complete
   compatibility/rollback matrix passes; Turso is not an initial supported
@@ -3864,7 +3903,7 @@ planning must settle them:
   rotation, logical publication tooling, optional canonical source bundle
   format, dependency-binding workflow, import-tombstone reporting horizon,
   export-audit retention horizon and its relationship to platform audit
-  retention, and the operator surface that keeps projection replay, logical
+  retention, and the operator surface that keeps Portal projection replay, logical
   publication, and physical restore unambiguous;
 - query-embedding cache size, TTL, keyed-digest rotation, and policy-boundary
   rules;
