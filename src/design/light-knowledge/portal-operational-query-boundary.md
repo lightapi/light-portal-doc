@@ -880,10 +880,17 @@ Owners: `light-portal`, Config Server, `light-fabric/apps/light-knowledge`,
 The Phase 2 implementation uses
 `getKnowledgeAudienceSnapshot` on `hybrid-query` as the Config Server
 publisher and `POST /v1/knowledge/admin/control-snapshots:apply` as the private
-loader. During startup, `light-knowledge-admin` performs a bounded bootstrap
-fetch and atomic apply before becoming ready, then its managed background task
-refreshes the five-minute lease every minute. `light-knowledge` waits for the
-admin readiness gate. No separate snapshot-sync or snapshot-refresh service is
+loader. `light-knowledge-admin` binds its listener immediately and performs the
+bootstrap fetch and atomic apply in its managed background task, which then
+keeps refreshing the lease. The lease is at least five minutes and always at
+least twice the refresh cadence, and a failed refresh retries after the short
+retry delay rather than waiting a full cadence, so a transient publisher failure
+cannot let the lease lapse. Readiness is a database check rather than an
+in-process flag: `/ready` requires a control snapshot that is `APPLIED` with an
+unexpired lease, and returns 503 `KNOWLEDGE_CONFIGURATION_UNAVAILABLE`
+otherwise. That covers initial bootstrap, a restart onto an existing valid
+snapshot, a snapshot applied through the API, and later lease expiry.
+`light-knowledge` waits for the admin readiness gate. No separate snapshot-sync or snapshot-refresh service is
 deployed. The
 publisher reads the complete replica set and its event watermark in one
 repeatable-read transaction. Each tombstone is version-bound to a terminal row
