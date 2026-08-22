@@ -6,6 +6,22 @@ Portal reads operational state only through the private `light-knowledge-admin`
 API. After physical separation, an incident response must not fall back to a
 Config Server operational mirror.
 
+## Tenant/environment rollout
+
+1. Create an isolated deployment cell containing the exact Portal query,
+   `light-knowledge`, `light-knowledge-admin`, and worker versions being
+   qualified.
+2. Update the ingress or release-routing artifact so only the declared
+   tenant/environment allowlist reaches that cell. Store its identity in
+   `allowlist.enforcementArtifact`; an empty value cannot qualify.
+3. Keep non-allowlisted traffic on a separate previously qualified cell. There
+   is deliberately no per-request JDBC or legacy-authority branch inside
+   `genai-query`.
+4. Expand with another immutable routing/release artifact only after latency,
+   availability, denial, redaction, acknowledgement-lag, and pool checks pass.
+5. Roll back by routing the allowlist to the prior qualified service cell; do
+   not re-enable the removed Config Server operational reads.
+
 ## Administration API outage
 
 1. Confirm retrieval traffic on `light-knowledge` is healthy independently of

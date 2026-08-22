@@ -191,7 +191,7 @@ flowchart LR
     UI --> PQ --> GQ
     GQ --> CDB
     GQ --> KC --> LK --> OP
-    CDB --> CS -->|immutable Knowledge snapshot| LK -->|atomic materialization| CR
+    CDB --> CS -->|immutable Knowledge snapshot| LKA -->|atomic materialization| CR
 
     CR -. no JDBC access .-> GQ
     OP -. no JDBC access .-> GQ
@@ -200,10 +200,16 @@ flowchart LR
 
 ### Deployment and scaling boundary
 
-`light-knowledge` and `light-knowledge-admin` are separate production
-services and separate containers. They are one versioned Light Knowledge
+The production topology has exactly three Knowledge application services:
+`light-knowledge`, `light-knowledge-admin`, and `light-knowledge-worker`.
+The supported Compose and Kubernetes deployments configure job execution as
+external in `light-knowledge`, so only `light-knowledge-worker` claims and runs
+operational jobs. They are one versioned Light Knowledge
 product, may share repository crates and one release manifest, and connect to
 the same Knowledge database, but they do not share a process or listener.
+Snapshot bootstrap and lease refresh are background lifecycle work inside
+`light-knowledge-admin`; they are not additional Deployments, Compose services,
+sidecars, or public listeners.
 
 This is a deliberate scaling and security boundary:
 
@@ -381,9 +387,9 @@ optional defense-in-depth; gateway verification and coarse access control do
 not replace service-side JWT verification or row-level tenant enforcement.
 
 The delegated UI token does not cover unattended startup or refresh. The one
-backend credential required by this design is for the designated Light
-Knowledge snapshot loader (packaged with `light-knowledge-admin` or run as its
-deployment job) to call the Config Server workload API. That identity is
+backend credential required by this design is for `light-knowledge-admin`'s
+internal snapshot-refresh lifecycle to call the Config Server workload API.
+That identity is
 read-only, audience-bound to Config Server, and limited to fetching and
 acknowledging the immutable Light Knowledge audience snapshot. It is never used
 for Portal query/command forwarding or by `light-knowledge-worker`.
@@ -828,10 +834,12 @@ Implementation evidence as of 2026-08-21 is the canonical
 `portal-db/postgres/knowledge/ddl.sql`, idempotent `roles.sql`, and forward-only
 `patch_20260821_02_canonical_knowledge_boundary.sql`. The
 `run-light-knowledge-phase1-boundary-gate.sh` CI gate creates both a fresh
-Knowledge database and a legacy clone-and-filter fixture, applies the upgrade,
-checks exact owned-relation inventory, local routine/trigger dependencies,
-role isolation, the registered embedding-view divergence, and semantic schema
-fingerprint parity. `light-portal-install/postgres-db/init-knowledge.sh` now
+Knowledge database and an explicit pre-boundary upgrade fixture, applies the
+forward migration, checks exact owned-relation inventory, local routine/trigger
+dependencies, role isolation, the registered embedding-view divergence, and
+semantic schema fingerprint parity. The historical clone-and-filter fixture was
+removed after Phase 7 qualification made the canonical schemas authoritative.
+`light-portal-install/postgres-db/init-knowledge.sh` now
 applies the packaged canonical DDL directly; its narrowly scoped data-only copy
 exists only to preserve Knowledge-owned state while upgrading a legacy
 single-database installation. The independently networked topology initializes
@@ -872,8 +880,11 @@ Owners: `light-portal`, Config Server, `light-fabric/apps/light-knowledge`,
 The Phase 2 implementation uses
 `getKnowledgeAudienceSnapshot` on `hybrid-query` as the Config Server
 publisher and `POST /v1/knowledge/admin/control-snapshots:apply` as the private
-loader. `light-portal-install` runs a bounded bootstrap sync before starting
-`light-knowledge`, then refreshes the five-minute lease every minute; the
+loader. During startup, `light-knowledge-admin` performs a bounded bootstrap
+fetch and atomic apply before becoming ready, then its managed background task
+refreshes the five-minute lease every minute. `light-knowledge` waits for the
+admin readiness gate. No separate snapshot-sync or snapshot-refresh service is
+deployed. The
 publisher reads the complete replica set and its event watermark in one
 repeatable-read transaction. Each tombstone is version-bound to a terminal row
 in that same payload. The
@@ -881,10 +892,26 @@ publisher and loader share only the snapshot signing key, and the loader writes 
 `light_knowledge_snapshot_loader_role`. Local development may reuse the
 interactive Portal bearer token and explicitly ignore its expiry. Production
 must use a dedicated short-scope service token (`portal.r portal.w`) for this
-Config Server-to-`light-knowledge-admin` bootstrap call. That token must also
+`light-knowledge-admin`-to-Config-Server bootstrap call. That token must also
 be bound to the target host and carry the existing `admin` or `host-admin`
 role required by both services; the token is forwarded in memory and is never
 stored in either database.
+
+Snapshot apply is intentionally sized independently from interactive reads:
+the envelope is bounded to 64 MiB and 120 seconds, while ordinary
+administration requests remain bounded to 1 MiB and two seconds. Applies for
+the same host/environment serialize on a transaction-scoped database lock,
+including the first apply when no snapshot row exists. Applied snapshots
+materialize each binding's currently qualified strategies into runtime
+authorization and its digest. Superseded snapshots are retained for 30 days
+and then deleted during a successful apply; the retention interval is bounded
+configuration.
+
+The signed audience snapshot materializes seven authoritative tables. The
+seventh is `knowledge_base_strategy_qualification_t`, scoped through its parent
+Knowledge Base with `(knowledge_base_id, strategy)` identity and explicit
+revoked/expired tombstones. `knowledge_embedding_profile_runtime_v` remains a
+Knowledge-local derived view rather than an eighth materialized table.
 
 Operational commands are sent by `hybrid-command` to
 `POST /v1/knowledge/admin/commands` with the exact UI bearer token and
@@ -898,12 +925,17 @@ inserts the Knowledge-local job. Promotion commits the pointer, pointer
 history, and `knowledge_promotion_receipt_t` row in one Knowledge transaction;
 the private `promotion-receipts` endpoint exposes that terminal operational
 evidence without a Portal database read.
+Snapshot applies and operational command submissions also write content-safe
+administration audit evidence. Actor references derive from the verified JWT
+subject rather than the serialized token, so refreshing a token does not
+change the actor identity.
 
 The deployment keeps `light-knowledge` and `light-knowledge-admin` as separate
 services and containers. Retrieval replicas can therefore scale for agent
 query traffic without scaling the Portal-only administration surface, database
 pool, or JWT/JWKS workload. The admin listener remains private and is not
-published through the runtime retrieval listener.
+published through the runtime retrieval listener. Snapshot bootstrap and
+refresh run within the admin lifecycle and do not introduce a fourth service.
 
 Exit gate:
 
@@ -949,6 +981,8 @@ Exit gate:
   capability, stale configuration, pagination, redaction, and injection tests
   pass;
 - response bodies are bounded to 1 MiB and page size to 200;
+- grouped endpoints share that 200-row budget across their collections rather
+  than applying 200 independently to every collection;
 - every JSON field and row respects its frozen size limit, so one operational
   record cannot consume the endpoint body budget;
 - every cursor is stable across timestamp ties, `hasMore` is correct, and
@@ -1104,6 +1138,17 @@ confirmation, records its SHA-256 in the invocation, prints captured row counts,
 and drops only the owner-only rollback-evidence schema. The readiness gate can
 be completed in CI; the seven-day production exit gate remains an operational
 observation and cannot be predeclared by the implementation.
+
+The tenant/environment allowlist is enforced by deployment cells, not by a
+compatibility branch in `genai-query`: an ingress or release artifact maps the
+named tenants to a cell running the qualified Portal and Knowledge versions,
+while all other tenants remain on a separate previously qualified cell. Phase 7
+evidence must name that immutable enforcement artifact. This preserves canary
+control without restoring the removed JDBC fallback. The Knowledge profiles in
+`portal-config-loc/all-in-pg` and `portal-config-dev` are explicitly retired as
+`knowledge-legacy-unsupported`; supported development uses
+`portal-config-loc/all-in-lt`, and supported packaged deployment uses
+`light-portal-install`.
 
 Exit gate:
 
