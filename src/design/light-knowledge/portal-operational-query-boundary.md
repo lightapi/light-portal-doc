@@ -893,8 +893,13 @@ snapshot, a snapshot applied through the API, and later lease expiry.
 `light-knowledge` waits for the admin readiness gate. No separate snapshot-sync or snapshot-refresh service is
 deployed. The
 publisher reads the complete replica set and its event watermark in one
-repeatable-read transaction. Each tombstone is version-bound to a terminal row
-in that same payload. The
+repeatable-read transaction. Publication sequence is the `c_offset` of the
+latest Knowledge control event below the authoritative `user-query-group`
+projection low watermark (`MIN(consumer_offsets.next_offset)`). It is not the
+event-store count or head: the consumer offset and projected rows commit in the
+same transaction, so an appended-but-not-yet-projected event cannot reuse a
+sequence with different replica content. Each tombstone is version-bound to a
+terminal row in that same payload. The
 publisher and loader share only the snapshot signing key, and the loader writes through
 `light_knowledge_snapshot_loader_role`. Local development may reuse the
 interactive Portal bearer token and explicitly ignore its expiry. Production
