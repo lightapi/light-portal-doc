@@ -10,7 +10,15 @@ The page does not define API-version-level inherited defaults. After a bulk upda
 
 ## Bulk Access
 
-Select one or more endpoint rows and choose **Bulk Access** to apply one access-control operation to all selected endpoints.
+Choose **Access Overview**, select one or more endpoints in the drawer, and
+then choose **Bulk Access** to apply one access-control operation to the
+combined selection.
+
+Use **Search endpoints** to filter by endpoint name, identifier, HTTP method,
+path, or access status. Selections are retained when the search text or other
+overview filters change, so you can search repeatedly and collect endpoints
+for one bulk update. **Select visible** adds or removes only the endpoints that
+match the current filters.
 
 Supported operation groups include:
 
@@ -33,7 +41,9 @@ The overview shows:
 - column filters by principal type
 - summary counts for endpoints with missing configuration, permissions, row filters, and column filters
 
-Use the missing-only filter to find endpoints that still have no access configuration after a bulk update.
+Use the missing-only filter to find endpoints that still have no access
+configuration after a bulk update. The text search can be combined with the
+missing-only and table-selected filters.
 
 ## Per-Endpoint Adjustments
 
