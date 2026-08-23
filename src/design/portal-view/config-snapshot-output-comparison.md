@@ -25,6 +25,9 @@ and current-snapshot selection across instances from
   implements the same contract against the same golden test vectors.
 - Let users compare two, three, or four snapshots in a semantic property
   matrix. Two snapshots remain the normal and simplest case.
+- Add a key-by-key detail view that recursively aligns nested map keys and list
+  indexes across the selected snapshots. Large structured values link directly
+  from the property matrix into this view.
 - Offer a literal side-by-side YAML diff only when exactly two snapshots are
   selected. Three or four full YAML panes are too narrow to read reliably.
 - Compare effective typed values by default and show source-only changes
@@ -543,8 +546,15 @@ The default view is a table built from the union of every emitted key:
 | `server.httpPort` | `8080` | `8080` | `8080` | Same |
 | `oauth.tokenKeyUrl` | Missing | Present | Present | Added after baseline |
 
-Each value cell renders scalars compactly and maps/lists in an expandable
-formatted block. It also shows `valueType` and `sourceLevel` as secondary text.
+Each value cell renders scalars compactly and summarizes maps/lists by their
+size. A `Compare nested keys` action opens the key-by-key detail view filtered
+to that property. The detail view recursively flattens maps into stable paths,
+builds the union of those paths, and renders values from every snapshot in the
+same table row. Lists remain order-sensitive and use their numeric index in the
+path. Empty maps, empty lists, and null values remain explicit rows rather than
+disappearing during flattening. Both views show `valueType` and `sourceLevel`
+as secondary text.
+
 Use typed deep equality after canonicalizing map keys; never compare JSON or
 YAML strings. Equal-looking values with different types remain changes: for
 example, integer `1` differs from float `1.0`, and string `"true"` differs from
@@ -567,11 +577,21 @@ search. Default to Changed + Missing so the first view focuses on drift. Keep
 unchanged rows available because users also need to prove that a critical
 property did not change.
 
-### Two-Snapshot YAML Diff
+### Key-by-Key and Two-Snapshot YAML Diff
 
-When exactly two snapshots are selected, add a `YAML diff` tab with synchronized
-left and right panes. Both panes use canonical YAML, so line differences are
-meaningful. Support wrapping, next/previous difference, copy, and download.
+The `Key-by-key diff` tab is the semantic view for maps or lists whose row
+counts differ. It is available for two to four snapshots, supports the same
+status filters as the property matrix, and can be filtered to one top-level
+property or searched by its complete nested path. A map key is matched by key,
+not by its source row number. A list item is matched by index because list
+order is part of the configuration contract.
+
+When exactly two snapshots are selected, add a `YAML text diff` tab with synchronized
+left and right panes. This remains an exact text comparison of the canonical
+artifacts rather than a structural YAML comparison. Both panes use canonical
+YAML, so line differences are meaningful. Support wrapping, next/previous
+difference, copy, and download. The UI directs users to `Key-by-key diff` when
+different map/list lengths make the text diff too coarse.
 
 Use the official [CodeMirror `MergeView`
 API](https://codemirror.net/docs/ref/#merge.MergeView) from
@@ -744,12 +764,16 @@ output/comparison workflow can ship independently of that index.
 - Different-service selections are rejected; same-service cross-instance
   selections show a warning.
 - Two, three, and four snapshot matrices use the complete key union.
+- Nested map keys align by their complete path, and keys present in only one
+  snapshot appear as missing only in the other snapshot columns.
+- Lists align by numeric index without shifting later configuration paths;
+  empty maps, empty lists, and nulls remain visible.
 - Value, missing, and source-only changes are classified correctly.
 - Map key order does not create a false change and list order does.
 - Equal-looking cross-type values are marked changed and display their types.
 - Worst-case permitted comparison computation runs in the worker, ignores stale
   replies, and terminates on selection change or unmount.
-- The YAML diff tab appears only for exactly two snapshots.
+- The YAML text diff tab appears only for exactly two snapshots.
 - The merge view is read-only, uses bounded diff work, and is destroyed on
   unmount.
 - Every download revokes its Blob URL and removes its temporary anchor on
