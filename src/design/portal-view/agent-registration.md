@@ -207,7 +207,7 @@ agents, skills, tools, memory, and session history.
 | Assign skills | No | `/app/genai/AgentSkill` | Attach curated skills to the agent. |
 | Review tools | No | `/app/genai/Tool` or `/app/genai/SkillTool` | Confirm agent-invokable tools through skill-tool assignments. |
 | Configure access | No | `/app/access/rolePermission` | Restrict who can invoke or manage the agent. |
-| Link runtime instance | No | `/app/instance/InstanceApi` | Attach the agent API version to a deployed runtime or gateway if needed. |
+| Choose runtime deployment | Yes | `/app/tasks/register-ai-agent/runtime` | Save a definition-only Agent or deploy it through a compatible native `agt` runtime. |
 
 ### Task Context
 
@@ -293,7 +293,40 @@ Recommended sections:
 - Version identity: version, service ID, environment tag, target host.
 - Model profile: provider, model, API key reference, temperature, max tokens.
 - Optional skills: selected skill IDs.
-- Optional deployment: instance or gateway link.
+- Deployment decision: save as definition, use an existing `agt` runtime, or
+  create a new `agt` runtime.
+
+The deployment decision is required even though deployment itself is optional.
+A definition-only choice is an explicit completed state, not an inferred
+absence of deployment metadata.
+
+For native `light-agent`, deployment uses this canonical relationship:
+
+```text
+agt product version
+  -> instance_t runtime
+    -> instance_api_t
+      -> api_version_t with api_type = agt
+        -> agent_definition_t with agent_def_id = api_version_id
+```
+
+The dedicated runtime step must:
+
+- lock newly created runtimes to the current active `agt` product version;
+- prefill the runtime service ID from the Agent API version;
+- offer only compatible unbound `agt` instances for existing-runtime selection;
+- create the `instance_api_t` association through the command/event path;
+- verify the active association from the query side before reporting complete;
+- never treat a bare `instanceId` or browser task context as proof of a link.
+
+The current Rust `light-agent` projection carries one `agentDefId`, so the UI
+must enforce one active Agent API association per native Agent runtime. Shared
+or multiplexed Agent hosting requires a separate runtime contract and must not
+be inferred from the generic many-to-many shape of `instance_api_t`.
+
+Runtime linking is not runtime activation. Policy compilation, Config Server
+snapshot activation, and runtime acknowledgement remain separate, observable
+stages.
 
 ### Secret Reference Selection
 

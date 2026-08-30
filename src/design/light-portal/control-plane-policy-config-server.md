@@ -9,6 +9,10 @@ configuration to independently operated workloads such as Agent, Gateway, and
 Knowledge. It also defines how publication identity is shared with the internal
 Workflow service.
 
+The development placement and migration contract for the Config Server,
+Knowledge, and Host operational databases is defined in
+[Development PostgreSQL Database Topology](development-database-topology.md).
+
 ## Decision Summary
 
 Light Portal is the policy authoring and publication control plane. Agent,
@@ -27,9 +31,9 @@ minimized Knowledge audience fields as published control replicas in its
 operational database for local constraints and transactionally consistent
 runtime queries.
 
-Config Server renders the immutable configuration snapshot selected as current
-for an authenticated Config Server workload instance. The caller has read-only
-access to its own audience-specific `values.yml` document.
+Config Server returns the immutable configuration snapshot selected as current
+for the authenticated runtime identity `(host, serviceId, envTag)`. The caller
+has read-only access to its own audience-specific `values.yml` document.
 
 Publishing a policy consists of:
 
@@ -88,8 +92,10 @@ workflow Tools use `ADD_OR_UPDATE`, which preserves every unselected Tool.
 `mcp-router.tools` array and its exact source-binding records. Consequently,
 event replay projects the event payload and does not re-resolve mutable Tool,
 API, Instance API, or Workflow records. Publications share the ordered
-`hostId + instanceId` event stream, so a competing stale publication is rejected
-at append instead of becoming a projection failure. Synchronous projection:
+Portal-internal `hostId + instanceId` event stream, so a competing stale
+publication is rejected at append instead of becoming a projection failure.
+This authoring aggregate key is not a workload identity. Synchronous
+projection:
 
 - records the immutable attempt in `gateway_tool_publication_t`;
 - writes the complete desired array to the instance-level
@@ -136,8 +142,9 @@ The existing configuration subsystem already provides useful foundations:
   values in `config_snapshot_property_t`;
 - snapshot files and other scoped overrides are copied into snapshot tables;
 - `config_snapshot_t.current` identifies the selected snapshot; and
-- a partial unique index permits only one current snapshot for a
-  `(host_id, instance_id)` pair.
+- partial unique indexes enforce the existing internal instance relationship
+  and permit only one current snapshot for the logical runtime identity
+  `(host_id, service_id, env_tag)`.
 
 Config Server already resolves effective values from the selected current
 snapshot by host, environment, service ID, configuration phase, and property
@@ -217,8 +224,13 @@ Portal database according to their narrowly assigned roles.
 
 Config Server is the read-only delivery boundary. It may read Portal-owned
 configuration snapshots, but a runtime caller may retrieve only configuration
-bound to its authenticated host, environment, service ID, instance ID, and
+bound to its authenticated `(host, serviceId, envTag)` identity and permitted
 audience.
+
+An `instance_id` UUID may remain an internal Portal database key for Instance
+Admin relationships, snapshot ownership, and audit. It is not part of workload
+identification, is not a Config Server query parameter or required workload
+claim, and must not be used to select or authorize runtime configuration.
 
 Config Server must never resolve policy from live authoring tables on behalf of
 a runtime. It serves immutable snapshot content only.
@@ -468,10 +480,9 @@ runtimePolicy:
   policyDigest: "sha256:..."
   contentDigest: "sha256:..."
   audience: "gateway"
-  hostId: "0196..."
-  environment: "dev"
+  host: "dev.lightapi.net"
   serviceId: "com.networknt.light-gateway-1.0.0"
-  instanceId: "019f..."
+  envTag: "dev"
   sourceEventSequence: 4812
   schemaVersion: 1
   createdAt: "2026-08-13T14:00:00Z"
@@ -501,6 +512,44 @@ normalized to UTC RFC 3339, object members use their exact schema names, and no
 volatile delivery timestamp participates in a semantic digest.
 
 ## Publication Lifecycle
+
+Mutable authoring and instance-property projections are never served directly
+to a runtime. A runtime observes a change only after Portal creates and
+validates an immutable snapshot, activates its current pointer, and explicitly
+requests a module reload. Reload makes the runtime call `/configs` again; it
+does not bypass snapshot creation or read unpublished property changes.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Operator
+    participant Portal as Light Portal control plane
+    participant Store as Config Server database
+    participant Config as Config Server
+    participant Controller as Controller
+    participant Runtime as Runtime service
+
+    Operator->>Portal: Publish configuration changes
+    Portal->>Store: Project mutable desired instance properties
+    Store-->>Portal: Projection watermark and property-set digest
+    Portal->>Store: Create immutable snapshot (current = false)
+    Portal->>Store: Validate snapshot and move current pointer
+    Note over Store: Snapshot content never changes; only the current pointer moves
+    Portal->>Controller: Reload module for host + serviceId + envTag
+    Controller->>Runtime: Reload configuration
+    Runtime->>Config: GET /configs?host&serviceId&envTag
+    Config->>Store: Read current snapshot for logical runtime identity
+    Store-->>Config: Immutable snapshot properties
+    Config-->>Runtime: values.yml + snapshot identity and digest
+    alt Validation succeeds
+        Runtime->>Runtime: Atomically apply candidate
+        Runtime-->>Controller: APPLIED + snapshotId + digest
+    else Validation fails
+        Runtime->>Runtime: Keep last-known-good configuration
+        Runtime-->>Controller: REJECTED + reason
+    end
+    Controller-->>Portal: Reload result
+```
 
 ### 1. Resolve
 
@@ -588,7 +637,7 @@ checks:
 - schema and type correctness;
 - required keys and files;
 - canonical digest agreement;
-- instance and audience binding;
+- host, service, environment, and audience binding;
 - runtime-version compatibility; and
 - absence of fields forbidden for the audience.
 
@@ -629,47 +678,52 @@ valid and does not grant authority beyond the snapshot itself.
 
 ## Config Server Contract
 
-The workload API is versioned separately from the existing operator and legacy
-configuration endpoints:
+`GET /configs` is the canonical workload configuration endpoint. It returns
+only the current immutable YAML snapshot selected by `(host, serviceId,
+envTag)`. There is no secondary live-resolution mode: `productId` and
+`productVersion` are not contract fields and never influence snapshot
+selection. During the compatibility window, Config Server ignores these and
+the former `apiId` and `apiVersion` query fields so older clients do not fail
+before the handler runs. `serviceId` is never inferred from `productId`. The
+same snapshot-only rule applies to `/certs` and `/files`. `configPhase` may
+remain an optional content selector within the authorized logical identity.
 
-- `GET /v2/runtime-config/current` returns the authenticated instance's current
-  immutable YAML artifact;
-- `GET /v2/runtime-config/snapshots/{snapshotId}` returns one authorized
-  historical artifact; and
-- `POST /v2/runtime-config/acknowledgements` records load or rejection evidence
-  for the authenticated instance.
+The response uses `Content-Type: application/yaml`. As the publication contract
+is implemented, `/configs` should also return `ETag`, RFC 9530 `Repr-Digest`,
+`X-Config-Snapshot-Id`, `X-Policy-Publication-Id`, `X-Policy-Digest`,
+`X-Content-Digest`, `X-Artifact-Digest`, validity-window headers,
+`X-Manifest-Key-Id`, and `X-Manifest-Signature`. The signature covers the
+logical runtime identity, publication/snapshot identity, all digests,
+compatibility generation, revocation epoch, and the validity window.
+`If-None-Match` should be supported.
 
-The current and historical responses use `Content-Type: application/yaml` and
-return `ETag`, RFC 9530 `Repr-Digest`, `X-Config-Snapshot-Id`,
-`X-Policy-Publication-Id`, `X-Policy-Digest`, `X-Content-Digest`,
-`X-Artifact-Digest`, validity-window headers, `X-Manifest-Key-Id`, and
-`X-Manifest-Signature`. The signature covers workload target identity,
-publication/snapshot identity, all digests, compatibility generation,
-revocation epoch, and the validity window. `If-None-Match` is supported. The
-acknowledgement request contains identifiers, digests, timestamp, and a bounded
-stable result code; it never contains the rendered document or secrets.
+`X-Light-Config-Instance-Id` remains temporary response metadata while existing
+`light-workflow` releases use it in their last-known-good cache record. It is
+not a lookup input, authorization claim, or member of workload identity. A
+later Workflow cache-schema migration removes that dependency before the
+header and the corresponding optional runtime-provenance field are retired.
 
-The legacy `/configs` API remains a migration path for existing clients. A
-Config Server workload must not select live configuration by supplying
-`productId`, `productVersion`, host, environment, service, audience, or instance
-query parameters.
+No separate workload acknowledgement endpoint is required. The existing
+control-plane module-reload path returns the runtime's applied or rejected
+result and records the snapshot identity and digest as operational evidence.
 
 ### Current configuration
 
-The runtime requests current configuration using a workload JWT and,
-where required by the deployment, mTLS. Config Server derives:
+The runtime requests current configuration using a workload JWT and, where
+required by the deployment, mTLS. The request supplies `host`, `serviceId`, and
+`envTag`; Config Server verifies them against the authenticated identity. These
+three values are the complete runtime lookup identity and are unique within one
+Light Portal installation. Audience and permitted configuration phase are
+authorization and content constraints, not additional identity keys.
+Caller-controlled values cannot override or widen authenticated claims. Config
+Server returns the exact immutable snapshot selected as current; its ETag is
+the quoted `artifactDigest`.
 
-- host;
-- environment;
-- service ID;
-- instance ID;
-- audience; and
-- permitted configuration phase.
-
-The token or certificate contract must expose stable host, environment, service
-ID, instance ID, and audience claims. Caller-controlled query values cannot
-override or widen them. Config Server returns the exact immutable snapshot
-selected as current; its ETag is the quoted `artifactDigest`.
+During the rolling-upgrade window only, an older client may omit `serviceId` or
+`envTag` from the query when the authenticated JWT supplies the missing `sid`
+or `env` claim. This is claim-derived compatibility, not product-based lookup.
+New clients must send all three canonical identity fields and fail locally when
+one is absent.
 
 ### Historical configuration
 
@@ -680,16 +734,16 @@ Config Server should also support retrieval by an explicit `snapshotId` for:
 - audit and diagnosis; and
 - recovery of a runtime that did not persist an older pinned policy locally.
 
-Historical access is subject to the same host, service, instance, and audience
-checks as current access. An arbitrary service cannot read another instance's
-history.
+Historical retrieval is an operator/Portal concern unless a future explicitly
+authorized snapshot endpoint is required. Any such endpoint must use the same
+`(host, serviceId, envTag)` authorization boundary and must not introduce an
+`instanceId` workload binding.
 
 ### Read-only semantics
 
-Runtime credentials authorize only configuration reads and optional delivery
-acknowledgement through a separate, narrowly scoped endpoint. They do not
-authorize property editing, snapshot creation, current-pointer changes, or
-policy publication.
+Runtime credentials authorize only configuration reads. They do not authorize
+property editing, snapshot creation, current-pointer changes, policy
+publication, or direct writes of reload evidence.
 
 Config Server access logs record identifiers and response size only. Trace,
 debug, error, and acknowledgement paths must never log the rendered YAML body.
@@ -699,7 +753,7 @@ debug, error, and acknowledgement paths must never log the rendered YAML body.
 At startup, a Config Server runtime:
 
 1. authenticates to Config Server using its workload identity;
-2. requests the current configuration for its bound instance;
+2. requests `/configs` with its host, service ID, and environment tag;
 3. verifies the response identity, audience, schema, signature, digests, and
    validity window;
 4. compiles the audience policy into its local enforcement representation;
@@ -708,9 +762,12 @@ At startup, a Config Server runtime:
    the complete version-matched published control-replica set; and
 7. records acknowledgement and health evidence.
 
-During operation, the runtime polls, watches, or refreshes Config Server with a
-conditional request. A candidate is fully parsed and validated before it
-replaces the current in-memory object.
+During operation, configuration changes are applied through the explicit
+control-plane module-reload lifecycle shown above. The runtime does not poll
+mutable Portal state and a property publication alone does not change its
+configuration. On reload, the runtime fetches the current snapshot again and
+fully parses and validates the candidate before replacing the current in-memory
+object.
 
 The Knowledge artifact is a complete replica inventory with explicit
 tombstones, aggregate control versions, source event watermark, and a manifest
@@ -803,8 +860,8 @@ readiness.
 
 ## Security Requirements
 
-- Bind every response to the authenticated workload's host, service, instance,
-  environment, and audience.
+- Bind every response to the authenticated workload's host, service ID, and
+  environment tag; enforce audience as an authorization/content constraint.
 - Use TLS with normal CA and hostname verification in production. Local
   development may use explicitly configured local CA material and disabled
   hostname verification, but that exception must remain deployment-scoped.
@@ -862,24 +919,22 @@ Required operational signals include:
 - rollback and revocation counts.
 
 Logs and traces should carry `publicationId`, `policySnapshotId`,
-`configSnapshotId`, `policyDigest`, host, environment, service ID, and instance
-ID where applicable.
+`configSnapshotId`, `policyDigest`, host, environment, and service ID. Portal
+authoring audit may additionally carry its internal instance database key, but
+workload delivery and runtime logs do not require it.
 
 ## Current Implementation Gaps
 
-The current external delivery path is not yet the workload contract in this
-design:
+The Rust Config Server in `portal-service` provides the correct delivery
+foundation: `/configs`, `/certs`, and `/files` select current snapshot content
+by `(host, serviceId, envTag)` and do not expose a mutable property-resolution
+mode. Runtime clients send only that logical identity. Remaining work includes
+the publication envelope, audience authorization, artifact digest/ETag,
+validity lease, signed manifest, and structured reload-result evidence.
 
-- `light-config-server` exposes `/configs`; when `productId` and
-  `productVersion` are supplied it deliberately reads live instance data rather
-  than the current immutable snapshot;
-- its request authorization binds host, service ID, and environment, but the
-  endpoint has no normative instance/audience claim binding, publication
-  envelope, artifact digest/ETag, validity lease, or acknowledgement contract;
-- `ConfigsGetHandler` trace logging can emit the entire rendered YAML result;
-  that must be removed before policy or secret references use this path; and
-- `config-query` can read a historical snapshot by `hostId` and `snapshotId`,
-  but that Portal query operation is not a Config Server workload-identity API.
+`config-query` can read a historical snapshot by `hostId` and `snapshotId`, but
+that Portal query operation remains an operator API rather than a Config Server
+workload-identity API.
 
 The current snapshot schema also lacks an immutable staged publication target,
 coordinated release manifest, property-set/content/artifact digests, source
@@ -945,13 +1000,23 @@ control replicas and service-owned operational state.
 
 ### Phase 3: Config Server delivery
 
-- Implement the versioned `/v2/runtime-config` workload endpoints.
-- Bind current and historical reads to host, environment, service, instance,
-  and audience workload claims.
+- Roll out compatibility first: ignore obsolete product/API query fields,
+  resolve an omitted service or environment only from authenticated claims,
+  and retain the non-authoritative instance metadata header required by
+  deployed Workflow last-known-good caches.
+- Upgrade Rust and light-4j clients to send only `(host, serviceId, envTag)` and
+  fail locally when a canonical identity field is missing.
+- Migrate Workflow last-known-good metadata away from the Portal instance UUID;
+  remove the transitional header only after the fleet no longer requires it.
+- Harden the existing `/configs` snapshot endpoint as the canonical workload
+  delivery contract; do not introduce a parallel runtime-query API.
+- Bind current reads to host, service ID, and environment-tag workload claims,
+  with audience enforced as an authorization/content constraint.
 - Return snapshot and publication metadata with content.
 - Add artifact-digest ETag/conditional retrieval and canonical digest
   verification.
-- Remove rendered-body trace logging and add bounded acknowledgement.
+- Carry bounded applied/rejected evidence through the existing module-reload
+  response path.
 - Enforce signed validity windows and fail-closed last-known-good behavior.
 
 ### Phase 4: Runtime consumers
@@ -1014,8 +1079,8 @@ The design is complete when:
    historical snapshot content.
 8. Config Server unavailability preserves last known good behavior only until
    the signed `expiresAt` lease and fails closed afterward.
-9. A Config Server runtime rejects a snapshot with the wrong host, audience,
-   instance, schema, digest, signature, or validity window.
+9. A Config Server runtime rejects a snapshot with the wrong host, service ID,
+   environment tag, audience, schema, digest, signature, or validity window.
 10. Portal database access is denied to Agent, Gateway, and Knowledge. Knowledge
     proves immutable Config Server snapshot loading, atomic published-replica
     materialization and pinning, and otherwise operational-only database access.

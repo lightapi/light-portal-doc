@@ -41,6 +41,7 @@
   - [Light Portal](./design/light-portal.md)
     - [LLM Gateway Topology Per Host And Environment](./design/light-portal/llm-gateway-topology.md)
     - [Control-Plane Policy Publication Through Config Server](./design/light-portal/control-plane-policy-config-server.md)
+    - [Development PostgreSQL Database Topology](./design/light-portal/development-database-topology.md)
     - [Global And Tenant Entity Scope](./design/light-portal/global-tenant-entity-scope.md)
     - [Global And Tenant Knowledge Bases For Shared Agent Retrieval](./design/light-portal/knowledge-base.md)
       - [Portal Operational Access Boundary](./design/light-knowledge/portal-operational-query-boundary.md)
