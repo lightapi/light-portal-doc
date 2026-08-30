@@ -2,9 +2,12 @@
 
 ## Status
 
-Initial Task Center implementation is available. The first version uses the
-existing API-version and agent-definition commands with backend validation
-guardrails. A dedicated composite registration command remains a later
+The initial Task Center implementation, model alias/policy selection, and
+native runtime-linking step are available. Registration creates authoring and
+deployment relationships; it does not make an Agent live. The immutable Agent
+projection compiler, Config Server snapshot activation, explicit reload,
+runtime acknowledgement, and end-to-end secure-default qualification remain
+production work. A dedicated composite registration command remains a later
 automation enhancement.
 
 ## Context
@@ -21,9 +24,10 @@ The current data model already reflects this relationship:
 - `api_version_t` owns the API version identity.
 - `agent_definition_t.agent_def_id` stores the same UUID as
   `api_version_t.api_version_id`.
-- `agent_definition_t` stores model and runtime profile fields such as
-  `model_provider`, `model_name`, `api_key_ref`, `temperature`, and
-  `max_tokens`.
+- `agent_definition_t` stores the selected `model_alias_id` or
+  `model_policy_id`, temperature, token limits, and other Agent profile fields.
+  Direct provider, model, and API-key-reference columns remain legacy
+  compatibility inputs rather than the native Agent configuration model.
 - Agent query paths join `agent_definition_t` to `api_version_t` and `api_t`
   to expose the effective agent metadata.
 
@@ -72,9 +76,8 @@ api_version_t
 agent_definition_t
   host_id
   agent_def_id          # same value as api_version_t.api_version_id
-  model_provider
-  model_name
-  api_key_ref
+  model_alias_id        # select this or model_policy_id
+  model_policy_id
   temperature
   max_tokens
 ```
@@ -168,9 +171,7 @@ AgentDefinitionCreatedEvent
     "hostId": "<hostId>",
     "agentDefId": "<apiVersionId>",
     "apiVersionId": "<apiVersionId>",
-    "modelProvider": "openai",
-    "modelName": "gpt-4.1",
-    "apiKeyRef": "secret://openai/default",
+    "modelAliasId": "<authorized-model-alias-id>",
     "temperature": 0.7,
     "maxTokens": 4096
   }
@@ -220,7 +221,7 @@ The task context should carry IDs from one step to the next:
   "apiVersionId": "<apiVersionId>",
   "agentDefId": "<apiVersionId>",
   "serviceId": "<serviceId>",
-  "providerId": "<modelProvider>",
+  "modelAliasId": "<optional-modelAliasId>",
   "apiType": "agt"
 }
 ```
@@ -291,7 +292,8 @@ Recommended sections:
 
 - API identity: API name, API ID, status, owner.
 - Version identity: version, service ID, environment tag, target host.
-- Model profile: provider, model, API key reference, temperature, max tokens.
+- Model profile: authorized model alias or model policy, temperature, and token
+  limits.
 - Optional skills: selected skill IDs.
 - Deployment decision: save as definition, use an existing `agt` runtime, or
   create a new `agt` runtime.
@@ -328,22 +330,84 @@ Runtime linking is not runtime activation. Policy compilation, Config Server
 snapshot activation, and runtime acknowledgement remain separate, observable
 stages.
 
-### Secret Reference Selection
+### Runtime And Configuration Identity
 
-`apiKeyRef` is a secret reference, not a secret value. The UI should not ask
-operators to paste raw provider keys into the agent definition form.
+`instanceId` and `instanceApiId` are internal Portal identifiers used to prove
+the relational association between an Agent API version and a selected runtime.
+They are useful in command payloads, query results, publication manifests, and
+audit evidence. Neither identifier is a Config Server workload identity.
 
-The preferred control is a selector populated from the configured secret
-catalog, config-server reference data, or vault integration available to the
-current host. The selected value should be stored as a reference such as:
+A runtime loads its current immutable configuration only by the canonical
+logical identity `(host, serviceId, envTag)`. Those three values must be unique
+within one Light Portal installation. The Portal must not add `instanceId`,
+`productId`, or `productVersion` as a secondary lookup mode.
+
+Any transitional Agent template or loader that still names
+`runtimePolicy.hostId`, `runtimePolicy.environment`, or
+`runtimePolicy.instanceId` must migrate to the canonical `runtimePolicy.host`,
+`runtimePolicy.envTag`, and no instance UUID before production publication is
+qualified. Compatibility parsing must not turn the instance UUID into a lookup
+or authorization key.
+
+### Model And Credential Boundary
+
+Native Agent registration selects an authorized `modelAliasId` or
+`modelPolicyId`. The alias or policy resolves the permitted LLM Gateway route;
+the Agent form does not collect provider credentials and the Agent runtime does
+not call a model provider directly.
+
+Legacy `modelProvider`, `modelName`, and `apiKeyRef` fields may remain readable
+during migration. New native registrations must not combine them with alias or
+policy selection. If a compatibility path still accepts `apiKeyRef`, it accepts
+only an approved server-owned reference and rejects raw secret material.
+
+## Publication And Runtime Activation
+
+Registration, runtime linking, and live activation are distinct states:
+
+| State | Meaning |
+| --- | --- |
+| Definition only | API version and Agent Definition exist; no runtime is selected. |
+| Runtime linked | An active `instance_api_t` relationship selects one compatible native runtime. |
+| Publication candidate | Portal has resolved and validated the Agent definition, model policy, skills, catalog, memory, knowledge, execution, channel, data-boundary, and optional A2A policy inputs. |
+| Snapshot staged | Complete desired properties have projected and an immutable Config Server snapshot has been created and validated. |
+| Snapshot active | The current pointer selects the immutable snapshot for `(host, serviceId, envTag)`. |
+| Reload requested | Portal asks the Controller to reload the target module. |
+| Applied | The runtime called `/configs`, validated the snapshot, atomically installed it, and acknowledged its snapshot ID and digest. |
+| Rejected | The runtime retained its still-valid last-known-good generation and returned a bounded reason. |
+
+The Agent publisher must reuse the lifecycle in
+[Control-Plane Policy Publication Through Config Server](../light-portal/control-plane-policy-config-server.md#publication-lifecycle).
+Mutable Agent authoring rows and `instance_property_t` staging values are never
+runtime authority. A runtime observes a change only after immutable snapshot
+creation, current-pointer activation, and an explicit reload that causes a new
+`GET /configs?host&serviceId&envTag` request.
+
+For native `light-agent`, the publisher compiles one complete Agent audience
+snapshot. If the Agent is exposed through A2A, an optional `a2aPolicy` overlay
+is part of that same snapshot and generation; it is not a second independently
+activated Agent configuration.
+
+### Optional A2A Publication Handoff
+
+Registering an Agent does not automatically expose it through A2A. After a
+complete Agent Definition and compatible runtime link exist, Portal View may
+offer an explicit **Publish through A2A** action. That follow-up owns the
+Gateway association, public route, Agent Card metadata, signing profile, public
+skill disclosure, A2A access and retention policy, and inbound/outbound
+publication lifecycle.
+
+The native runtime association and public Gateway association are different
+deployment facts:
 
 ```text
-secret://openai/default
+Agent API version -> native light-agent runtime
+Agent API version -> public light-gateway instance
 ```
 
-If manual entry is temporarily supported, it should be an advanced path with
-validation. The command should reject values that look like raw API keys and
-should accept only approved reference schemes.
+The A2A workflow must not reuse one association's `instanceApiId` as proof of
+the other. See the
+[A2A Gateway design](https://github.com/networknt/light-fabric/blob/master/docs/src/product/light-gateway/a2a-gateway.md).
 
 ### Secure Default Access
 
@@ -423,10 +487,15 @@ Command handlers should enforce these rules server-side:
 - The referenced API version must exist before creating the agent definition.
 - The referenced API version must belong to the same `hostId`.
 - The referenced API version must have agent API type.
-- `modelProvider` and `modelName` are required for creation.
-- `apiKeyRef`, when present, must be a secret reference and not a raw provider
-  key.
-- `temperature`, when provided, must be in the supported provider range.
+- New native registration must select exactly one authorized `modelAliasId` or
+  `modelPolicyId`.
+- Alias/policy selection must not be combined with legacy `modelProvider`,
+  `modelName`, or `apiKeyRef` fields.
+- Legacy provider/model writes are accepted only during the declared migration
+  window. A legacy `apiKeyRef`, when present, must be an approved server-owned
+  reference and never a raw provider key.
+- `temperature`, when provided, must be within the range allowed by the
+  selected model alias or policy.
 - `maxTokens`, when provided, must be positive.
 - Optional skill IDs must reference active skills in the same host scope.
 
@@ -448,9 +517,9 @@ Agent list and detail views should display a joined projection:
 | `serviceId` | `api_version_t.service_id` |
 | `envTag` | `api_version_t.env_tag` |
 | `targetHost` | `api_version_t.target_host` |
-| `modelProvider` | `agent_definition_t.model_provider` |
-| `modelName` | `agent_definition_t.model_name` |
-| `apiKeyRef` | `agent_definition_t.api_key_ref` |
+| `modelAliasId` | `agent_definition_t.model_alias_id` |
+| `modelPolicyId` | `agent_definition_t.model_policy_id` |
+| Legacy model fields | `agent_definition_t.model_provider`, `model_name`, and `api_key_ref`; read-only compatibility display only |
 
 The Agent Definition page should make the API identity read-only once selected.
 Mutable profile fields should remain editable through
@@ -483,23 +552,22 @@ the agent profile while keeping the API version.
 - Import/export and event replay should preserve event order for agent
   registration bundles.
 
-## Implementation Plan
+## Implementation Status And Remaining Work
 
-1. Add `Register AI Agent` to `portal-view/src/tasks/taskRegistry.ts`.
-2. Add help content under `src/help/portal-view/tasks/register-ai-agent.md`.
-3. Ensure `createApiVersion` can be launched with `apiType=agt`.
-4. Ensure form completion stores `apiVersionId` into task context.
-5. Ensure `createAgentDefinition` can prefill `agentDefId` from
-   `apiVersionId`.
-6. Add server-side validation that `agentDefId == apiVersionId`.
-7. Add compatibility handling for `agt` and `agent` API type values.
-8. Add incomplete-registration detection and repair actions for agent API
-   versions that do not have a matching agent definition.
-9. Add secure-by-default invocation checks for agents with no explicit access
-   policy.
-10. Add integration tests for the two-event registration sequence.
-11. Add a composite `registerAiAgent` command for API-version plus profile
-    creation.
+| Capability | Status | Remaining work |
+| --- | --- | --- |
+| Task Center registration and help | Implemented | Keep task/help content synchronized with the production lifecycle. |
+| `agt` API-version creation and task context | Implemented | Retain legacy `agent` only for declared import/replay compatibility. |
+| Agent Definition ID normalization and backend validation | Implemented | Maintain `agentDefId == apiVersionId` across command, replay, and query paths. |
+| Model alias/policy selection | Implemented | Retire new legacy provider/model writes after the migration gate. |
+| Native runtime selection and verified `instance_api_t` link | Implemented | Preserve one active Agent API association per native runtime until a multiplexed contract exists. |
+| Incomplete registration handling | Partial | Add the joined incomplete-Agent listing, `Profile missing`, `Complete profile`, and deactivate/delete actions outside the current task context. |
+| Immutable Agent projection publisher | Required for production | Compile the complete Agent audience projection, stage exact properties, create and validate the snapshot, activate, reload, and record acknowledgement or rejection. |
+| Secure-default invocation | Required for production | Prove through integration tests that no explicit invocation policy means deny-all and that skill/tool assignment cannot widen access. |
+| Cross-service registration tests | Required for production | Cover ordered API-version and Agent-definition events, projection lag/failure, repair, runtime linking, snapshot activation, reload, and last-known-good rejection. |
+| Composite `registerAiAgent` command | Deferred | Add before a one-click production wizard or when automation requires one validation boundary. |
+| Dedicated `/app/genai/register-agent` wizard | Deferred UX enhancement | Build on the proven commands and publication lifecycle; do not create a second publisher. |
+| A2A publication | Separate optional follow-up | Reuse the Agent publisher and add the Gateway and A2A-specific projections described by the A2A Gateway design. |
 
 ## Resolved Recommendations
 
@@ -526,3 +594,10 @@ events for the two required facts, keep projection writes behind event
 processing, reject mixed API-type families, treat incomplete version-only
 registrations as repairable but non-runnable, default runtime invocation to
 deny-all, and make the broader skill/tool/access setup optional follow-up steps.
+Use model alias or model policy selection for new native Agents. Treat
+`instanceId` as an internal Portal association identifier, while
+`(host, serviceId, envTag)` is the complete Config Server workload identity.
+Registration and runtime linking do not make an Agent live: production requires
+an immutable Agent snapshot, explicit activation and reload, and runtime
+acknowledgement. A2A exposure is an explicit downstream publication that reuses
+this Agent foundation rather than creating a parallel publisher.
