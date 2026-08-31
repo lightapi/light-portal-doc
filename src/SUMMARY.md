@@ -100,6 +100,7 @@
   - [Auth Client Secret Regeneration](./design/auth-client-secret-regeneration.md)
   - [Event Promotion](./design/event-promotion.md)
   - [Deployment Workflow](./design/deployment-workflow.md)
+  - [Enterprise AI-Assisted Bootstrap and EKS Deployment](./design/enterprise-ai-assisted-bootstrap-eks.md)
   - [OAuth OIDC Discovery](./design/light-oauth-agentcore-oidc-discovery.md)
   - [OpenAPI Endpoint Parameter Mapping](./design/openapi-endpoint.md)
 - [Help](./help/portal-view/index.md)

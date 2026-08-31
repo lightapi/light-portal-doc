@@ -567,7 +567,7 @@ the agent profile while keeping the API version.
 | Cross-service registration tests | Required for production | Cover ordered API-version and Agent-definition events, projection lag/failure, repair, runtime linking, snapshot activation, reload, and last-known-good rejection. |
 | Composite `registerAiAgent` command | Deferred | Add before a one-click production wizard or when automation requires one validation boundary. |
 | Dedicated `/app/genai/register-agent` wizard | Deferred UX enhancement | Build on the proven commands and publication lifecycle; do not create a second publisher. |
-| A2A publication | Separate optional follow-up | Reuse the Agent publisher and add the Gateway and A2A-specific projections described by the A2A Gateway design. |
+| A2A publication | Implemented optional follow-up | Portal View provides structured A2A authoring, binding, and publication actions. The publisher stages the Gateway route/policy/handler configuration and the native `a2aPolicy` or external `light-a2a` projection into immutable snapshots. Keep A2A activation separate from base Agent registration. |
 
 ## Resolved Recommendations
 
