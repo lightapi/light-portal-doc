@@ -1057,6 +1057,144 @@ control replicas and service-owned operational state.
 - Prove configuration delivery across independently operated environments.
 - Run rollback, partial outage, stale snapshot, and mixed-generation exercises.
 
+## Executable Agent Publisher Implementation Plan
+
+The generic phases above remain the target architecture. The following track
+closes the concrete bootstrap failure in which an imported Agent snapshot
+contains only bootstrap and `operationalStore.*` values while `light-agent`
+requires a complete immutable `runtimePolicy`, `portalAssociation`, and
+`agentPolicy` projection. This track is deliberately Agent-first; it must not
+invent a local-only policy format or bypass the Config Server snapshot
+authority.
+
+### P0: Freeze the cross-language contract and fail before Compose
+
+Owners: `light-fabric`, `light-portal`, `portal-config-loc`, and
+`light-portal-install`.
+
+- Freeze one machine-checked manifest of the Agent property names, value types,
+  required/non-empty fields, UUID fields, digest fields, identity equalities,
+  and validity-window ordering accepted by `light-agent`.
+- Add a Java/Rust fixture proving the two existing digest contracts exactly:
+  RFC 8785 for `runtimePolicy.contentDigest`, and the deployed ordered
+  `PolicySnapshot` JSON representation for `runtimePolicy.policyDigest`.
+- Make local and installer bootstrap query each current Agent snapshot for the
+  complete mandatory projection. Report the service ID and missing properties
+  before starting application services. The existing 15-property
+  operational-store check is necessary but not sufficient.
+- Record the current incomplete 21-property snapshot as a negative fixture so
+  a future validation regression cannot again report it as ready.
+
+Exit gate: both deployment paths reject the current incomplete baseline with a
+bounded missing-property diagnostic, and accept a cross-language full-policy
+fixture.
+
+### P1: Compile the base Agent audience projection
+
+Owner: `light-portal`.
+
+- Add an `AgentPolicyProjectionCompiler` that resolves one active native Agent
+  runtime through `instance_t -> instance_api_t -> api_version_t ->
+  agent_definition_t` and rejects missing, duplicate, read-only, cross-host, or
+  environment-mismatched links.
+- Resolve the selected `llm_public_alias_t`, Agent definition limits, assigned
+  `agent_skill_t`/`skill_t` records, and the existing operational-store
+  projection. Prompt text comes from the registered Agent/API description;
+  provider credentials never enter the Agent projection.
+- Compile safe empty collections for optional quota, rate, runner, Knowledge,
+  A2A, channel, data-boundary, and delegation policy only when no authoring
+  record grants them. Absence must never widen authority.
+- Produce every component digest, the ordered policy-snapshot digest, the
+  canonical Agent content digest, source aggregate versions, schema version,
+  compatibility generation, and the canonical workload identity
+  `(host, serviceId, envTag)`.
+- Use an explicit `LOCAL_DEMO` lease profile for `local.localhost` installations
+  so downloadable release baselines do not expire before evaluation. Production
+  profiles retain bounded leases; changing a lease profile creates a new
+  publication.
+
+Exit gate: real-PostgreSQL compiler tests cover all three local Agent instances,
+model-alias mismatch, duplicate runtime links, stale Skills, digest parity, and
+deny-safe optional defaults.
+
+### P2: Persist an event-backed atomic publication
+
+Owners: `light-portal`, `genai-command`, and `genai-query`.
+
+- Add an Agent publication-candidate query and an explicit publish command.
+  Publishing emits one immutable `AgentPolicyPublishedEvent` whose manifest
+  contains the exact property writes, expected property versions, source
+  versions, lease profile, policy/content digests, publication ID, and Config
+  snapshot ID.
+- Project the event idempotently in one database transaction into
+  `instance_property_t`, `agent_policy_snapshot_t`, and the immutable Config
+  snapshot, then move the logical current pointer. No incomplete intermediate
+  snapshot is observable. Bootstrap projection reconstructs the same desired
+  properties and snapshot without calling external services or consulting
+  wall-clock time. Operational repair replay is excluded, matching the Config
+  snapshot events, so an obsolete publication cannot become current later.
+- Reject stale expected versions and property ownership conflicts. Updates and
+  removals are explicit; a second publisher cannot silently take ownership.
+- Register the events in aggregate identity, replay policy, global snapshot
+  dependency, export, and import contracts.
+
+Exit gate: live command execution and bootstrap reconstruction produce
+byte-identical property sets and digests, and global snapshot export contains
+all authority needed to rebuild them.
+
+### P3: Snapshot validation and atomic activation
+
+Owners: `light-portal`, Config Server, and `light-fabric`.
+
+- Validate the candidate digest and expected property versions before applying
+  any write. Create and activate the Agent configuration snapshot in the same
+  projection transaction; any validation, write, evidence, or snapshot failure
+  rolls the entire publication back.
+- The compiler renders the exact Agent values accepted by the frozen Rust
+  contract before event creation. The projector stores the policy and content
+  digests as immutable evidence and activates any compatible staged A2A overlay
+  only after the new snapshot contains all of its proposed properties.
+- A2A publication may overlay an already active base Agent generation but may
+  not create or repair that base generation.
+- Preserve last-known-good behavior and return the publication, policy,
+  content, and snapshot identities in Config Server metadata.
+
+Exit gate: an incomplete snapshot, wrong identity, bad digest, expired lease,
+or mixed property generation never becomes current.
+
+### P4: Release and operator workflow
+
+Owners: Portal View, release automation, and `portal-config-loc`.
+
+- Expose `Current` or `Ready to publish` for each linked native Agent, including
+  candidate validation failures. Publication is an explicit action after Agent
+  registration or policy changes.
+- Before `daily-release.sh` exports the global snapshot, require active and
+  applied base publications for the Account, Advisor, and Tech Support local
+  Agents. Release generation fails if any required Agent is missing or stale.
+- Export the publication events before their `ConfigSnapshotCreatedEvent`
+  dependencies. Never export derived snapshot-property rows as replacement
+  authority.
+
+Exit gate: a release artifact recreated into an empty database yields the same
+three active Agent policy generations without manual SQL or retained container
+caches.
+
+### P5: Local and installer end-to-end qualification
+
+Owners: `portal-config-loc` and `light-portal-install`.
+
+- Run identical full Agent snapshot preflight in both repositories.
+- Qualify every required Agent container through health/readiness, then verify
+  its reported snapshot and content digest against Config Server.
+- Exercise fresh Docker and Podman/Silverblue installs, database recreation,
+  update over an existing last-known-good cache, and rollback.
+- Keep only the user-supplied LLM provider API key in `.env`; Agent publication
+  identifiers, database URLs, and local demo policy are non-secret configuration.
+
+Exit gate: both repositories recreate from the same signed release bundle and
+all required Agents remain healthy with matching publication evidence.
+
 ## Acceptance Criteria
 
 The design is complete when:

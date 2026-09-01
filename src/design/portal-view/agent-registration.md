@@ -562,7 +562,7 @@ the agent profile while keeping the API version.
 | Model alias/policy selection | Implemented | Retire new legacy provider/model writes after the migration gate. |
 | Native runtime selection and verified `instance_api_t` link | Implemented | Preserve one active Agent API association per native runtime until a multiplexed contract exists. |
 | Incomplete registration handling | Partial | Add the joined incomplete-Agent listing, `Profile missing`, `Complete profile`, and deactivate/delete actions outside the current task context. |
-| Immutable Agent projection publisher | Required for production | Compile the complete Agent audience projection, stage exact properties, create and validate the snapshot, activate, reload, and record acknowledgement or rejection. |
+| Immutable Agent projection publisher | In progress | Follow the executable P0-P5 track in [Control-Plane Policy Publication Through Config Server](../light-portal/control-plane-policy-config-server.md#executable-agent-publisher-implementation-plan): compile the complete Agent audience projection, stage exact event-backed properties, create and validate the snapshot, activate, reload, and record acknowledgement or rejection. |
 | Secure-default invocation | Required for production | Prove through integration tests that no explicit invocation policy means deny-all and that skill/tool assignment cannot widen access. |
 | Cross-service registration tests | Required for production | Cover ordered API-version and Agent-definition events, projection lag/failure, repair, runtime linking, snapshot activation, reload, and last-known-good rejection. |
 | Composite `registerAiAgent` command | Deferred | Add before a one-click production wizard or when automation requires one validation boundary. |

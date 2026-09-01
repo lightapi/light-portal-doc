@@ -8,9 +8,13 @@ Proposed customer deployment and qualification design.
 
 Create a dedicated Linux VM that continuously proves a complete Light Portal
 and Light Fabric environment before promoting an immutable, reviewed release to
-Amazon EKS. The VM should be based on the `portal-config-dev` topology, use
-enterprise SSO, use a customer-specific public hostname and redirect URI, and
-connect to an approved Amazon Bedrock or local model through the LLM Gateway.
+Amazon EKS. The VM should be based on the `portal-config-dev` topology, but its
+complete installation and lifecycle must be owned by scripts in
+`portal-config-bootstrap`. Operators should not copy files from a developer
+workstation or run `portal-config-dev` deployment scripts against the customer
+VM. The environment uses enterprise SSO, a customer-specific public hostname
+and redirect URI, and an approved Amazon Bedrock or local model through the LLM
+Gateway.
 
 This is a good approach because it turns a complicated, multi-service EKS
 installation into a repeatable promotion pipeline with a known-good reference
@@ -24,20 +28,30 @@ production database, or an unrestricted AI administration host. Production
 changes remain immutable, policy checked, auditable, and approval gated.
 
 ```mermaid
-flowchart LR
-    OSS[Open-source repositories] --> REL[Daily release pipeline]
-    REL --> ART[Immutable artifacts and image digests]
-    ART --> VM[Linux bootstrap and qualification VM]
+flowchart TB
+    subgraph QUALIFY[Build and qualify]
+        direction LR
+        OSS[Open-source repositories] --> REL[Daily release pipeline]
+        REL --> ART[Immutable artifacts<br/>and image digests]
+        ART --> VM[Linux bootstrap and<br/>qualification VM]
+        VM --> GATE{Qualification gates passed?}
+    end
+
     IDP[Enterprise identity provider] --> VM
-    MODEL[Amazon Bedrock or approved local model] --> VM
-    VM --> GATE{Qualification gates passed?}
+    MODEL[Amazon Bedrock or<br/>approved local model] --> VM
     GATE -- No --> FIX[Diagnose, patch, and rerun]
     FIX --> REL
-    GATE -- Yes --> APPROVE[Human promotion approval]
-    APPROVE --> DEPLOY[Light Workflow and Light Deployer]
-    DEPLOY --> EKS[Customer Amazon EKS]
-    EKS --> VERIFY[Post-deployment verification]
-    VERIFY --> EVIDENCE[Audit and release evidence]
+
+    subgraph PROMOTE[Approve and promote]
+        direction LR
+        APPROVE[Human promotion approval]
+        APPROVE --> DEPLOY[Light Workflow and<br/>Light Deployer]
+        DEPLOY --> EKS[Customer Amazon EKS]
+        EKS --> VERIFY[Post-deployment<br/>verification]
+        VERIFY --> EVIDENCE[Audit and release evidence]
+    end
+
+    GATE -- Yes --> APPROVE
 ```
 
 ## Business Value
@@ -311,6 +325,151 @@ event-baseline checksum, workflow-definition version, configuration snapshot
 IDs, and Kubernetes bundle digest as one release manifest. Never promote a
 floating `latest` tag.
 
+### Bootstrap Installer and Artifact Sources
+
+`portal-config-bootstrap` is the installation authority for the Linux VM. It
+may reuse release contracts and implementation patterns from
+`portal-config-dev`, but every download, verification, extraction, Compose
+operation, database initialization, import, readiness check, evidence capture,
+and rollback invoked on the Bootstrap VM must be implemented by a reviewed
+script in `portal-config-bootstrap`. The operator-facing path should converge
+on one idempotent install or upgrade entry point; `scripts/sync-assets.sh` and
+`scripts/restart-bootstrap-stack.sh` are current building blocks, not a reason
+for an operator to assemble the installation manually.
+
+The following inventory is the artifact contract for the Bootstrap VM. A
+release manifest must resolve every version, SHA-256 checksum, OCI digest,
+source commit, and signing identity before the installer changes the running
+environment.
+
+| Artifact | Authoritative publication source | Bootstrap destination or use | Required verification |
+|---|---|---|---|
+| `portal-config-bootstrap` scripts, Compose files, configuration templates, schema, migrations, and event deltas | The `lightapi/portal-config-bootstrap` GitHub repository, selected by an approved immutable commit or signed release tag | Bootstrap working tree and installer entry point | Compare the commit to the approved release manifest. Verify a signed tag or commit when the release process supplies one; otherwise the customer-approved manifest is the trust anchor. Reject a dirty installer tree. |
+| Release manifest and `docker-images.env` | The Light daily-release output promoted through the approved release channel; these are deployment metadata, not handwritten VM configuration | Pins the exact source commits, CDN checksums, image references, and release evidence consumed by the installer | Verify the release-manifest signature first, then verify the manifest checksum of `docker-images.env`. A tag-only image file is insufficient for qualification. |
+| Light Portal and Light Fabric images | Docker Hub organization [`networknt`](https://hub.docker.com/u/networknt): `portal-hybrid-command`, `portal-hybrid-query`, `config-server`, `light-oauth`, `portal-service`, `controller-rs`, `light-workflow`, `light-gateway`, `light-a2a`, `light-agent`, `light-knowledge`, `light-knowledge-worker`, `light-knowledge-admin`, the selected demo services, `event-exporter`, and `event-importer` | Pulled by Docker Compose or used as bounded export/import tools | Resolve each manifest entry to `networknt/<name>@sha256:<digest>` and compare the pulled `RepoDigest` with the signed release manifest. When OCI signatures are published, also verify them with the pinned NetworkNT signing identity before pull/use. Never qualify `latest` or a mutable tag alone. |
+| PostgreSQL/TimescaleDB base image and any other third-party image | The upstream publisher's Docker Hub repository, currently `timescale/timescaledb` for the Bootstrap Compose baseline | Database runtime or explicitly approved dependency | Pin an approved OCI digest in the release manifest, verify publisher provenance or OCI signature when available, retain the SBOM and scan result, and reject an unexpected repository namespace. |
+| `hybrid-command.zip` | `https://cdn.networknt.com/hybrid-command.zip` | Extracted into `hybrid-command/service/` | Verify the archive SHA-256 from the signed release manifest before extraction; then validate the ZIP and the expected file allowlist. |
+| `hybrid-query.zip` | `https://cdn.networknt.com/hybrid-query.zip` | Extracted into `hybrid-query/service/` | Verify the archive SHA-256 from the signed release manifest before extraction; then validate the ZIP and the expected file allowlist. |
+| `lightapi.zip` | `https://cdn.networknt.com/lightapi.zip` | Extracted into `light-gateway-rust/lightapi/` | Verify the archive SHA-256 from the signed release manifest before extraction; then validate the ZIP and expected Portal UI files. |
+| `signin.zip` | `https://cdn.networknt.com/signin.zip` | Extracted into `light-gateway-rust/signin/` | Verify the archive SHA-256 from the signed release manifest before extraction; then validate the ZIP and expected Sign-in UI files. |
+| Signed global environment bundle, `events.zip` | `https://cdn.networknt.com/events.zip` | The downloaded archive is verified once. Its `events.json` is then extracted as the editable global and `dev.lightapi.net` baseline and customized by the Bootstrap installer for customer configuration properties. | Verify the downloaded v2 bundle's Ed25519 signature and every member digest with the locally trusted release public key before extraction or any destructive action. Preserve the immutable archive and record its SHA-256 beside the extracted file. Do not require a signing key when the intentionally customized JSON is later imported with `--filename`. |
+| Customer SSO Portal View | Built by `portal-config-bootstrap/scripts/build-portal-view-sso.sh` from an approved, pinned `portal-view` source revision and explicit Vite SSO inputs; it is not currently one of the four generic CDN UI archives | `portal-bff-sso/lightapi/dist/` | Record the source commit, lockfile digest, build inputs, and output digest in the release manifest. Prefer a CI-built signed archive for repeatable customer releases; do not accept an unrecorded local build. |
+| Enterprise TLS chain, SSO registration values, client secret, bootstrap token, model credentials, and customer-host preservation package | Customer certificate/secret manager, identity-provider administration, and the previous qualified Bootstrap export | Mounted secrets and customer-specific restore inputs; never public release assets | Validate the certificate chain and hostname, retrieve secrets through the approved identity, verify the preservation-package checksum/signature and host identity, redact evidence, and never download these inputs from Docker Hub or the public CDN. |
+
+The CDN is the publication endpoint for runtime ZIP archives; Docker Hub is the
+container registry. HTTPS proves which endpoint answered, but it does not by
+itself prove that the bytes are the intended Light release. Artifact
+authenticity comes from a trusted signing key plus the signed manifest; content
+integrity comes from the checksums and OCI digests bound by that manifest.
+
+#### Establishing and Verifying the Signing-Key Trust Root
+
+The trusted public key must arrive through a channel independent of the
+artifact download. For example, the customer security team can install it from
+an approved change record, internal PKI package, or secrets/configuration
+service. Downloading `events.zip` and its public key from the same CDN location
+without checking a previously approved fingerprint does not establish trust.
+The private release-signing key remains in the release system and is never
+copied to the VM.
+
+For the current environment-bundle format, the release key is Ed25519 and the
+bundle manifest names it as `signature.keyId`. Provision the approved public
+key as `release-keys/<keyId>.pem`, calculate a stable SubjectPublicKeyInfo
+fingerprint, and compare it with the fingerprint recorded in the customer
+change ticket or trust store:
+
+```bash
+key_file="release-keys/${APPROVED_RELEASE_KEY_ID:?set the approved key ID}.pem"
+openssl pkey -pubin -in "$key_file" -outform DER | sha256sum
+```
+
+The comparison must be performed over a second authenticated channel and must
+match exactly before the installer is enabled. File permissions do not make an
+unverified key trustworthy. The installer must also fail closed for an unknown
+`keyId`, a manifest algorithm other than the approved algorithm, an expired or
+revoked key, a member checksum mismatch, or a signature failure.
+
+After the key is trusted, inspect the bundle identity and run the same
+verification contract used by `portal-config-dev` before extraction. The
+actual importer image must be the digest-pinned, verified image from the same
+release manifest:
+
+```bash
+unzip -p data/events.zip bundle-manifest.json |
+  jq -r '.signature | [.algorithm, .keyId, .file] | @tsv'
+
+docker run --rm \
+  -v "$PWD/data:/bundle:ro" \
+  -v "$PWD/release-keys:/bundle-keys:ro" \
+  "${EVENT_IMPORTER_IMAGE:?set a digest-pinned importer image}" \
+  --verify-bundle \
+  --bundle /bundle/events.zip \
+  --bundle-key-dir /bundle-keys
+```
+
+This verification is a download gate, not an import-time constraint. The
+workflow follows [event-importer issue #127](https://github.com/lightapi/event-importer/issues/127)
+and the corresponding importer contract:
+
+1. Download `events.zip` to a temporary path and atomically move it to
+   `data/events.zip` only after the download completes.
+2. Run `--verify-bundle` against the immutable archive and the independently
+   trusted public key. Stop without touching the database if verification
+   fails.
+3. Extract the verified `events.json` to an editable staging file and write the
+   SHA-256 of `data/events.zip` to
+   `data/events.json.source-bundle.sha256`.
+4. Let the `portal-config-bootstrap` installation script apply only the
+   allowlisted customer changes, including the required Config Server property
+   events, customer hostname, SSO redirect/callback values, and environment
+   tags. Validate JSON structure, expected match counts, aggregate versions,
+   duplicate aggregate/version pairs, and required parent references after the
+   edit.
+5. Record the customization inputs and the final customized JSON SHA-256 in the
+   installation evidence, then import the editable file without a public key:
+
+   ```bash
+   docker run --rm \
+     --network "${EVENT_IMPORT_NETWORK:?set the import network}" \
+     -v "$PWD/data:/events:ro" \
+     -e DB_JDBC_URL \
+     -e DB_USERNAME \
+     -e DB_PASSWORD \
+     "${EVENT_IMPORTER_IMAGE:?set a digest-pinned importer image}" \
+     --filename /events/events.json \
+     --bootstrap-import
+   ```
+
+The release signature authenticates the downloaded global snapshot and its
+members at the download boundary. It intentionally does not authenticate the
+environment-specific `events.json` after customization, and the importer must
+not re-run bundle verification during the filename import. The source-bundle
+digest marker proves which verified archive supplied the editable baseline;
+the recorded final JSON digest and customization evidence prove what the
+installer actually imported. If a later run finds that the adjacent archive no
+longer matches the source-bundle marker, it must prepare the editable file again
+before import.
+
+Key rotation requires an explicit release record containing the old and new
+key IDs, fingerprints, activation release, overlap period, and revocation
+date. The new key must be authorized by the previously trusted key or approved
+through the same out-of-band customer process used for initial enrollment. An
+artifact signed only by an unrecognized replacement key is rejected even when
+it was downloaded successfully from `cdn.networknt.com`.
+
+The current repositories do not yet provide this complete chain for every
+artifact. There is no single signed top-level release manifest that binds every
+CDN archive and image digest. `portal-config-dev` verifies the signed v2
+`events.zip` download, while the current Bootstrap restart script only downloads
+and extracts it; `scripts/sync-assets.sh` validates ZIP structure but does not
+yet verify signed release-manifest checksums; and the current image file uses
+tags rather than OCI digest references. Phase 1 must port the signed-bundle
+download/preparation path and the intentional editable-JSON customization path,
+add signed-manifest checksum verification for all other CDN archives, pin and
+verify all image digests, and fail before any destructive action. Until those
+gaps are closed, the Bootstrap VM is a development scaffold rather than a
+qualified software-supply-chain installation.
+
 ```mermaid
 stateDiagram-v2
     [*] --> Candidate: daily release completes
@@ -326,8 +485,11 @@ stateDiagram-v2
 
 ### Daily VM Lifecycle
 
-1. Read the published release manifest and verify signatures, checksums, image
-   digests, vulnerability policy, and required artifacts.
+1. Invoke the `portal-config-bootstrap` installer to read the published release
+   manifest, verify its enrolled signing key and signature, verify every CDN
+   checksum and image digest, enforce the vulnerability policy, and stage all
+   required artifacts. Stop before any mutation if an artifact is missing or
+   untrusted.
 2. Quiesce customer-host mutations and export an active, host-scoped global
    snapshot for the exact `dev.yourcompany.com` host UUID with
    `exportScope=host`. Record its source host, last-event consistency marker,
@@ -341,8 +503,10 @@ stateDiagram-v2
    rollback.
 5. Destroy only the explicitly disposable Bootstrap data and runtime.
 6. Recreate the database schema from the canonical release artifacts.
-7. Import the pinned CDN `events.json` baseline to recreate global entities and
-   the canonical `dev.lightapi.net` entities.
+7. Verify the downloaded `events.zip` once, extract its editable `events.json`,
+   record the source-bundle digest, apply and validate the allowlisted Bootstrap
+   configuration-property customizations, and import that JSON without signing
+   keys to recreate global and canonical `dev.lightapi.net` entities.
 8. Wait for asynchronous projection consumers to reach the required cursors.
    Import completion alone is not Portal readiness.
 9. Recreate the `dev.yourcompany.com` host root from its reviewed,
@@ -661,6 +825,13 @@ mutation is enabled.
 
 - Create the customer-specific `portal-config-dev` derivative without forking
   application code.
+- Make `portal-config-bootstrap` scripts the only operator-facing installation,
+  upgrade, database-recreation, verification, and rollback path; no manual file
+  copying or invocation of `portal-config-dev` deployment scripts is permitted.
+- Consume the signed release manifest, enroll and rotate trusted release keys,
+  verify `events.zip` once after download, customize and import the extracted
+  `events.json` without a signing key, verify every other CDN checksum, and pin
+  every first-party and third-party image by OCI digest before changing the VM.
 - Implement daily immutable release consumption and complete database
   recreation.
 - Establish readiness, projection convergence, smoke tests, evidence capture,
