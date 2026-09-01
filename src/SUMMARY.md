@@ -51,6 +51,7 @@
     - [API Version Publication To Gateway](./design/light-portal/api-version-gateway-publication.md)
     - [Direct Event Replay Execution](./design/light-portal/event-replay-direct-execution.md)
     - [Fast Snapshot-Derived Database Bootstrap](./design/light-portal/database-recreation-event-bootstrap.md)
+    - [Composable Multi-Host Snapshot Export And Bootstrap](./design/light-portal/composable-multi-host-snapshot-export.md)
   - [Light Gateway](./design/light-gateway.md)
     - [Local Model Provider Transport For LLM Gateway](./design/light-gateway/local-model-provider-transport.md)
   - [Light Workflow Tool Access Approval](./design/light-workflow/workflow-tool-access-approval.md)
