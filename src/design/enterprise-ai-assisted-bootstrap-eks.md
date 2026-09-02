@@ -364,6 +364,11 @@ integrity comes from the checksums and OCI digests bound by that manifest.
 
 #### Establishing and Verifying the Signing-Key Trust Root
 
+The platform-wide authority for signing-key custody, delivery, rotation,
+revocation, and cross-repository qualification is
+[Release Signing Key Management and Rotation](release-signing-key-management.md).
+This section applies that contract to enterprise Bootstrap enrollment.
+
 The trusted public key must arrive through a channel independent of the
 artifact download. For example, the customer security team can install it from
 an approved change record, internal PKI package, or secrets/configuration
