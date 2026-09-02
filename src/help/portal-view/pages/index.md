@@ -16,3 +16,4 @@ Available page guides:
 - [LLM Model Control Plane](./llm-model-control-plane.md)
 - [Create LLM Model](./create-llm-model.md)
 - [Skill Workspace](./skill-workspace.md)
+- [Operational Storage](./operational-storage.md)

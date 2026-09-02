@@ -1,758 +1,327 @@
-# Development PostgreSQL Database Topology
+# Operational Storage Registration And Development PostgreSQL Topology
 
 ## Status
 
-Proposed target architecture.
+Accepted and implemented target architecture. Phases P0 through P7 are
+complete, including runtime cutover and compatibility closure.
 
-This document defines the PostgreSQL topology for:
+This document defines the operational-storage boundary for Light Portal and the
+default PostgreSQL topology for:
 
 - `portal-config-loc/all-in-lt`;
-- `portal-config-dev`; and
-- `light-portal-install` development and demonstration profiles.
+- `portal-config-dev`;
+- `portal-config-bootstrap`; and
+- `light-portal-install`.
 
-It separates Light Portal control-plane data, Knowledge operational data, and
-Host-scoped operational data while keeping the development footprint to one
-PostgreSQL server by default.
-
-This page complements
-[Control-Plane Policy Publication Through Config Server](control-plane-policy-config-server.md),
-[Fast Snapshot-Derived Database Bootstrap](database-recreation-event-bootstrap.md),
-[Knowledge Base](knowledge-base.md), and
-[Light Portal Install](../light-portal-install.md).
+The detailed delivery sequence is in
+[Operational Storage Registration Implementation Plan](operational-storage-registration-plan.md).
 
 ## Decision Summary
 
-The default development topology uses one PostgreSQL 17 server with three
-separate application databases:
+The **Operational Storage** page is a registration page. It does not provision,
+create, migrate, rotate, stop, or delete a customer's database.
 
-```text
-PostgreSQL 17 server or container
-|
-+-- configserver
-|   `-- configserver schema
-|       Portal events, CQRS projections, publications, and Config Server
-|       snapshots
-|
-+-- knowledge
-|   `-- knowledge schema
-|       Knowledge documents, chunks, embeddings, indexing jobs, and runtime
-|       evidence
-|
-`-- operations
-    |-- operational_meta
-    |-- agent_ops
-    |-- a2a_ops
-    |-- workflow_ops
-    |-- execution_ops
-    |-- gateway_ops
-    |-- audit_ops
-    `-- artifact_ops
-        Host- and environment-scoped runtime state
+An administrator opens the page from a selected Host and registers the database
+that the Host's runtime services will use. Portal stores the binding in the
+`configserver` control-plane database and publishes the connection contract
+through Config Server. Customer runtimes such as Light Gateway, Light Workflow,
+Light Deployer, Light Agent, and Light A2A load their Host-specific configuration
+and connect directly to the registered database.
+
+```mermaid
+flowchart LR
+    A[Host administrator] -->|register connection| P[Light Portal]
+    P --> C[(configserver)]
+    C -->|Host-audience metadata| CS[Config Server]
+    CS -->|binding and connection descriptor| R[Customer runtimes]
+    SM[Customer secret manager or mounted file] -->|credential| R
+    R --> O[(Customer operational database)]
+    P -. no operational JDBC connection .-> O
 ```
 
-The databases may share one PostgreSQL server, volume, network, and development
-administrator. Database separation is a logical ownership and migration
-boundary; it is not an independent compute, availability, or physical backup
-boundary while all databases remain on one server.
+Database creation and schema migration belong to the customer's deployment
+process. The four development/install repositories create their demo databases
+locally because they own their PostgreSQL container, not because Portal is a
+database provisioner.
 
-The `operations` database is created and migrated with an idempotent deployment
-job similar to the existing Knowledge bootstrap. It is not created by an Agent,
-Gateway, A2A adapter, Workflow worker, or ordinary Host command handler.
+## Portal And Customer Responsibilities
 
-For the initially installed Host and environment, the deployment bootstrap may
-create the binding automatically. Additional Hosts created in Host Admin need
-an explicit operational-store binding. They must not silently inherit the
-initial Host's database.
+### Light Portal
 
-## Current Checked-In Topology
+Light Portal owns:
 
-The three deployment repositories already select the separate Knowledge
-topology:
+- the association between a selected Host and an operational database;
+- non-secret connection metadata and the mounted credential-file contract;
+- activation, update, publication, and unregistration of the binding;
+- immutable Config Server audience projections; and
+- audit history for registration changes.
 
-```text
-PORTAL_DB_TOPOLOGY=separate
-PORTAL_DB_NAME=configserver
-PORTAL_DB_KNOWLEDGE_NAME=knowledge
+Light Portal does not:
+
+- connect to the operational database;
+- test the supplied credential from the Portal process;
+- create PostgreSQL servers, containers, databases, schemas, or roles;
+- rotate a customer-owned database password;
+- drop or decommission customer data; or
+- run a continuously polling provisioning worker.
+
+### Customer Or Deployment Owner
+
+The customer or deployment owner:
+
+- creates and operates the database;
+- installs the versioned operational schemas and migrations;
+- creates least-privilege runtime roles;
+- manages network reachability, TLS, backup, restore, and retention;
+- stores and rotates credentials; and
+- mounts or otherwise resolves the credential for its runtime services.
+
+For production, the operational database can be on a customer-managed
+PostgreSQL server or managed database service inside the customer's organization.
+Only the customer runtime network requires access to it. The cloud-hosted Portal
+control plane does not require database network access.
+
+## Registration Scope
+
+The selected Host is the registration scope. The page must not ask the user to
+enter a second Environment value that can contradict that Host.
+
+For example, opening Operational Storage from `dev.networknt.com` registers the
+store for `dev.networknt.com`; it cannot register storage for
+`test.networknt.com`. To register the latter, the administrator opens the page
+from that Host's row in Host Admin.
+
+Runtime configuration still contains its instance `environment` or `envTag`
+where required by the wider Config Server contract. That runtime lane is not a
+second user-selected storage owner. The operational-store registration is keyed
+by `hostId`, with at most one active registration per Host.
+
+## Registration Contract
+
+The registration form needs enough information to identify and connect to an
+existing database without granting Portal database-administration authority:
+
+| Field | Purpose |
+| --- | --- |
+| Engine | Initially `POSTGRESQL` |
+| Server host | Customer-visible database DNS name or local Compose service name |
+| Port | PostgreSQL port, normally `5432` |
+| Database name | Exact database identity, for example `operations_networknt` |
+| TLS mode | Required connection security policy |
+| Credential source | Secret reference or mounted URL/credential file contract |
+| Minimum schema generation | Runtime compatibility and readiness requirement |
+
+Passwords and URLs containing passwords must not be written to Portal events,
+ordinary Config Server properties, logs, browser history, or exports. Config
+Server publishes the shared endpoint descriptor and credential-source contract.
+Each runtime obtains its own service-specific least-privilege role and credential
+from its deployment-owned secret mechanism; one Host-level username would
+incorrectly collapse the Agent, Workflow, Gateway, A2A, Execution, and Deployer
+roles.
+
+Development profiles may materialize local secret files automatically. Each
+runtime sees its Host-specific file at the stable path
+`/run/secrets/operational-database-url`, while the file content selects the
+correct database.
+
+## Registration Lifecycle
+
+Registration is synchronous control-plane work:
+
+1. Host Admin opens Operational Storage for one Host.
+2. The administrator enters the existing database connection contract.
+3. `registerOperationalStoreBinding` validates syntax, Host ownership,
+   uniqueness, and allowed credential-source fields.
+4. Portal appends the registration event and updates the binding projection in
+   one transaction.
+5. Portal publishes the active Host-audience projection to Config Server.
+6. Runtimes load the projection, resolve the credential locally, and perform
+   database identity/schema checks during their own readiness sequence.
+
+There is no `PENDING` provisioning job and no attempt counter. A registration
+can be `REGISTERED`, `DEACTIVATED`, or `UNREGISTERED`. Optional runtime health or
+last-validation evidence is observational and must not turn Portal into a
+database provisioner.
+
+Updating a registration creates a new aggregate version and publication digest.
+Deactivation or unregistration revokes future publication but never deletes the
+customer database. Historical provisioning events remain replayable during the
+migration but cannot schedule infrastructure work.
+
+## Config Server Runtime Binding
+
+An illustrative non-secret projection is:
+
+```yaml
+operationalStore:
+  contractVersion: 2
+  bindingId: ${operationalStore.bindingId:}
+  bindingDigest: ${operationalStore.bindingDigest:}
+  scopeKind: HOST
+  hostId: ${operationalStore.hostId:}
+  engine: POSTGRESQL
+  serverHost: ${operationalStore.serverHost:}
+  port: ${operationalStore.port:5432}
+  expectedDatabase: ${operationalStore.expectedDatabase:}
+  tlsMode: ${operationalStore.tlsMode:REQUIRE}
+  minimumSchemaGeneration: ${operationalStore.minimumSchemaGeneration:1}
+  databaseUrlFile: ${operationalStore.databaseUrlFile:/run/secrets/operational-database-url}
+  credentialGeneration: ${operationalStore.credentialGeneration:1}
 ```
 
-The current `init-environment.sh` implementation creates:
+The same semantic contract is compiled for the exact Host/service/instance
+audience. A service receives only the schemas and privileges it owns. The
+registered `credentialReference` is an absolute deployment-mounted path and is
+published unchanged as `databaseUrlFile`, even when Config Server supplies all
+non-secret fields.
 
-- database `configserver` with schema `configserver`; and
-- database `knowledge` with schema `knowledge`.
+## Development And Installer Topology
 
-The current development configuration is therefore one PostgreSQL server with
-two application databases, not one application database with two schemas. The
-same scripts also contain a `shared` compatibility profile that places
-environment-suffixed Config Server and Knowledge schemas in one database, but
-none of these three default Compose profiles selects it.
-
-The current deployment files are:
+All four repositories use one PostgreSQL container with five databases:
 
 ```text
-portal-config-loc/all-in-lt/postgres-db/init-environment.sh
-portal-config-loc/all-in-lt/docker-compose.yml
-portal-config-loc/all-in-lt/docker-compose-rust.yml
-
-portal-config-dev/postgres-db/init-environment.sh
-portal-config-dev/docker-compose.yml
-
-light-portal-install/postgres-db/init-environment.sh
-light-portal-install/docker-compose.yml
-light-portal-install/install.sh
+PostgreSQL server/container
+|
++-- configserver               # Light Portal control plane
++-- knowledge                  # Light Knowledge
++-- operations                 # Host dev.lightapi.net
++-- operations_networknt       # Host dev.networknt.com
+`-- operations_taiji           # Host dev.taiji.io
 ```
 
-Several non-Knowledge runtime services still connect to `configserver`. In
-particular, current Agent and Controller development configuration contains
-transitional direct database connections. Creating `operations` does not by
-itself authorize redirecting those connections. Tables, constraints, roles,
-migrations, and runtime configuration must move in an owned sequence.
+The three operational databases receive the same pinned operational migration
+bundle but have separate database identities, canonical Host scope roots, and
+runtime credentials. They do not require separate PostgreSQL containers.
 
-## Why A Database Is Different From A Schema
+The default registrations are:
 
-PostgreSQL schemas and databases solve different problems.
+| Host | Database | Compose server | Port |
+| --- | --- | --- | --- |
+| `dev.lightapi.net` | `operations` | `postgres` | `5432` |
+| `dev.networknt.com` | `operations_networknt` | `postgres` | `5432` |
+| `dev.taiji.io` | `operations_taiji` | `postgres` | `5432` |
 
-| Concern | Separate database | Separate schema in one database |
-| --- | --- | --- |
-| Connection | Requires a database-specific connection and pool | One connection can access all schemas |
-| Transactions | Ordinary transactions cannot span databases | One transaction can update several schemas |
-| Queries | No ordinary cross-database joins | Cross-schema joins are direct |
-| Foreign keys | Cannot reference another database | Can reference another schema |
-| Catalog and extensions | Database-specific catalog and extension installation | Shared database catalog and extensions |
-| Grants | Database connection plus schema/table grants | Schema/table grants inside one connection boundary |
-| Migration | Independently versioned database contract | Independently named schemas but one database lifecycle |
-| Logical dump and restore | Natural database-level unit | Schema filtering is possible but more coupled |
-| Failure and resources on one server | Shared server failure, WAL, CPU, memory, and storage | Shared server failure, WAL, CPU, memory, and storage |
+The canonical Host UUID comes from the reviewed local Portal export; a
+deployment must not derive or invent it from the database name. The shared P4
+delta orders the three Org events, the three Host events, and then the three
+registration events so the same identifiers are used across all four
+repositories.
 
-Separate databases make accidental cross-domain transactions, joins, and
-foreign keys impossible through ordinary SQL. They also make connection
-ownership and migration compatibility visible at runtime.
+## Fresh And Existing Volumes
 
-Separate databases on one PostgreSQL server do not provide independent high
-availability, resource isolation, or physical point-in-time recovery. A
-deployment that needs those properties must use separate PostgreSQL servers or
-managed database instances. The development topology intentionally tests the
-logical contract without paying that infrastructure cost.
+Fresh PostgreSQL entrypoint scripts run only once. The implementation therefore
+needs both paths:
 
-## Goals
+```mermaid
+flowchart TD
+    F[Fresh volume] --> I[init-environment.sh]
+    E[Existing volume] --> U[idempotent upgrade job]
+    I --> D[ensure five databases]
+    U --> D
+    D --> M[apply pinned migrations to three operational databases]
+    M --> S[materialize Host-specific local secret files]
+    S --> H[import Host events]
+    H --> B[import registration events]
+    B --> V[validate Config Server publications]
+```
 
-- Match the production control/operational ownership boundary in local and
-  development environments.
-- Keep the normal development footprint to one PostgreSQL container.
-- Keep Portal events, projections, and Config Server snapshots out of runtime
-  operational databases.
-- Keep Knowledge operational content in its dedicated Knowledge database.
-- Give Agent, A2A, Workflow, Gateway, audit, and artifact metadata
-  service-owned schemas in a Host-scoped operational database.
-- Make existing-volume upgrades idempotent and testable.
-- Use the same database identity, scope-root, migration, role, and runtime
-  binding contracts with and without Light Portal.
-- Let the initial development Host start automatically while keeping additional
-  Host provisioning explicit.
-- Prevent runtime services from using provisioning or schema-owner
-  credentials.
-- Preserve independent service migration and eventual physical separation.
-
-## Non-Goals
-
-- Do not run one PostgreSQL container per database by default.
-- Do not create a database per logical Agent definition.
-- Do not create an operational schema in the `configserver` database.
-- Do not merge Knowledge and ordinary Host operational data.
-- Do not move every current `DATABASE_URL` before its tables and constraints
-  are ready.
-- Do not let application startup create a database with an elevated runtime
-  credential.
-- Do not treat the default development credential or database administrator as
-  a production secret-management model.
-- Do not automatically bind every Host Admin record to the initial development
-  Host's operational data.
-- Do not imply that database separation on one server is physical fault
-  isolation.
+Database initialization and migration may use a PostgreSQL administrator because
+they are deployment operations. Runtime services use least-privilege roles and
+must not create databases or schemas during startup.
 
 ## Data Authority
 
 ### `configserver`
 
-The `configserver` database is the Light Portal control-plane database. It
-contains:
-
-- canonical Portal command events and outbox records;
-- CQRS authoring projections and read models;
-- Host, product, API, Agent, skill, Workflow, policy, and instance intended
-  state;
-- publication records and compatibility metadata;
-- mutable instance-property staging state;
-- immutable configuration snapshots; and
-- Config Server delivery metadata.
-
-It must not become the durable authority for:
-
-- Agent sessions or turns;
-- A2A tasks or callback correlation;
-- Workflow executions, timers, attempts, or leases;
-- concrete memories or session history;
-- artifact bytes or runtime artifact metadata;
-- traffic/audit records; or
-- Knowledge documents, chunks, embeddings, or indexing work.
+`configserver` contains Portal events, CQRS projections, Host records,
+registration metadata, publication records, and Config Server snapshots. It
+contains no operational runtime rows and no plaintext database password.
 
 ### `knowledge`
 
-The `knowledge` database remains a separate Knowledge operational boundary. It
-contains Knowledge-owned data such as:
+`knowledge` contains Light Knowledge documents, chunks, embeddings, indexing
+jobs, and derived retrieval state. Its sharing and residency rules are separate
+from ordinary Host operational storage.
 
-- ingestion and synchronization jobs;
-- documents and versions;
-- chunks and embeddings;
-- search and index generations;
-- graph and derived retrieval state;
-- Knowledge runtime ACL replicas admitted from published policy; and
-- query and processing evidence.
+### Host operational databases
 
-Knowledge may be shared across explicitly authorized Hosts in one organization.
-It therefore does not use the ordinary `(hostId, envTag)` store identity as its
-only boundary. Its scope validation includes the organization, Knowledge-store
-binding, residency policy, and authorized Host membership.
-
-Knowledge policy remains authored in Portal and published through Config
-Server. Physical placement of operational data does not make the Knowledge
-database a control-plane policy source.
-
-### `operations`
-
-The `operations` database is bound to one Host and environment in the default
-development profile. Service-owned schemas include:
-
-| Schema | Initial authority |
-| --- | --- |
-| `operational_meta` | Store identity, Host/environment scope root, schema contract generations, migration ledger, and binding evidence |
-| `agent_ops` | Agent sessions, turns, actions, approvals, idempotency, quotas, and initially Agent-owned memory |
-| `a2a_ops` | External A2A task facade, callbacks, cancellation, correlation, idempotency, and deletion evidence |
-| `workflow_ops` | Workflow process/task state, timers, worklists, retries, and service-owned outbox |
-| `execution_ops` | Shared execution attempts, scheduling requests, leases, and common execution foundations |
-| `gateway_ops` | Bounded durable Gateway operational state when required; never Agent or Workflow authority |
-| `audit_ops` | Durable audit delivery outbox/spool and integrity evidence, not the long-term analytics warehouse |
-| `artifact_ops` | Artifact ownership, immutable digest, scan, retention, hold, and object-store references; not large artifact bytes |
-
-Colocation does not grant cross-schema write authority. Cross-service
-relationships use stable identifiers, authenticated APIs, outbox/integration
-events, and reconciliation rather than permanent cross-schema foreign keys.
-
-`memory_ops` may initially remain part of `agent_ops`. It becomes a separate
-schema only after the Memory API owns the session-to-bank invariant and no
-cross-schema foreign key is required.
-
-## Development Deployment Profiles
-
-### Default Single-Host Profile
-
-Each of the three development deployments starts with one configured Host and
-environment. The deployment bootstrap creates:
-
-```text
-database: operations
-scopeKind: HOST_ENVIRONMENT
-hostId: <configured development Host UUID>
-environment: <configured envTag>
-bindingId: <stable deployment binding UUID>
-```
-
-The Host UUID and `envTag` are explicit inputs. They are never inferred from a
-subdomain, Compose project name, database name, or Config Server property
-profile such as `loc` or `demo`.
-
-The simple database name `operations` is acceptable because the scope root is
-authoritative. Production provisioning may generate an opaque database name
-from the binding identifier.
-
-### Additional Dedicated Host
-
-To test the enterprise dedicated profile, an additional runnable Host and
-environment receives another database on the same development PostgreSQL
-server:
-
-```text
-operations_<opaque-scope-suffix>
-```
-
-The suffix is generated from a stable binding identifier rather than a
-user-visible Host name. This avoids leaking names and avoids rename coupling.
-The new database gets the same service schemas, distinct scope root, and
-distinct runtime role credentials.
-
-### Explicit Pooled Development Profile
-
-A high-density or Portal-cloud simulation may bind several Hosts to one
-`operations` database. This is an explicit `DEV_POOLED` profile, not an
-automatic fallback.
-
-In pooled mode:
-
-- every tenant-owned primary or unique key includes `host_id`;
-- every query binds Host identity from authenticated runtime state;
-- caches, outbox records, object prefixes, audit records, exports, and erasure
-  jobs are Host-scoped;
-- service runtime roles do not own their tables;
-- PostgreSQL Row-Level Security is enabled and forced as defense in depth; and
-- cross-Host denial tests are release gates.
-
-The default single-Host development database must not be relabeled as pooled
-without those contracts.
-
-## Host Admin Boundary
-
-Host identity and database provisioning are coordinated but separate state
-machines.
-
-For the initially installed development Host, deployment bootstrap may create
-the Host binding from pinned deployment inputs. For a Host later created in
-Host Admin:
-
-1. the existing `createHost` command creates the control-plane Host identity;
-2. the administrator selects or defers an operational-store profile;
-3. a separate binding command records Host, environment, profile, and desired
-   generation;
-4. an asynchronous provisioning worker creates or validates the database;
-5. the worker installs roles, scope root, and schemas;
-6. validation moves the binding to `READY`; and
-7. only then may Config Server publish the binding to runtime instances.
-
-Until that control-plane lifecycle exists, development scripts may bootstrap
-only the pinned initial Host. Creating another Host in Portal must not
-implicitly share the `operations` database or grant runtime activation.
-
-Host deactivation does not drop the database. Decommissioning is a separate,
-authorized, retention-aware operation.
-
-## Bootstrap And Migration Architecture
-
-Fresh-volume initialization and existing-volume migration are different
-paths. Both are required.
-
-```text
-Fresh PostgreSQL volume
-        |
-        v
-init-environment.sh
-  |-- ensure configserver
-  |-- ensure knowledge
-  `-- ensure operations
-        |
-        v
-versioned schema installers
-
-Every deployment or restart
-        |
-        v
-operational-store-bootstrap
-  |-- discover or create database idempotently
-  |-- validate scope root
-  |-- install/validate roles
-  `-- invoke pinned service migrations
-        |
-        v
-operational-schema-validation
-        |
-        v
-runtime services may start
-```
-
-PostgreSQL entrypoint scripts run only when the data directory is empty.
-Adding `operations` only to `/docker-entrypoint-initdb.d` would leave existing
-`portal-config-loc`, `portal-config-dev`, and installer volumes unchanged.
-
-The target therefore has two cooperating jobs:
-
-1. `init-environment.sh` creates all three databases during fresh bootstrap;
-   and
-2. an idempotent `operational-store-bootstrap` one-shot service runs on every
-   deployment and can safely bring an existing volume to the desired database
-   and schema generation.
-
-Database creation and schema migration should remain separate checkpoints even
-when one development container performs both. Database creation may require a
-cluster administration role and cannot be assumed to share the application
-migration transaction.
-
-## Bootstrap Inputs
-
-The development bootstrap accepts non-secret identity and topology inputs:
-
-```yaml
-PORTAL_DB_TOPOLOGY: separate
-PORTAL_DB_NAME: configserver
-PORTAL_DB_KNOWLEDGE_NAME: knowledge
-PORTAL_DB_OPERATIONAL_NAME: operations
-PORTAL_DB_OPERATIONAL_PROFILE: DEV_DEDICATED
-PORTAL_DB_OPERATIONAL_HOST_ID: <development-host-uuid>
-PORTAL_DB_OPERATIONAL_ENVIRONMENT: dev
-PORTAL_DB_OPERATIONAL_BINDING_ID: <stable-binding-uuid>
-PORTAL_DB_OPERATIONAL_CONTRACT_GENERATION: "1"
-```
-
-The exact environment value differs by deployment and must match the runtime
-`envTag`. The example `dev` is not a universal default.
-
-Production credentials remain secret-provider references or mounted files.
-Development Compose may use generated local credentials, but URLs and passwords
-must not enter Portal events, configuration snapshots, exported `values.yml`,
-or the operational scope root.
-
-## Operational Scope Root
-
-The `operational_meta` schema contains an immutable root row similar to:
-
-```text
-binding_id
-binding_version
-binding_digest
-scope_kind
-scope_id
-host_id
-environment
-database_identity
-deployment_profile
-schema_contract_generation
-created_at
-activated_at
-```
-
-A runtime must validate this row before becoming ready. A syntactically valid
-connection to an `operations` database for another Host or environment fails
-closed.
-
-The database name alone is not identity. Copying or restoring a database must
-retain or deliberately replace the scope root under a controlled clone or
-relocation workflow.
-
-## Roles And Privileges
-
-The development server may have one PostgreSQL administrator for bootstrap,
-but runtime services do not use it.
-
-| Role class | Purpose |
-| --- | --- |
-| Bootstrap administrator | Create/adopt databases and role classes; used only by the deployment job |
-| Scope/migration owner | Own `operational_meta` or one service schema and apply pinned migrations |
-| Agent runtime | Read/write only `agent_ops` and approved shared interfaces |
-| A2A runtime | Read/write only `a2a_ops` and approved shared interfaces |
-| Workflow runtime | Read/write only `workflow_ops` and approved execution interfaces |
-| Execution runtime | Read/write only `execution_ops` |
-| Gateway runtime | Read/write only the bounded `gateway_ops` and audit interfaces it requires |
-| Audit publisher | Append/read delivery state needed to publish audit evidence |
-| Artifact runtime | Read/write artifact metadata and approved object references |
-
-Each role receives `CONNECT` only to the database it needs and `USAGE` only on
-its schemas. `CREATE` on `public` is revoked. Unqualified `search_path` use is
-constrained to the owned schema and reviewed shared interfaces.
-
-Development may initially share a generated password file among transitional
-services, but role separation remains a release gate before the operational
-store is treated as qualified.
-
-## Runtime Binding
-
-Config Server publishes non-secret operational-store metadata to the exact
-Host, service, environment, and instance audience. The runtime combines it
-with a deployment-owned secret file.
-
-An illustrative projection is:
-
-```yaml
-operationalStore:
-  contractVersion: ${operationalStore.contractVersion:1}
-  bindingId: ${operationalStore.bindingId:}
-  bindingDigest: ${operationalStore.bindingDigest:}
-  profileId: ${operationalStore.profileId:dev-dedicated-postgres-v1}
-  deploymentProfile: ${operationalStore.deploymentProfile:DEV_DEDICATED}
-  scopeKind: ${operationalStore.scopeKind:HOST_ENVIRONMENT}
-  scopeId: ${operationalStore.scopeId:}
-  hostId: ${operationalStore.hostId:}
-  environment: ${operationalStore.environment:}
-  serviceOwner: ${operationalStore.serviceOwner:}
-  schema: ${operationalStore.schema:}
-  minimumSchemaVersion: ${operationalStore.minimumSchemaVersion:1}
-  expectedDatabase: ${operationalStore.expectedDatabase:operations}
-  databaseUrlFile: ${operationalStore.databaseUrlFile:/run/secrets/operational-database-url}
-  objectStoreProfileId: ${operationalStore.objectStoreProfileId:}
-  auditSinkProfileId: ${operationalStore.auditSinkProfileId:}
-```
-
-This is a common semantic contract, not one file copied between products:
-
-- native `light-agent` receives it in its Agent audience projection;
-- `light-a2a` receives it in the A2A audience projection;
-- Workflow receives its Workflow/execution schema bindings;
-- Gateway receives only its bounded operational and audit bindings; and
-- Knowledge continues using its separately scoped Knowledge connection and
-  policy projection.
-
-The actual database URL remains a deployment secret. Config Server publishes
-the expected file path and binding identity, not the credential.
+Each Host operational database contains the service-owned schemas required by
+the pinned bundle, including `operational_meta`, `agent_ops`, `a2a_ops`,
+`workflow_ops`, `execution_ops`, `gateway_ops`, `audit_ops`, and `artifact_ops`.
+Colocation in one database does not grant cross-schema write authority.
 
 ## Service Connection Matrix
 
-| Service class | Target database | Notes |
-| --- | --- | --- |
-| Portal command/event processors | `configserver` | Event-sourced control-plane writes and projections |
-| Portal query services | `configserver` | Control-plane and authoring read models only |
-| Config Server | `configserver` | Immutable audience snapshot delivery |
-| Knowledge admin/API/worker | `knowledge` | Separate service-owned roles; policy still arrives through Config Server |
-| Native Agent runtime | `operations.agent_ops` | Move only after Agent operational tables and constraints are migrated |
-| External A2A integration | `operations.a2a_ops` | Production durability begins after schema and scope gates |
-| Workflow runtime | `operations.workflow_ops` and approved `execution_ops` interfaces | Move after shared execution foundations are decoupled |
-| Gateway | Usually no database; otherwise owned `gateway_ops`/audit interfaces | Never owns Agent, A2A, or Workflow state |
-| Portal View | None | Uses authenticated command, query, and operational APIs |
-
-Controller/runtime-registry tables require a separate ownership decision. The
-development rollout must not replace every `configserver` URL mechanically.
-Each connection changes only when its table ownership and compatibility gate
-are explicit.
-
-## Schema Migration Ownership
-
-The deployment repository orchestrates migrations but does not become the
-semantic owner of every schema.
-
-- A common operational-store package owns `operational_meta` and scope
-  validation.
-- Agent-owned migrations own `agent_ops`.
-- A2A-owned migrations own `a2a_ops`.
-- Workflow and execution packages own their respective schemas.
-- Gateway, audit, and artifact packages own their schemas or interfaces.
-- Deployment repositories pin exact migration artifact versions and checksums.
-
-The bootstrap job applies migrations in a declared dependency order and records
-checksum, schema version, compatibility generation, owner, start/completion,
-and failure evidence. It never edits an old migration in place.
-
-No target schema migration may introduce a foreign key to `configserver`,
-`knowledge`, or another service-owned database. Required references are stable
-identifiers validated at admission and reconciled through APIs or integration
-events.
-
-## Existing Volume Upgrade
-
-The first release adding `operations` must work for both fresh and persistent
-development volumes.
-
-### Fresh volume
-
-1. PostgreSQL initializes.
-2. `init-environment.sh` creates `configserver`, `knowledge`, and `operations`.
-3. Pinned schema installers and baseline import run.
-4. Validation proves all three database identities.
-5. Runtime services start only after their required database is ready.
-
-### Existing volume
-
-1. PostgreSQL starts without rerunning entrypoint initialization.
-2. `operational-store-bootstrap` discovers that `operations` is absent.
-3. It creates the database idempotently and records the development binding.
-4. It applies service migrations that are ready for the current phase.
-5. It validates roles and scope identity.
-6. It leaves existing services on `configserver` until each cutover phase is
-   explicitly activated.
-
-The database may exist before any runtime table moves. Empty provisioned
-schemas and migration ledgers are a valid preparatory state.
-
-Recreating a development database remains explicit. Normal deployment scripts
-must not drop `operations`, `knowledge`, or `configserver` merely to repair a
-failed migration. Clean-volume flags may remove all three only after showing
-that development data will be lost.
-
-## Reset, Backup, And Restore
-
-Development needs both convenient reset and production-shaped identity checks.
-
-- A full clean reset removes the PostgreSQL volume and recreates all databases.
-- A control-plane reset rebuilds `configserver` from the supported event and
-  snapshot bootstrap without treating operational rows as events.
-- A Knowledge reset follows Knowledge's source/reindex contracts.
-- An operational reset is scoped to the selected Host/environment binding and
-  uses service-owned cleanup or database recreation.
-- Logical `pg_dump` artifacts may be produced per database.
-- Physical backup and point-in-time recovery remain server-wide while all
-  databases share one PostgreSQL server.
-- Restores validate the scope root before runtimes reconnect.
-
-Configuration export and operational export remain separate formats and
-endpoints. Downloaded `values.yml` contains intended runtime configuration and
-binding references, not Agent sessions, memories, A2A tasks, Workflow state, or
-database credentials.
+| Service | Database access |
+| --- | --- |
+| Portal commands, queries, and Config Server | `configserver` only |
+| Light Knowledge | `knowledge` |
+| Light Gateway | Registered Host database; bounded Gateway/audit schemas only |
+| Light Workflow | Registered Host database; Workflow/execution schemas only |
+| Light Deployer | Registered Host database only when its runtime contract requires operational state |
+| Light Agent and Light A2A | Registered Host database; owned schemas only |
+| Browser Portal View | APIs only; never PostgreSQL |
 
 ## Failure Semantics
 
-| Failure | Required development behavior |
+| Failure | Required behavior |
 | --- | --- |
-| `operations` is missing | Bootstrap creates it idempotently; runtime stays unready until validation passes |
-| Database exists with a different scope root | Fail closed; never rewrite the Host/environment silently |
-| Service migration fails | Preserve diagnostics and last completed migration; do not start that service |
-| Existing service still needs `configserver` tables | Keep its old connection during the declared transitional phase |
-| Runtime receives the wrong schema binding | Reject readiness before traffic |
-| Config Server is unavailable | An already started runtime follows last-known-good binding validity rules |
-| Portal is unavailable | Runtime operational writes continue directly to the accepted database |
-| Knowledge is unavailable | Knowledge-dependent work follows its own availability policy; ordinary operational authority does not move to `configserver` |
-| One database is dropped manually | Other databases may remain present, but all dependent services fail their own readiness gates |
-
-## Repository Change Matrix
-
-The implementation should land coherently in all three deployment repositories.
-
-| Repository | Required target changes |
-| --- | --- |
-| `portal-config-loc/all-in-lt` | Add operational database inputs, bootstrap/migration service, secret mount, role/schema validation, and local reset/qualification coverage |
-| `portal-config-dev` | Mirror the local contract with development Host/environment inputs and existing-volume upgrade coverage |
-| `light-portal-install` | Include operational bootstrap artifact, installer validation, secret materialization, clean-install/reset behavior, and customer-managed override points |
-
-The SQL and migration artifacts should come from one versioned release source.
-Copying independently edited schema files into all three repositories is not an
-acceptable long-term source-of-truth model. Deployment repositories may stage
-verified release artifacts for offline installation, with checksums proving
-parity.
-
-## Implementation Sequence
-
-### Phase 0: Contract And Empty Database
-
-Deliver:
-
-- `PORTAL_DB_OPERATIONAL_*` bootstrap inputs;
-- common scope-root schema and validation contract;
-- idempotent database creation for fresh and existing volumes;
-- migration ledger and role conventions;
-- empty service schemas or explicitly versioned initial migrations; and
-- three-repository parity tests.
-
-No production runtime is redirected in this phase.
-
-### Phase 1: Constraint Decoupling
-
-Classify existing operational tables and remove cross-database foreign keys.
-Replace them with pinned identity/digest admission checks, stable references,
-authenticated APIs, outbox/integration events, and reconciliation tests.
-
-Shared execution foundations move before Agent and Workflow dependents when
-their current constraints require that ordering.
-
-### Phase 2: Agent And Embedded Memory
-
-Move Agent session, turn, action, approval, idempotency, quota, and initially
-embedded Memory authority to `agent_ops`. Publish the binding through Config
-Server and change Agent readiness to validate it.
-
-Remove Agent's Config Server database credential only after the new store is
-authoritative and rollback is bounded.
-
-### Phase 3: A2A And Workflow
-
-Create production-qualified `a2a_ops`, move Workflow-owned execution state,
-and enable governed inbound/outbound A2A durability only after restart,
-idempotency, cancellation, artifact, and audit recovery gates pass.
-
-### Phase 4: Gateway, Audit, And Artifact Completion
-
-Move bounded durable Gateway state, audit outboxes, and artifact metadata to
-their owned schemas. Long-term traffic analytics and artifact bytes remain in
-approved external sinks/object storage.
-
-### Phase 5: Multi-Host Development Profiles
-
-Enable Host Admin provisioning for `DEV_DEDICATED` and `DEV_POOLED`, including
-asynchronous status, secret references, cleanup, retention, and cross-Host
-isolation tests.
+| Invalid registration syntax | Reject before appending an event |
+| Duplicate active Host registration | Reject or require an explicit update command |
+| Database unreachable | Customer runtime fails readiness; Portal remains available |
+| Wrong database identity or schema generation | Runtime fails closed with a bounded diagnostic |
+| Config Server unavailable | A running service follows its last-known-good snapshot policy |
+| Portal unavailable | Existing runtime database connections continue |
+| Registration deactivated | Config Server revokes the active publication; customer data is retained |
+| Existing local volume lacks a new database | Idempotent deployment upgrade creates and migrates it |
 
 ## Verification Gates
 
-### Topology
+### Control plane
 
-- one PG17 server exposes separate `configserver`, `knowledge`, and
-  `operations` databases;
-- each database has the expected schema and database identity;
-- `PORTAL_DB_TOPOLOGY=shared` does not activate accidentally;
+- the registration command does not enqueue a provisioning job;
+- registration publication is atomic with its control-plane projection;
+- replay never performs database or container operations;
+- Config Server contains no plaintext database password; and
+- deactivate/unregister revokes publication without deleting data.
+
+### Development topology
+
+- each repository exposes exactly one PostgreSQL container by default;
+- all five expected databases exist on fresh and existing volumes;
+- each Host registration points to its exact database name;
+- all three operational databases have the same migration checksum generation;
 - no operational service schema exists in `configserver`; and
-- fresh and existing-volume paths converge on the same topology.
+- Compose configuration and offline bundle checksum gates pass.
 
-### Authority
+### Runtime
 
-- Portal events, authoring projections, and configuration snapshots remain in
-  `configserver`;
-- Knowledge content remains in `knowledge`;
-- operational runtime writes land only in the owning `operations` schema;
-- Portal View uses APIs rather than database access; and
-- Config Server projections contain bindings but no operational rows or
-  credentials.
-
-### Isolation
-
-- a runtime rejects the wrong Host, environment, database identity, binding
-  digest, schema owner, or schema generation;
-- service roles cannot write other service schemas;
-- no cross-database foreign key remains;
-- pooled tests prevent cross-Host reads and writes through queries, caches,
-  outboxes, artifacts, exports, and cleanup; and
-- runtime roles cannot create databases, roles, or schemas.
-
-### Lifecycle
-
-- duplicate bootstrap runs are safe;
-- a crash after database creation resumes without creating another database;
-- migration checksum drift fails before runtime startup;
-- a Host can exist without an operational binding;
-- disabling a Host does not destroy operational data; and
-- full reset requires an explicit destructive-development option.
-
-### Repository Parity
-
-- all three repositories use the same topology contract and pinned migration
-  artifact generation;
-- Compose configuration renders successfully;
-- fresh-volume and existing-volume integration tests pass;
-- checked-in secrets contain no production credential; and
-- documentation, scripts, and runtime examples use the same database names and
-  scope semantics.
+- each service loads the correct Host-audience binding from Config Server;
+- `dev.networknt.com` cannot connect accidentally to `operations` or
+  `operations_taiji`;
+- database identity, binding digest, and schema generation are checked before
+  readiness;
+- runtime roles cannot create databases, roles, or schemas; and
+- restarting Portal or Config Server does not interrupt established operational
+  writes.
 
 ## Resolved Decisions
 
-1. Development uses one PostgreSQL server with three application databases by
-   default.
-2. `configserver` remains the event-sourced control-plane and Config Server
-   snapshot database.
-3. `knowledge` remains the separately governed Knowledge operational database.
-4. `operations` is the ordinary Host/environment operational database.
-5. Service-owned operational domains use separate schemas and runtime roles
-   inside `operations`.
-6. Separate databases on one server are logical boundaries, not independent
-   infrastructure failure domains.
-7. The initial configured Host may be bootstrapped automatically.
-8. Additional Hosts require explicit bindings and do not inherit the initial
-   database silently.
-9. Fresh initialization and persistent-volume migration are both supported.
-10. Runtime services never provision databases with application credentials.
-11. Creating `operations` precedes, but does not itself perform, table cutover.
-12. Existing service connections move only after ownership, constraint,
-    migration, rollback, and readiness gates pass.
-13. Config Server publishes non-secret bindings; deployment-owned files or
-    secret providers supply credentials.
-14. Knowledge's organization-sharing rules remain distinct from ordinary
-    Host/environment scope validation.
-15. Deployment repositories orchestrate pinned service-owned migrations rather
-    than independently owning divergent schema copies.
-
-## Open Questions
-
-1. Which repository publishes the first versioned `operational_meta` migration
-   artifact?
-2. Is `operational-store-bootstrap` initially a `light-deployer` profile, a
-   dedicated executable, or a thin deployment script over shared tooling?
-3. Which exact Agent and Workflow tables define the first cutover slice?
-4. Which Controller/runtime-registration tables are control-plane evidence and
-   which are operational authority?
-5. Do initial development credentials use one transitional runtime role or
-   require all service-specific roles in Phase 0?
-6. Is `DEV_POOLED` required in the first implementation, or can it wait until
-   dedicated single-Host cutover is qualified?
-7. Which release artifact and checksum manifest is consumed consistently by
-   `portal-config-loc`, `portal-config-dev`, and `light-portal-install`?
-8. Which clean-reset flags and warnings should be standardized across the three
-   deployment repositories?
+1. Operational Storage is registration, not provisioning.
+2. The selected Host is the storage scope; there is no user-entered Environment
+   field on the page.
+3. Portal stores and publishes the binding but never connects to the operational
+   database.
+4. Customers own production database creation, migration, credentials, backup,
+   and deletion.
+5. Local/bootstrap/dev/install deployments create demo databases because the
+   deployment owns their one PostgreSQL container.
+6. The four repositories use the same five database names and the same three
+   default Host-to-database mappings.
+7. Config Server publishes Host-specific connection metadata; credentials remain
+   deployment-owned secrets.
+8. Deactivation or unregistration never drops a database.
+9. Historical provisioning events remain replay-compatible during migration but
+   cannot launch infrastructure work.
+10. One versioned migration bundle and checksum authority is staged consistently
+    across all four deployment repositories.

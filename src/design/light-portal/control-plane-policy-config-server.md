@@ -11,7 +11,7 @@ Workflow service.
 
 The development placement and migration contract for the Config Server,
 Knowledge, and Host operational databases is defined in
-[Development PostgreSQL Database Topology](development-database-topology.md).
+[Operational Storage Registration And Development PostgreSQL Topology](development-database-topology.md).
 
 ## Decision Summary
 
@@ -945,17 +945,20 @@ projected digest are checked.
 
 ### Current Workflow database access
 
-`light-workflow` currently creates one SQLx PostgreSQL pool from `DATABASE_URL`
-and shares it across admission, execution, event consumption, and reconcilers.
-The local composition points it at the same `configserver` database as Portal;
-the development credential is a database superuser and is not an acceptable
-production role.
+`light-workflow` creates one SQLx PostgreSQL pool from its registered
+operational-store URL and shares it across direct invocation admission,
+execution, and reconcilers. The database is customer-owned and is not the
+Portal `configserver` database. The service starts its legacy
+`WorkflowStartedEvent` outbox consumer only when the same database explicitly
+contains the legacy `outbox_message_t` and `log_counter` source tables. Normal
+customer-managed deployments use `/v1/workflow-invocations` and do not receive
+direct Portal database access.
 
 Its access falls into three categories:
 
 | Category | Current tables/path | Target boundary |
 | --- | --- | --- |
-| Portal event consumption | `outbox_message_t`, `consumer_offsets`, notification/counter state | Read event outbox and write only Workflow consumer checkpoint/quarantine state. |
+| Legacy event consumption | Optional local `outbox_message_t`, `log_counter`, `consumer_offsets`, and quarantine state | Compatibility-only. Do not connect a customer runtime directly to the Portal control-plane database. |
 | Admission projection reads | `workflow_tool_binding_t`, `wf_definition_t`, `tool_t`, dependency/approval projections | Read-only; validate versions/digests and copy the accepted immutable definition, binding, policy, and endpoint set into invocation-owned state. |
 | Workflow operational state | `process_info_t`, `task_info_t`, `workflow_invocation_t`, budgets, leases, audit outbox, bounded encrypted invocation credentials | Workflow-owned writes with explicit grants and retention. |
 
