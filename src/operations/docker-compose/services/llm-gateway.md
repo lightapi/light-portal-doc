@@ -56,7 +56,7 @@ At the time of this documentation audit, the distributions wire them as follows:
 
 | Distribution | Compose wiring | Required operator action |
 | --- | --- | --- |
-| `portal-config-loc/all-in-lt` | Declares `LLM_REASONING_SEAL_KEY` on `llm-gateway`. | Ensure the development value is valid 32-byte Base64URL material; a readable phrase is not a valid substitute. |
+| `portal-config-loc/all-in-lt` | Declares `LLM_REASONING_SEAL_KEY` on `llm-gateway`, with a valid deterministic development fallback. | Override it through the private Portal environment file whenever sealed data must be confidential or the key lifecycle must be operator-controlled; never promote the checked-in development fallback. |
 | `portal-config-dev` | Does not declare the variable on `llm-gateway`. | Keep reasoning seal disabled, or add secret wiring before promoting an active key reference. |
 | `portal-config-bootstrap` | Does not declare the variable on the base `llm-gateway`. | Supply it through the enterprise secret boundary before activating reasoning seal. |
 | `light-portal-install` | Does not declare the variable on `llm-gateway`. | Keep the feature disabled until the installer has a supported generated-secret path. |

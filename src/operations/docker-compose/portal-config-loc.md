@@ -56,6 +56,21 @@ instances (`light-agent`, `light-agent-advisor`, and
 `light-agent-tech-support`), Knowledge API/admin/worker, and three demo
 backends. `light-a2a` is under the `a2a` Compose profile.
 
+After the operational schemas are migrated, the continuously running
+`workflow-projection-sync` service publishes the Host's Workflow definitions,
+named tool bindings, grants and endpoint-resolution snapshots into
+`operations.workflow_ops`. An empty catalog is a valid initial snapshot on a
+fresh volume. The service refreshes the projection every 30 seconds, and Light
+Workflow waits only for the first successful refresh. Light Workflow reads
+only the Workflow-owned projection at runtime; it does not require Portal
+catalog tables such as `tool_t` in the operational database.
+
+Each projected LightAPI endpoint retains the validated operation and
+environment metadata needed by Workflow's URL resolver. This preserves
+environment substitution and same-authority validation without copying the
+Portal catalog into the operational database. Deactivated bindings, tools and
+grants are projected as unavailable on the next refresh.
+
 Important host ports include `443` for Light Gateway, `8444` for LLM Gateway,
 `8435` for Config Server, `8436` for Workflow, `6881` for OAuth, `8439` and
 `8440` for the hybrid services, `2498` for Portal service, and `5432` for local
@@ -76,7 +91,9 @@ material.
 
 The LLM reasoning seal is active only when the published `llm-router` snapshot
 declares it active. In that case, `LLM_REASONING_SEAL_KEY` must be unpadded
-Base64URL that decodes to exactly 32 bytes. See
+Base64URL that decodes to exactly 32 bytes. The Compose file supplies a valid,
+deterministic development fallback and permits `LLM_REASONING_SEAL_KEY` from
+the private Portal environment file to override it. See
 [LLM Gateway](./services/llm-gateway.md).
 
 ## Source-of-truth rule
