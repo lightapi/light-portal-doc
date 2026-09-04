@@ -36,6 +36,14 @@ owner, credential generation and minimum schema generation. The operational
 schema contains workflow-owned runtime/projection data; Portal catalog tables
 must not be assumed to be co-located.
 
+All four Compose distributions run a `workflow-projection-sync` service. It
+publishes the required Workflow definitions, bindings, grants, dependencies and
+resolved endpoint metadata from the Config Server database into the
+Workflow-owned operational schema every 30 seconds. Its initial minimum counts
+are zero so a fresh stack can start before Portal event replay has populated the
+catalog. `light-workflow` waits for the sync service's first successful pass;
+later catalog changes are refreshed without restarting Workflow.
+
 ## Invocation identity
 
 Gateway preserves the user's JWT in `Authorization` and sends its own service
@@ -45,4 +53,3 @@ own service token for protected downstream calls.
 `WORKFLOW_INVOCATION_UNAVAILABLE` means the Gateway reached Workflow and
 Workflow returned an unavailable response. Inspect Workflow logs and its
 database/configuration before changing Gateway policy.
-
