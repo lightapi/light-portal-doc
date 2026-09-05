@@ -297,6 +297,8 @@
     - [Retire an LLM model](./tutorial/light-gateway/retire-model.md)
     - [workflow-mcp-smoke](./tutorial/light-gateway/workflow-mcp-smoke.md)
     - [Customer 360 workflow MCP](./tutorial/light-gateway/customer-360-workflow-mcp.md)
+  - [light-agent](./tutorial/light-agent.md)
+    - [codex-personal](./tutorial/light-agent/codex-personal.md)
   - [light-knowledge](./tutorial/light-knowledge.md)
     - [light-fabric-document-ingest](./tutorial/light-knowledge/light-fabric-document-ingest.md)
     - [light-fabric-rag-search](./tutorial/light-knowledge/light-fabric-rag-search.md)
