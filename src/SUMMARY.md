@@ -304,6 +304,7 @@
     - [light-fabric-rag-search](./tutorial/light-knowledge/light-fabric-rag-search.md)
   - [workspace](./tutorial/workspace.md)
     - [local-agent-setup](./tutorial/workspace/local-agent-setup.md)
+    - [codebase-memory-mcp](./tutorial/workspace/codebase-memory-mcp.md)
 - [License](./license.md)
   - [Bronze](./license/bronze.md)
   - [Silver](./license/silver.md)
