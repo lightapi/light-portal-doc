@@ -15,8 +15,9 @@ Create these records first under the same host:
 - the Provider Account; and
 - the Provider Endpoint.
 
-The Registration, Account, Endpoint, provider type, protocol, physical model,
-and base URL must describe the same provider path.
+Select a Registration, Account, Endpoint, provider type, and physical model
+that describe the same provider path. Configure the protocol and base URL on
+the Provider Endpoint before selecting it here.
 
 ## Fields
 
@@ -27,9 +28,7 @@ and base URL must describe the same provider path.
 | Provider Account | Yes | Billing, quota, and capacity owner. |
 | Deployment Name | Yes | Host-unique operator name. |
 | Provider Type | Yes | Provider identity, such as `nvidia`. |
-| Provider Protocol | Yes | Exact wire contract: `openai_chat`, `openai_responses`, `openai_embeddings`, or `anthropic_messages`. |
 | Physical Model Id | Yes | Exact upstream model string. |
-| Base URL | Yes | HTTPS compatibility URL. Copy it exactly from the selected Endpoint. |
 | Provider Endpoint | Yes | Reusable transport/authentication profile. |
 | Deployment Revision Id | Yes | Stable operator revision for this callable runtime configuration. |
 | Physical Runtime Id | Yes | Stable identity of the external service, process, or GPU runtime. |
@@ -65,9 +64,7 @@ Select the `loc` NVIDIA Nemotron Registration, Account
 {
   "deploymentName": "nvidia-nemotron-3-embed-1b-loc",
   "providerType": "nvidia",
-  "providerProtocol": "openai_embeddings",
   "physicalModelId": "nvidia/nemotron-3-embed-1b",
-  "baseUrl": "https://integrate.api.nvidia.com/v1",
   "deploymentRevisionId": "nvidia-free-embedding-demo/r1",
   "physicalRuntimeId": "nvidia/integrate-api/free-embeddings",
   "capacityDomainId": "nvidia-free-embedding-demo",
@@ -85,9 +82,9 @@ Select the `loc` NVIDIA Nemotron Registration, Account
 }
 ```
 
-The form still requires Base URL and Provider Protocol even though the selected
-Endpoint already stores them. Copy the exact values; a mismatch creates an
-internally inconsistent legacy/deployment record.
+Base URL and Provider Protocol are owned by the selected Provider Endpoint.
+Edit them on the Provider Endpoints tab; deployments store only the endpoint
+reference. A new publication picks up the endpoint values.
 
 ### Protected Knowledge Base lanes
 
@@ -113,8 +110,9 @@ Version; `active` remains backend-managed.
 
 ## Common problems
 
-- **Protocol rejected:** use `openai_embeddings`, not `openai` or `nvidia`.
-- **Base URL rejected:** use the exact HTTPS base URL without `/embeddings` and
+- **Endpoint protocol rejected:** open Provider Endpoints and configure the exact
+  wire protocol there; NVIDIA embeddings use `openai_embeddings`.
+- **Endpoint URL rejected:** edit the Provider Endpoint and use its approved base URL without `/embeddings` and
   without a key or query string.
 - **Endpoint missing:** create the Provider Endpoint first under the same host.
 - **Runtime Capacity rejected:** supply all five positive integer fields and

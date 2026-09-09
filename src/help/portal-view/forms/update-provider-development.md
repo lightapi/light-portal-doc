@@ -26,10 +26,8 @@ is not included in the form.
 | Provider Account | `OpenAI Production` | Host-scoped billing and quota owner. |
 | Deployment Name | `openai-gpt4o-ca-prod` | Unique operator-friendly name within the host. |
 | Provider Type | `groq` | Provider identity. Changing it reloads Physical Model Id options. |
-| Provider Protocol | `openai_embeddings` | Exact gateway wire contract: `openai_chat`, `openai_responses`, `openai_embeddings`, or `anthropic_messages`. |
 | Physical Model Id | `gpt-4o` | Exact upstream model served by the endpoint. |
-| Base URL | `https://api.openai.com/v1` | HTTPS provider base endpoint without credentials. |
-| Provider Endpoint | `nvidia-free-embeddings` | Reusable transport/authentication profile. Protocol and Base URL must remain consistent with it. |
+| Provider Endpoint | `nvidia-free-embeddings` | Reusable transport/authentication profile that owns Protocol and Base URL. |
 | Deployment Revision Id | `nvidia-free-embedding-demo/r1` | Operator revision of this exact callable configuration. |
 | Physical Runtime Id | `nvidia/integrate-api/free-embeddings` | Stable external service/process identity. |
 | Capacity Domain Id | `nvidia-free-embedding-demo` | Runtime capacity domain; protected lanes must not share one. |
@@ -65,6 +63,9 @@ support JSON and YAML. Choose **Apply** after editing. For example:
 Transport-bound properties remain control-plane annotations unless the
 publication contract explicitly maps them to supported gateway settings.
 
+Base URL and Provider Protocol are edited only on the Provider Endpoints tab.
+Deployment updates reference that record through `providerEndpointId`.
+
 ## Identity Changes
 
 The provider type, provider protocol, physical model, and endpoint form the
@@ -75,11 +76,11 @@ The selected Account's provider type must match the Deployment.
 An update does not bypass Credential, Pricing, Alias Route, or publication
 requirements. Publish performs the final cross-record review.
 
-For the hosted NVIDIA Deployment, preserve Provider Type `nvidia`, Protocol
-`openai_embeddings`, Physical Model Id `nvidia/nemotron-3-embed-1b`, Base URL
-`https://integrate.api.nvidia.com/v1`, and Endpoint
-`nvidia-free-embeddings`. Rotate `env:NVIDIA_API_KEY` through Credentials rather
-than changing Endpoint or Deployment fields.
+For the hosted NVIDIA Deployment, preserve Provider Type `nvidia`, Physical
+Model Id `nvidia/nemotron-3-embed-1b`, and Endpoint `nvidia-free-embeddings`.
+On the Provider Endpoints tab, that endpoint owns Protocol `openai_embeddings`
+and Base URL `https://integrate.api.nvidia.com/v1`. Rotate `env:NVIDIA_API_KEY`
+through Credentials.
 
 ## Save The Update
 
@@ -99,13 +100,10 @@ behavior.
   apply the change to the latest record.
 - **Registration or Account is unavailable**: confirm it is not deleted and
   belongs to the selected host.
-- **Base URL is rejected**: use a complete HTTPS URL without secrets.
 - **Structured edit is blocked**: correct the Transport Bounds JSON/YAML draft and choose
   **Apply**, or choose **Reset** to restore the last valid value.
 - **Provider mismatch**: select an Account whose provider type matches the
   Deployment.
-- **Provider Protocol is rejected**: choose the exact protocol enum; NVIDIA
-  embeddings use `openai_embeddings`.
 - **403 on Update**: confirm access to
   `lightapi.net/genai/updateLlmProviderDeployment/0.1.0` and the required write
   permission.
