@@ -138,6 +138,13 @@ def main():
         LIGHT_AGENT_ADVERTISED_ADDRESS='light-agent-codex-personal', LIGHT_AGENT_HOST_ID=host,
         LIGHT_AGENT_STARTUP_HOST='dev.lightapi.net', LIGHT_AGENT_ENVIRONMENT='dev',
         LIGHT_ENV_TAG='dev', LIGHT_AGENT_HTTP_PORT='8083')
+    # Keep the personal deployment on its own bootstrap identity/config mount.
+    personal_config = deploy / 'light-agent-codex-personal-rust/config'
+    if personal_config.is_dir():
+        agent['volumes'] = [
+            './light-agent-codex-personal-rust/config:/config:ro,Z'
+            if volume.split(':')[1] == '/config' else volume
+            for volume in agent['volumes']]
     agent['volumes'].append(str(dest / 'service.jwt') + ':/run/codex-personal/service.jwt:ro')
     agent['command'] = ['export LIGHT_PORTAL_AUTHORIZATION="Bearer $$(cat /run/codex-personal/service.jwt)"\n' + agent['command'][0]]
     controller_image = output('docker', 'inspect', 'controller', '--format', '{{.Config.Image}}').strip()

@@ -757,3 +757,48 @@ check still reports existing errors outside the changed production files.
 The new Agent was **not** created or deployed while implementing these fixes.
 The real signed-in UI authoring/publication and coding turn are for the operator
 to perform; record them as passed only after the checks above succeed.
+
+## Restrict the deployment to Coding implementation
+
+With explicit turn-policy support installed in the publisher and runtime, configure
+`agent-policy-authoring.turnPolicy` as a **map** instance property:
+
+```json
+{"allowedTurnTypes":["coding"],"defaultTurnType":"coding"}
+```
+
+Publish the Agent policy normally. The generated atomic Config property is
+`agentPolicy.execution.turnPolicy` under Config `agent`; do not edit it directly.
+The coding profile must be valid and its product-profile digest must match this
+deployment. Restart with the published configuration and connect a new session.
+The existing Chat page displays a fixed **Coding implementation** chip, and the
+backend rejects Chat requests before admission, even when the client omits its
+profile field. Existing sessions remain bound to their immutable policy and may
+require a fresh session after publication.
+
+For a Chat-only agent, use `{"allowedTurnTypes":["chat"],"defaultTurnType":"chat"}`.
+For an enterprise coding agent that supports both paths, use
+`{"allowedTurnTypes":["chat","coding"],"defaultTurnType":"coding"}`. Chat requires
+its configured gateway inference path and authorization independently of the
+coding runner's authentication profile. Neither billing mode nor the agent's name
+chooses its turn types. Provider outages do not rewrite the declared policy.
+
+The list must be nonempty, contain only unique `chat`/`coding` values, and include
+the default. Unknown fields and unsupported types are rejected. An absent or
+empty map preserves legacy behavior and signed policy serialization: Chat only
+without a coding profile, otherwise Chat and Coding when the profile matches,
+with Chat as default. Clearing authoring and republishing clears an earlier
+explicit runtime map. This is a compatibility mechanism, not a disabled agent.
+
+The prepared local catalog assignments and codex-personal authoring migration are
+in `light-portal-event/genai/20260910-agent-turn-policy/`. Install updated publisher
+and runtime code before importing and publishing: older runtimes cannot consume
+this new signed field. Coding implementation remains the implementation workflow;
+a conversational, read-only code-understanding mode is separate functionality.
+
+The turn policy governs only Chat and Coding. Existing personal-assistant edge
+requests remain governed by their personal-profile digest, runner binding,
+approval, and execution authorization checks; publishing a Chat/Coding policy
+neither disables nor grants edge-action access. An edge request must still carry
+its typed edge-action payload, so a Chat request cannot bypass policy by claiming
+the personal-assistant profile.
