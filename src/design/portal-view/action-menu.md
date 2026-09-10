@@ -150,8 +150,9 @@ Reserving positions for actions a record cannot use would add complexity for no
 benefit, since the reserved slot carries no meaning to the reader.
 
 Both modes consume the same definitions. Pages retain their business rules and
-handlers; the shared renderer owns presentation and interaction. Custom tables
-and secondary toolbar action groups use the same renderer.
+handlers; the shared renderer owns presentation and interaction. Custom table rows
+and card action groups use the same renderer. Page-level and toolbar buttons
+retain their visible text labels and do not use this renderer.
 
 ### Material React Table Integration
 
@@ -159,7 +160,7 @@ and secondary toolbar action groups use the same renderer.
 modes. MRT's built-in `renderRowActionMenuItems` is a workable alternative for
 menu mode alone: it returns `ReactNode[]`, so descriptions render fine. It does
 not provide the labeled **Actions** trigger this design specifies, and it covers
-only MRT row actions. Custom tables and secondary toolbar action groups need the
+only MRT row actions. Custom table rows and card action groups need the
 same renderer regardless, so rendering both modes through `renderRowActions`
 keeps one integration point across every migration rather than two paths to
 maintain.
@@ -190,7 +191,7 @@ count on each page:
 
 The shared `usePortalActionTableOptions` helper marks MRT action columns for this
 sizing. ConfigUpdatePage's inline MRT configuration uses the same
-`portalActionColumn` helper. Toolbar groups remain content-sized, and catalog
+`portalActionColumn` helper. Page-level toolbar buttons remain independent of this sizing, and catalog
 lists share one scope around their cards.
 
 Action column position stays as each page has it today. Roughly two thirds of
@@ -230,17 +231,20 @@ first case of this.
 
 ## Scope and Rollout
 
-Apply this pattern to row actions and secondary page or toolbar action groups
-throughout Portal. Keep primary workflow controls such as Create, Save, Cancel,
-and selection-based Compare directly visible. They keep their existing role
-in the page rather than becoming row-menu items.
+Apply this pattern to row and card action groups throughout Portal. All page-level
+and toolbar buttons retain their visible text labels in both display modes,
+including Update Config Values, configuration sync, policy overview, snapshot
+history, refresh status, catalog administration, profile editing, clone-result
+links, and snapshot Copy/Download controls. Do not classify these buttons as
+secondary actions to move them into the shared renderer. Create, Save, Cancel,
+selection-based Compare, and other workflow controls also remain directly visible.
 
 1. Add the shared preference, the header control, and the action components,
    then migrate InstanceAdmin with every existing action, including the two
    `agt` actions.
 2. Inventory and migrate the remaining pages. The initial source survey found
    86 non-test components using `renderRowActions`; also inspect custom action
-   columns and toolbar groups that do not use that callback.
+   columns and card action groups that do not use that callback.
 3. Use the same display rules across the migrated pages. The rollout is complete
    when all applicable action groups use the shared pattern, not only
    InstanceAdmin.
@@ -318,3 +322,8 @@ Unit tests, following the pattern in `usePersistentPagination.test.tsx`:
 - Switching modes preserves table filters, pagination, and selected rows.
 - Opening a table of 100 rows in either mode shows no perceptible delay
   relative to the current implementation.
+
+Page-level buttons preserve disabled-state explanations in tooltips, using a
+span wrapper so disabled buttons can expose the reason. Delete buttons use
+error styling to distinguish destructive actions from adjacent Edit or Update
+buttons. These affordances apply in both action-display modes.
