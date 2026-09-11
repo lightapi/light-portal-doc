@@ -11,3 +11,8 @@ agents, rather than a single service.
   `codebase-memory-mcp` MCP server, index a workspace containing many
   `light-4j`-style repos, and keep separate index databases for a private
   workspace and a Linux-desktop workspace shared with other users.
+
+- [Shared task workspaces with local Codex and Claude agents](./workspace/shared-task-workspaces.md):
+  register a workspace, connect the local MCP service, and implement/review the
+  same uncommitted task across repositories. Includes concrete host paths,
+  terminal commands, expected results, and setup troubleshooting.

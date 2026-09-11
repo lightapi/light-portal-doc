@@ -3,13 +3,40 @@
 Open **GenAI Chat** at `/app/genai/chat`, select an agent in the current Host,
 and click **Connect**. The connected session determines the available turn types.
 Tech Support normally offers Chat. A published coding-only policy shows a fixed
-**Coding implementation** label and opens the repository form automatically.
+**Coding implementation** label and opens the code source form automatically.
 An agent with both types shows a selector. Reconnect with a new session after
 changing the published policy.
 
-## Repository input for coding
+## Shared workspace tasks
 
-The current coding implementation accepts one immutable **Git bundle** per
+When the published agent policy grants access to a registered workspace, choose
+**Shared workspace** as the code source. No repository bundle is needed.
+
+1. Select the workspace, such as `personal`. Every registered repository belongs
+   to the task; there is no separate repository access selector.
+2. Select **Understand code** for read-only inspection, or **Implement changes**
+   to permit file edits.
+3. Select **Existing task** and enter its task ID to continue working on the same
+   worktrees. Select **New task** to provision separate worktrees for a new task.
+4. Enter a concrete instruction, including repository names and relevant paths,
+   and send it. For example: `Read README.md in light-fabric and portal-view and
+   report both project titles. Do not edit files.`
+5. Wait for the terminal result. Acceptance only means the request was queued.
+   A successful result includes the task ID and checkpoint digest for follow-up.
+
+Edits affect the task's worktrees, not the original repository checkouts. This
+Chat milestone supports repository/file listing, reading, and guarded file edits.
+Running tests, indexing, review approvals, GitHub publication, and workflow
+orchestration are not available through these Chat tools yet.
+
+The host runner and the agent must have matching workspace bindings and worker
+digests. Registering a local MCP server alone does not enable the Chat option.
+After a policy change, reconnect and choose **New session** if the previous
+session cannot resume. See the [workspace tutorial](../../../tutorial/workspace/shared-task-workspaces.md).
+
+## Repository bundle input for coding
+
+The **Repository bundle** code source accepts one immutable **Git bundle** per
 request. **Repository bundle URI is not a GitHub HTTPS URL**, a repository
 directory, or a ZIP download. It must be an absolute `file:///...` URI for a
 regular bundle file on the **workflow runner host**, under the repository URI
@@ -77,9 +104,9 @@ for the request-generation helper and a complete smoke test.
 
 ## Multiple repositories
 
-Each request currently carries one repository bundle, one base commit, and one
-worker workspace root. Multiple independent repositories in a single turn are
-not supported. Submit a separate request for each repository. A monorepo can
+Shared workspace tasks include all registered repositories in one task. The
+repository bundle source carries one bundle, one base commit, and one worker
+workspace root per request. A monorepo can
 contain multiple projects in one bundle, but submodules are separate repositories
 and their contents are not automatically included by bundling the parent.
 
