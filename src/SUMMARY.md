@@ -260,6 +260,8 @@
       - [MCP Maximum Subscription Duration](./help/portal-view/configs/mcp-router/max-subscription-duration-ms.md)
       - [MCP Stateless To Legacy Bridge](./help/portal-view/configs/mcp-router/stateless-to-legacy-bridge.md)
       - [MCP Tools](./help/portal-view/configs/mcp-router/tools.md)
+    - [Direct Registry](./help/portal-view/configs/direct-registry/index.md)
+      - [Direct Registry Direct Urls](./help/portal-view/configs/direct-registry/direct-urls.md)
   - [Concepts](./help/portal-view/concepts/index.md)
     - [Ownership And Positions](./help/portal-view/concepts/ownership-and-positions.md)
     - [Hosts And User Hosts](./help/portal-view/concepts/hosts-and-user-hosts.md)
