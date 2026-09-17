@@ -23,7 +23,7 @@ rollback needing a restart depends on Config Server availability; see
 3. **Hold:** block new traffic to unhealthy workloads and hold incompatible
    reloads/restarts. For a same-identity restart, stop the incompatible cohort
    before changing its snapshot. See [rollback coordination](#rollback-procedure).
-4. **Directory, for this pipeline-controlled start:** [remote mode](#java-dcl-startup-and-configuration-evidence)
+4. **Directory, for this pipeline-controlled start:** [remote mode](#configuration-loading-modes)
    needs a pre-created writable directory without `values.yml`; local mode needs
    the recorded export. Preserve bootstrap material and exclude candidate files.
 5. **Activate or install:** [activate the saved snapshot or install the qualified
@@ -34,6 +34,25 @@ rollback needing a restart depends on Config Server availability; see
    [blue/green](#centralized-gateway-bluegreen-example), switch to the healthy old pool.
 8. **Evidence:** record results and verification limits, obtain [rollback approval](#release-controls),
    then end the freeze/reservation. Defer retirement until the group is stable.
+
+## Configuration loading modes
+
+A Java DCL runtime loads its configuration at startup in one of two modes. The
+release record names the mode qualified for each release.
+
+| Mode | How configuration arrives | Startup dependency |
+| --- | --- | --- |
+| **Remote mode** (normal) | `light-config-server-uri` is set. `DefaultConfigLoader` calls Config Server `/configs`, `/certs`, and `/files` for `host + serviceId + envTag`, receives the **current** snapshot for that identity, and writes `values.yml`, certificates, and files into the config directory. | Config Server must be available. |
+| **Local-export mode** (contingency) | `light-config-server-uri` is absent from every property/environment source. The pipeline installs a previously exported, approved bundle (`values.yml`, certificates, files) into the config directory, and the runtime starts from those local files. | None on Config Server; the bundle must be retained and checksummed. |
+
+In remote mode, a pipeline-controlled start must use a writable directory with
+**no `values.yml`**. Otherwise a failed download can fall back to an existing
+file, possibly the candidate's, and the start still looks successful. See
+[startup checks](#java-dcl-startup-and-configuration-evidence).
+
+Local-export mode is a rollback contingency, not a replacement for remote mode.
+Qualify it before the upgrade when a restart-based rollback must survive a Config
+Server outage; see [rollback availability](#rollback-availability).
 
 ## Configuration identity decision
 
@@ -287,6 +306,13 @@ version/environment; cloned deployments retain their original pipeline IDs.
 After configuration/deployment projections catch up, create a snapshot with
 `current=false` and pass the graph-readiness/revision check.
 
+Iterating on the candidate does not create instances. Edit the same cloned
+candidate and create another non-current snapshot for each review or test round:
+twelve configuration fixes produce one candidate instance and twelve snapshots.
+Delete unneeded candidate snapshots with the snapshot delete command, but keep
+every snapshot that was deployed, approved, or referenced by a release record,
+and keep the rollback snapshot.
+
 Use [snapshot output and comparison](../design/portal-view/config-snapshot-output-comparison.md)
 to review the candidate against the retained rollback snapshot. Check both
 values and their sources, required configuration, selected files/certificates,
@@ -379,6 +405,18 @@ for the code paths behind these gates.
 
 ## Centralized gateway blue/green example
 
+Config Server selects configuration only by `host + serviceId + envTag`, and
+`/configs` always serves that identity's current snapshot. Two deployments that
+share an identity therefore always receive the same configuration:
+
+- **Compatible releases:** if old and new binaries can consume the same
+  configuration, separate identities are unnecessary. A rolling update or an
+  existing blue/green traffic switch under one identity works as is.
+- **Incompatible releases:** if the new release needs different configuration,
+  activating its snapshot on a shared identity also changes what the old cohort
+  receives on its next restart, eviction, or reload, so the rollback target no
+  longer has its old configuration. Give each cohort its own identity.
+
 For incompatible releases, use two runtime identities behind one stable public
 gateway address. Both use the same tenant host and `serviceId=light-gateway`;
 blue uses `envTag=prod-blue`, green uses `envTag=prod-green`. The cohorts alternate:
@@ -432,6 +470,29 @@ separate snapshot/authorization identity, not that environment selector.
    If that exact target version already exists retired, restore/reconcile it
    using the retry procedure instead of creating another row.
 
+### Kubernetes Service-selector variant
+
+On Kubernetes, perform blue/green at the Service level, the same way it is done
+for other workloads. The "load balancer" and "upstream pools" above map to:
+
+- Two Deployments, for example `light-gateway-blue` and `light-gateway-green`,
+  each labeled with its color (`color: blue` / `color: green`).
+- One stable Service whose `selector` chooses the live color. The cutover, canary
+  completion, and rollback are all a change to that selector.
+
+For incompatible releases, the only Portal-specific addition is that each
+Deployment carries its own configuration identity: set `envTag` to `prod-blue`
+or `prod-green` in that Deployment's bootstrap/environment, bind it to its own
+Portal instance and snapshot, and give it credentials authorized for that env
+tag, as well as its own config volume. If both Deployments share one env tag, a
+selector switch still moves traffic correctly, but snapshot activation changes
+what the old color loads on any Pod restart or reload. For compatible releases,
+Service-level blue/green with a single env tag needs none of this.
+
+A weighted canary needs a mechanism beyond a plain selector switch, such as a
+gateway or service-mesh traffic split, or a temporary Service selecting both
+colors by a shared label.
+
 Different `serviceId` values can also separate cohorts, but require equivalent
 authorization, discovery, and routing review. Reusing a cohort/version already
 in history follows the retry/restoration procedure below.
@@ -476,6 +537,13 @@ instance and review shared catalog/inheritance changes.
 
 ## Retry a failed product-version upgrade
 
+This section covers a release attempt that was declared failed, rolled back, and
+retired. Fixing configuration during an unfinished attempt is not a retry: edit
+the same candidate and create another snapshot, as described in
+[step 5](#5-create-and-verify-a-candidate-snapshot). Each retry reuses the same
+instance row, so repeated attempts add snapshots and release records, not
+instances.
+
 After a failed 2.3.9 upgrade is retired, its row still reserves
 `(host_id, service_id, env_tag, product_version_id)`. Clone checks include retired
 rows. A fresh clone of 2.3.8 into that same 2.3.9 identity will be rejected, even
@@ -503,8 +571,11 @@ with a new instance UUID.
    reuse approval from the failed attempt.
 
 Do not hard-delete the retired row or silently replace it with a new clone to
-bypass uniqueness. That would complicate retained snapshots, events, references,
-and recovery rather than provide a safe retry.
+bypass uniqueness. Portal is event-sourced: a direct database delete bypasses the
+event store, leaving projections and events inconsistent, and snapshot foreign
+keys cascade the delete to that attempt's snapshots. Clean up with lifecycle
+commands instead: soft retirement/restoration for instances and the snapshot
+delete command for unneeded candidate snapshots.
 
 ## Safe retirement and recovery
 

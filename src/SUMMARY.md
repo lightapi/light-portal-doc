@@ -59,6 +59,8 @@
     - [Direct Event Replay Execution](./design/light-portal/event-replay-direct-execution.md)
     - [Fast Snapshot-Derived Database Bootstrap](./design/light-portal/database-recreation-event-bootstrap.md)
     - [Composable Multi-Host Snapshot Export And Bootstrap](./design/light-portal/composable-multi-host-snapshot-export.md)
+    - [Portal Service Consolidation Into Rust](./design/light-portal/portal-service-rust-consolidation.md)
+      - [Phase 0: Portal Java Monorepo](./design/light-portal/portal-java-monorepo.md)
   - [Light Gateway](./design/light-gateway.md)
     - [Local Model Provider Transport For LLM Gateway](./design/light-gateway/local-model-provider-transport.md)
   - [Light Workflow Tool Access Approval](./design/light-workflow/workflow-tool-access-approval.md)
