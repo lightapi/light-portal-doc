@@ -63,8 +63,10 @@ Note the following when the base path is used:
   public base path by the service itself.
 - The `Host` header and the TLS SNI are taken from the host of the url, not from
   the base path, so host-based ingress rules keep working.
-- The base path applies only to entries in `directUrls`. Targets that come from
-  portal-registry discovery are addressed by host and port.
+- A service registered with the controller advertises the same thing with the
+  reserved `basePath` registration tag, which it sets through `basePath` in its
+  `server.yml`. An entry in `directUrls` is only needed for a service that is not
+  registered.
 
 Where the base path is applied:
 
