@@ -23,6 +23,7 @@
     - [Token Exchange](./design/oauth-kafka/token-exchange.md)
   - [Light OAuth](./design/light-oauth.md)
     - [IPv6 Support](./design/light-oauth/ipv6-support.md)
+    - [CLI Device Authorization](./design/light-oauth/device-authorization.md)
   - [Light Controller](./design/light-controller.md)
     - [IPv6 Support](./design/light-controller/ipv6-support.md)
     - [Controller Transport and Codec Profiles](./design/light-controller/webtransport-rkyv.md)
