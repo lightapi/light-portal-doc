@@ -10,8 +10,7 @@ port `443` to container port `8443`.
 | Variables | Purpose |
 | --- | --- |
 | `LIGHT_RS_CONFIG_DIR` | Startup and local configuration templates. |
-| `LIGHT_PORTAL_AUTHORIZATION` | Gateway service identity for Config Server/Portal operations. |
-| `WORKFLOW_INVOCATION_SCOPE_TOKEN` | Gateway identity forwarded as `X-Scope-Token` for Workflow invocation. |
+| `LIGHT_PORTAL_AUTHORIZATION` | Gateway service identity for Config Server, Portal operations, and Workflow calls; Workflow sends it in `X-Scope-Token`. |
 | `STATELESSAUTH_BOOTSTRAPTOKEN` | Bootstrap token for the configured browser authentication flow. |
 | `STATELESSAUTH_*CLIENTSECRET` | Optional social-login client secrets. |
 | `GROQ_API_KEY`, `GEMINI_API_KEY`, `NVIDIA_API_KEY` | Provider keys only if the public Gateway profile contains LLM routes. |
