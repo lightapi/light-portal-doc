@@ -279,6 +279,7 @@
   - [light-gateway](./config/light-gateway.md)
   - [light-reference](./config/light-reference.md)
 - [Operations](./operations.md)
+  - [Faster Local Rust Image Builds](./devops/rust-image-build-speed.md)
   - [Product Upgrade and Rollback](./operations/product-upgrade-rollback.md)
   - [Docker Compose Deployments](./operations/docker-compose.md)
     - [portal-config-loc](./operations/docker-compose/portal-config-loc.md)
