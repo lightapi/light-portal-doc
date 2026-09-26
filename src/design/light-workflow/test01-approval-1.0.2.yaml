@@ -1,0 +1,59 @@
+document:
+  dsl: '1.0.3'
+  namespace: financial-services
+  name: test01
+  version: '1.0.2'
+  title: Mortgage Approval Test
+  summary: Requests an admin decision for a mortgage application without an external risk service.
+evaluate:
+  language: cel
+input:
+  schema:
+    format: json
+    document:
+      type: object
+      required: [applicantId, loanAmount, creditScore]
+      properties:
+        applicantId: { type: string }
+        loanAmount: { type: number }
+        creditScore: { type: number }
+output:
+  schema:
+    format: json
+    document:
+      type: object
+      required: [applicantId, status, decisionSource, message]
+      properties:
+        applicantId: { type: string }
+        status: { type: string, enum: [APPROVED, REJECTED] }
+        decisionSource: { type: string }
+        message: { type: string }
+do:
+  - manualApproval:
+      ask:
+        prompt: Review this mortgage application and choose a decision.
+        mode: approval
+        assignment:
+          roleId: admin
+          categoryCode: approval
+          reasonCode: mortgage-review
+        options:
+          - { label: Approve, value: APPROVED }
+          - { label: Reject, value: REJECTED }
+        required: true
+        timeout:
+          after: PT24H
+        onTimeout:
+          action: default
+          default: REJECTED
+      export:
+        as:
+          manualStatus: .output
+      then: finalizeDecision
+  - finalizeDecision:
+      set:
+        applicantId: "${ .applicantId }"
+        status: "${ .manualStatus }"
+        decisionSource: Human
+        message: Mortgage decision recorded by an admin reviewer.
+      end: true
