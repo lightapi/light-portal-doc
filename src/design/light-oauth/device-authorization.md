@@ -1,7 +1,8 @@
 # CLI Device Authorization Grant
 
 Status: implemented as of 2026-09-21 in `light-oauth`, the Light CLI, `portal-view`,
-`portal-db`, and the local deployment repository. This design document is pending commit.
+`portal-db`, and the local deployment repository. The former Workflow broker
+profile mentioned in historical notes below has since been retired.
 Revised the same day: the first design tied a login to the CLI's client certificate on a separate
 mutual-TLS listener. That cannot work when `light-oauth` is reached only through `light-gateway`,
 which ends TLS, so it was replaced by the standard grant described here.
@@ -130,7 +131,7 @@ The Gateway does the abuse control, which is the reason `light-oauth` sits behin
 Where the request address comes from: `X-Forwarded-For`, first valid entry, as the rest of
 `light-oauth` does. That is only trustworthy if the Gateway **overwrites** it and `light-oauth`
 is not reachable except through the Gateway. The local base stack no longer publishes port 6881;
-the optional workflow-broker development profile exposes it on loopback only. The address shown on
+the former optional workflow-broker development profile, which exposed it on loopback, was retired. The address shown on
 the approval page still depends on the Gateway replacing the forwarded header.
 
 ## What the Gateway must do
@@ -184,12 +185,9 @@ policy `HARD_DELETE`), `requested_ip`, `scope`, `status` (`PENDING`, `APPROVED`,
 `REDEEMED`), `user_id`, `host_id`, `remember`, `session_id`, `created_at`, `expires_at`,
 `approved_at`, `last_polled_at`, `poll_interval_seconds`.
 
-At startup, `light-oauth` checks that both `auth_device_authorization_t` and
-`auth_workflow_broker_t` exist. They support separate features. The workflow-broker table is needed
-because the same issuer also implements workflow-bound OAuth grants for unattended workflow
-continuation, and the normal authorization-code path queries it to determine whether a client is a
-broker. The device grant does not use the workflow broker. Both migrations are Portal-owned, so the
-issuer validates them and fails before becoming healthy rather than creating tables itself.
+At startup, `light-oauth` checks that `auth_device_authorization_t` exists.
+The former `auth_workflow_broker_t` table and its startup check were removed
+with the Workflow broker. The device grant does not depend on that retired table.
 
 The retired draft had `auth_device_client_t` (registration is now the Portal client record),
 `auth_device_session_t` (the install binding) and certificate columns on this table; the patch
