@@ -1,31 +1,276 @@
 # Router Configuration
 
-The Router configuration defines the global policies for request routing, URL rewriting, connection management, and proxy targeting in the gateway. The configuration resides in `router.yml` and is managed through the portal-view interface and config server.
+`router.yml` configures the HTTP router used by Java light-4j gateways/sidecars and the Rust light-fabric gateway. It controls downstream protocol selection, request deadlines, streaming responses, connection policies, forwarding headers, explicit-URL host restrictions, request rewrites, and downstream timing metrics.
 
-The gateway uses a shared router runtime (implemented in `light-pingora`) that applies to both **HTTP API routing** and **MCP tool routing**.
+In Java, `com.networknt.router.RouterHandler` is an `HttpHandler` wrapper around the final `ProxyHandler`. It can be installed through `handler.yml`, or through a `RouterHandlerProvider` in `service.yml`, as described by Portal's `config_t.config_desc`. In Rust, the gateway's router handler loads the shared `light-pingora` Router configuration and uses it when selecting and forwarding HTTP targets.
 
-## Overview of Configuration Properties
+The two runtimes share the configuration vocabulary and intended routing contract. **They do not currently enforce every property in the same way.** The reference below distinguishes implemented behavior from compatibility-only fields and documents concrete differences. `mcp-router.yml` and `websocket-router.yml` are separate configurations; this page is not a complete specification of MCP or WebSocket routing.
 
-| Property | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| **[http2Enabled](./http2Enabled.md)** | Boolean | `true` | Enables HTTP/2 support for downstream connections. |
-| **[httpsEnabled](./httpsEnabled.md)** | Boolean | `true` | Enables HTTPS support for downstream connections. |
-| **[maxRequestTime](./maxRequestTime.md)** | Integer | `1000` | Global maximum request timeout in milliseconds. |
-| **[pathPrefixMaxRequestTime](./pathPrefixMaxRequestTime.md)** | Object | `{}` | Path-specific request timeouts in milliseconds. |
-| **[connectionsPerThread](./connectionsPerThread.md)** | Integer | `10` | Maximum number of concurrent connections per thread. |
-| **[maxQueueSize](./maxQueueSize.md)** | Integer | `0` | Maximum queue size for pending connection requests. |
-| **[softMaxConnectionsPerThread](./softMaxConnectionsPerThread.md)** | Integer | `5` | Soft limit for concurrent connections per thread before queuing. |
-| **[rewriteHostHeader](./rewriteHostHeader.md)** | Boolean | `true` | Determines whether the `Host` header is rewritten to match the target. |
-| **[reuseXForwarded](./reuseXForwarded.md)** | Boolean | `false` | Determines whether existing `X-Forwarded-*` headers are reused or overwritten. |
-| **[maxConnectionRetries](./maxConnectionRetries.md)** | Integer | `3` | Maximum number of retries for failed downstream connections. |
-| **[preResolveFQDN2IP](./preResolveFQDN2IP.md)** | Boolean | `false` | Determines whether to pre-resolve FQDNs to IPs on startup. |
-| **[hostWhitelist](./hostWhitelist.md)** | Array of String | `[]` | Allowed downstream hosts for routing. |
-| **[serviceIdQueryParameter](./serviceIdQueryParameter.md)** | Boolean | `false` | Determines whether `service_id` query parameters are extracted for routing. |
-| **[urlRewriteRules](./urlRewriteRules.md)** | Array of String | `[]` | Rules for rewriting request URLs before routing. |
-| **[methodRewriteRules](./methodRewriteRules.md)** | Array of String | `[]` | Rules for rewriting HTTP methods before routing. |
-| **[queryParamRewriteRules](./queryParamRewriteRules.md)** | Object | `{}` | Rules for modifying query parameters. |
-| **[headerRewriteRules](./headerRewriteRules.md)** | Object | `{}` | Rules for modifying HTTP headers. |
-| **[metricsInjection](./metricsInjection.md)** | Boolean | `false` | Determines whether metrics tracking is injected. |
-| **[metricsName](./metricsName.md)** | String | `"router-response"` | The metric name to use when tracking router performance. |
+## Configure it in Portal, values.yml, or router.yml
 
----
+In Portal, choose the `router` configuration and set the named property, for example `maxRequestTime`, to `5000`. The property descriptions stored in `config_property_t.property_desc` explain the purpose; the effective value depends on the configuration assembled for the target instance. Check the generated/resolved configuration and the runtime's loaded configuration after applying a change.
+
+The source templates externalize values using the `router.` prefix:
+
+```yaml
+# Fragment of a router.yml template
+maxRequestTime: ${router.maxRequestTime:1000}
+urlRewriteRules: ${router.urlRewriteRules:}
+```
+
+`${router.maxRequestTime:1000}` means use the externalized `router.maxRequestTime` value, or `1000` when absent. It is configuration-loader syntax, not an ordinary literal YAML integer. Rust's shipped gateway template instead uses `0` for that timeout fallback.
+
+In a `values.yml` file, set the externalized keys:
+
+```yaml
+router.maxRequestTime: 5000
+router.pathPrefixMaxRequestTime:
+  /v1/address: 10000
+router.urlRewriteRules:
+  - '/v1/api/(.*) /api/$1'
+```
+
+This gives ordinary requests five seconds, address requests ten seconds, and rewrites `/v1/api/orders` to `/api/orders`. In a resolved `router.yml`, the same values use unprefixed keys:
+
+```yaml
+maxRequestTime: 5000
+pathPrefixMaxRequestTime:
+  /v1/address: 10000
+urlRewriteRules:
+  - '/v1/api/(.*) /api/$1'
+```
+
+Do not wrap these entries in a top-level `router:` object. Native YAML lists/maps are easiest to read; source examples also use JSON lists/maps and JSON text stored in quoted YAML scalars. A JSON editor expects valid JSON with double-quoted strings and doubled regex backslashes. Single-quoted YAML strings preserve regex backslashes literally. Keep integer settings numeric and quote string rewrite values such as `'1'`.
+
+An empty list (`[]`) disables configured list rules; an empty map (`{}`) removes map overrides. For `hostWhitelist`, an empty list specifically denies explicit-URL routing. Blank externalized placeholders in older Java templates denote no configured value; they are not examples of nonempty rule syntax.
+
+## All router.yml properties
+
+The defaults below come from current source templates/models and the local Portal configuration catalog. A property value explicitly generated by Portal overrides a runtime fallback. Java and Rust timeouts are nonnegative millisecond values for portable configuration; `0` has the documented disabled meaning for deadline/idle settings.
+
+| Property | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| [http2Enabled](./http2Enabled.md) | Boolean | `true` | Enable outbound HTTP/2 negotiation. |
+| [httpsEnabled](./httpsEnabled.md) | Boolean | `true` | Control TLS for Java discovery and HTTPS discovery filtering in Rust. |
+| [maxRequestTime](./maxRequestTime.md) | Integer (ms) | `Java: 1000; Rust: 0` | Ordinary request deadline; 0 disables this deadline. |
+| [pathPrefixMaxRequestTime](./pathPrefixMaxRequestTime.md) | Map of integer (ms) | `{}` | Override the ordinary deadline by literal request-path prefix. |
+| [streamResponseContentTypes](./streamResponseContentTypes.md) | List of string | `[text/event-stream]` | Recognize streaming responses by Content-Type. |
+| [streamRequestAcceptTypes](./streamRequestAcceptTypes.md) | List of string | `[text/event-stream]` | Recognize expected streams by Accept. |
+| [streamPathPrefixes](./streamPathPrefixes.md) | List of string | `[]` | Declare streaming request paths before response headers arrive. |
+| [streamMaxRequestTime](./streamMaxRequestTime.md) | Integer (ms) | `0` | Streaming exchange deadline; 0 disables it. |
+| [streamIdleTimeout](./streamIdleTimeout.md) | Integer (ms) | `0` | Maximum silence between downstream streaming bytes; 0 disables it. |
+| [streamResponseHeaderOverwrite](./streamResponseHeaderOverwrite.md) | List of string | `Six headers; see property page` | Give downstream streaming headers precedence over existing response headers. |
+| [connectionsPerThread](./connectionsPerThread.md) | Integer | `10` | Java per-target, per-I/O-thread pool connection limit. |
+| [maxQueueSize](./maxQueueSize.md) | Integer | `0` | Java pending connection-request queue limit. |
+| [softMaxConnectionsPerThread](./softMaxConnectionsPerThread.md) | Integer | `5` | Java soft connection-pool limit. |
+| [rewriteHostHeader](./rewriteHostHeader.md) | Boolean | `true` | Set Host for the selected target and retain the original in X-Forwarded-Host. |
+| [reuseXForwarded](./reuseXForwarded.md) | Boolean | `false` | Reuse forwarding metadata from a trusted preceding proxy. |
+| [maxConnectionRetries](./maxConnectionRetries.md) | Integer | `3` | Java proxy connection retry limit. |
+| [preResolveFQDN2IP](./preResolveFQDN2IP.md) | Boolean | `false` | Java discovery-time hostname-to-IP conversion. |
+| [hostWhitelist](./hostWhitelist.md) | List of regex string | `[]` | Allow explicit service_url hosts; an empty list denies them. |
+| [serviceIdQueryParameter](./serviceIdQueryParameter.md) | Boolean | `false` | Allow query service_id to override header service_id. |
+| [urlRewriteRules](./urlRewriteRules.md) | List of string | `[]` | Rewrite the path with the first matching regex. |
+| [methodRewriteRules](./methodRewriteRules.md) | List of string | `[]` | Rewrite the method for an endpoint pattern. |
+| [queryParamRewriteRules](./queryParamRewriteRules.md) | Map of rule lists | `{}` | Rename existing query keys and conditionally replace values. |
+| [headerRewriteRules](./headerRewriteRules.md) | Map of rule lists | `{}` | Rename existing headers and conditionally replace values. |
+| [metricsInjection](./metricsInjection.md) | Boolean | `false` | Request Java downstream-latency injection into the metrics handler. |
+| [metricsName](./metricsName.md) | String | `router-response` | Name for injected Java downstream timing metrics. |
+
+
+Every property link above has an explanation, examples, and runtime qualifications. The following examples show how the settings fit together.
+
+## How routing and rewriting fit together
+
+1. Earlier handlers authenticate/authorize the request and can derive `service_id` from a path, endpoint, or other mapping.
+2. If `serviceIdQueryParameter` is enabled, a query `service_id` can override the service-ID header.
+3. An explicit `service_url` takes precedence over service-ID discovery and must pass `hostWhitelist`. Otherwise the router resolves the registered `service_id`, with `env_tag` when supplied. Rust can use Portal registry discovery and direct-registry fallback.
+4. The router selects timeout/streaming policy using the incoming path and request metadata.
+5. The proxy adapts the upstream method, headers, path, and query. A target base path can be prepended. The routing headers `service_id` and `service_url` are removed before forwarding.
+6. The backend response is transferred; a configured streaming Content-Type triggers streaming handling, header precedence, and optional idle limits.
+
+For example, `service_id: party.address-1.0.0` selects a registered service, whereas `service_url: https://api.example.com:8443/base` selects an explicit target. With the latter target, an incoming `/v1/address` is forwarded under `/base/v1/address`, subject to any URL rewrite. A rewrite changes the backend-facing path; it does not itself select a different service or rerun authentication/authorization already performed by preceding handlers.
+
+For service-to-URL mappings and Kubernetes ingress base paths, see [Direct Registry Configuration](../direct-registry/index.md). See [Handler Configuration](../handler/index.md) for where a router is placed in the request chain.
+
+### Choose the right matching language
+
+| Property | Matching language | Example and meaning |
+| --- | --- | --- |
+| `pathPrefixMaxRequestTime` | Literal string prefix | `/v1/pets/` matches `/v1/pets/123`; `{petId}` is not expanded. |
+| `streamPathPrefixes` | Literal string prefix | `/events/` classifies `/events/orders` before response headers. |
+| `urlRewriteRules` | Whole-path regular expression | `/listings/(.*)$` captures a suffix for `$1`. |
+| `methodRewriteRules` | Endpoint pattern | `/v1/pets/{petId}` targets an identifier-bearing endpoint. |
+| `queryParamRewriteRules`, `headerRewriteRules` | Endpoint-pattern map, with runtime differences | `/v1/pets/{petId}` chooses a list of field rewrite rules. |
+| `hostWhitelist` | Whole-hostname regular expression | `api\.example\.com` allows the named host, independently of its port/path. |
+
+Use nonoverlapping endpoint/prefix rules for portable behavior. Java's endpoint matcher and Rust's endpoint matcher have different prefix/selection behavior, described on the relevant property pages.
+
+## Complete resolved configuration example
+
+This example includes **all 25 properties**. It chooses an explicit ordinary timeout to avoid default drift, declares an SSE path, leaves adaptation rules empty, and uses registered service routing by default.
+
+```yaml
+http2Enabled: true
+httpsEnabled: true
+maxRequestTime: 1000
+pathPrefixMaxRequestTime:
+  /v1/address: 5000
+  /v2/address: 10000
+  /v3/address: 30000
+streamResponseContentTypes:
+  - text/event-stream
+streamRequestAcceptTypes:
+  - text/event-stream
+streamPathPrefixes:
+  - /events/
+streamMaxRequestTime: 0
+streamIdleTimeout: 30000
+streamResponseHeaderOverwrite:
+  - Content-Type
+  - Cache-Control
+  - Connection
+  - Transfer-Encoding
+  - Content-Encoding
+  - Content-Length
+connectionsPerThread: 10
+maxQueueSize: 0
+softMaxConnectionsPerThread: 5
+rewriteHostHeader: true
+reuseXForwarded: false
+maxConnectionRetries: 3
+preResolveFQDN2IP: false
+hostWhitelist: []
+serviceIdQueryParameter: false
+urlRewriteRules: []
+methodRewriteRules: []
+queryParamRewriteRules: {}
+headerRewriteRules: {}
+metricsInjection: false
+metricsName: router-response
+```
+
+The settings mean:
+
+- **Protocols:** HTTP/2 is enabled for backend negotiation. Java uses HTTPS discovery; Rust permits HTTPS discovery and uses target protocols. Configure the incoming listener and TLS material separately.
+- **Ordinary requests:** unmatched paths have one second; address API versions have five, ten, and thirty seconds. Prefixes are evaluated against the incoming path.
+- **Streams:** `/events/orders` is declared streaming from the start. SSE is also recognized by Accept/Content-Type. A stream has no configured total deadline, but thirty seconds without upstream bytes closes a confirmed stream. The six header names protect downstream stream metadata from existing ordinary-response headers.
+- **Java pools:** ten connections per backend per I/O thread, soft threshold five, no connection-request queue, and three configured connection retries. These pool/retry values are accepted but not wired to equivalent controls in the current Rust gateway.
+- **Forwarding:** Host is rewritten for the backend; forwarding metadata is regenerated from the current connection rather than trusting existing values. Discovery hosts remain hostname-based in Java.
+- **Routing/adaptation:** arbitrary `service_url` routing is disabled by the empty whitelist, query service-ID override is disabled, and all rewrite collections are empty.
+- **Metrics:** the declared Java injection flag is off with the default name retained. See the metrics property pages for the current implementation qualification and Rust support.
+
+To allow an explicit host without opening routing to every hostname, replace the empty whitelist with:
+
+```yaml
+hostWhitelist:
+  - 'api\.example\.com'
+```
+
+`service_url: https://api.example.com:8443/base` is then eligible; `service_url: https://evil.example.com/base` is denied. The pattern does not restrict port or scheme, and it does not validate the target's certificate.
+
+## Streaming examples
+
+### SSE subscription with heartbeats
+
+```yaml
+maxRequestTime: 5000
+streamPathPrefixes:
+  - /events/
+streamMaxRequestTime: 0
+streamIdleTimeout: 30000
+```
+
+The declared `/events/` paths have no total router deadline. Once SSE response headers confirm streaming, a heartbeat every fifteen seconds keeps the thirty-second idle timer alive. Ordinary paths still have five seconds. Keep the default SSE request/response media-type lists and header-overwrite list unless the backend uses different types.
+
+### Bounded chat or NDJSON stream
+
+```yaml
+maxRequestTime: 10000
+streamResponseContentTypes:
+  - text/event-stream
+  - application/x-ndjson
+streamRequestAcceptTypes:
+  - text/event-stream
+  - application/x-ndjson
+streamPathPrefixes:
+  - /v1/chat/stream
+streamMaxRequestTime: 120000
+streamIdleTimeout: 15000
+```
+
+The chat path starts with a two-minute total budget. Once a recognized streaming response begins, fifteen seconds without bytes closes it. Other requests have a ten-second ordinary budget. A backend returning `application/x-ndjson` is recognized as streaming as well as one returning SSE. Accept-only classification and response-only deadline switching differ between the runtimes; declaring the actual stream path makes its pre-header intent explicit.
+
+Streaming passthrough does not convert a JSON API into SSE. Confirm that the backend emits incremental bytes, the response chain supports streaming, and any fronting proxy/load balancer permits the intended duration. Rust checks response-handler compatibility for streams; handlers that require complete-body transformations can conflict with passthrough.
+
+## Rewrite examples
+
+The individual pages preserve the source template, Java test-fixture, Rust combined-test, and existing-help examples, with explanations of their inputs and results:
+
+- [URL rules](./urlRewriteRules.md): listings to a query-based HTML endpoint, deployment-prefix removal, WordPress-to-CMS file mapping, API-prefix changes, and a Rust combined rewrite under a target base path.
+- [Method rules](./methodRewriteRules.md): POST-to-PUT/PATCH and GET-to-DELETE at address/pet endpoints, including the nested pet-address example and the limitations of the old POST-to-GET example.
+- [Query rules](./queryParamRewriteRules.md): rename only, replace value only, both together, multiple rules per endpoint, endpoint placeholders, and YAML/JSON forms.
+- [Header rules](./headerRewriteRules.md): the same field transformations, the legacy-token-to-Authorization example, and Java's request/response copy behavior.
+- [Timeout overrides](./pathPrefixMaxRequestTime.md): every address-version timeout, pet identifier correction, long-poll/upload examples, and native/JSON-text map forms.
+- [Host allowlist](./hostWhitelist.md): source subnet-like regex examples, their actual regex meaning, corrected escaped patterns, and allowed/denied hostname examples.
+
+## Java and Rust compatibility notes
+
+These findings are based on the source inspected on **2026-10-01**. Shared names and defaults do not establish runtime equivalence.
+
+| Area | Java light-4j | Rust light-fabric | Guidance |
+| --- | --- | --- | --- |
+| Ordinary default deadline | `1000` ms | `0` (disabled) | Set `maxRequestTime` explicitly. |
+| HTTP/2/TLS comments | Older descriptions mention incoming traffic; handler configures the outbound client | Outbound HTTP/2 negotiation; HTTPS-node filtering and per-target TLS | Configure listeners separately; verify the selected target protocol. |
+| Timeout-prefix overlap | First matching map entry | Longest nonempty prefix | Avoid overlaps. Braces are literal in both. |
+| Pool, queue, retry, DNS conversion fields | Used by Undertow/router pool | Accepted, but no gateway wiring for `connectionsPerThread`, `softMaxConnectionsPerThread`, `maxQueueSize`, `maxConnectionRetries`, or `preResolveFQDN2IP` | Do not infer Rust limits from these values. |
+| Explicit URL allowlist | Empty list errors/denies routing | Empty list returns forbidden | Empty means deny explicit URLs, not allow all. |
+| Regex engine | Java regex | Rust regex | Use common regex syntax. |
+| Method rule overlap | Continues evaluation; utility matcher accepts leading endpoint segments | First complete-pattern match | Use distinct endpoint rules. |
+| Query/header endpoint-map selection | First utility match | Longest match, also literal-prefix matching | Avoid overlapping keys and check child paths. |
+| URL replacement introduces query | Can append another `?` for an existing query | Merges replacement and incoming query pairs | Avoid that combination in portable rules. |
+| Unmatched endpoint with nonempty query rule map | Current builder omits original query | Original pairs preserved | Check unrelated Java endpoints. |
+| Header rule list | Applied to request and response copy; unrelated headers can be omitted and `oldK` comparison is case-sensitive | Request only; unrelated headers retained | Verify all required headers in Java. |
+| Query routing-key removal | Removes parsed key, but no-rewrite branch can reuse original query string | Removes routing pair while rebuilding upstream URI | Check Java wire behavior. |
+| Accept-only expected stream | Uses streaming budget immediately | Keeps ordinary budget until response confirms streaming | Set an ordinary setup deadline and declare known streaming paths. |
+| Response-only stream | Cancels ordinary timer without installing a new positive streaming total timer | Switches to streaming budget measured from request start | See `streamMaxRequestTime`. |
+| Named downstream metric injection | Uses available Java metrics handler; current request path can look it up even with flag false | Flags/name accepted, not used for Java-style injection | Check the runtime's actual metrics configuration. |
+
+The common examples describe intended results for unambiguous, single-valued inputs. Multivalue queries/headers, colliding destination keys, overlapping endpoints, protocol/TLS choices, and combinations of rewrites need verification on the target runtime. This documentation change does not change either router implementation.
+
+## Troubleshooting
+
+| Symptom | What to check |
+| --- | --- |
+| Explicit `service_url` fails | Whitelist is nonempty, regex matches the hostname as a whole, and URL is valid. Rust rejects user info, query, and fragments in a target URL. |
+| Wrong service selected | Query `service_id` override, explicit `service_url` precedence, earlier path/service mappings, and `env_tag`. |
+| Ordinary API times out | Explicit global value, literal prefix matches, backend duration, and independent connect/client/load-balancer timeouts. |
+| Stream closes too early | Correct response Content-Type, known streaming path, total/idle budgets, heartbeat gaps, handler-chain compatibility, and external proxy limits. |
+| Pet timeout override does not work | Use `/v1/pets/`; timeout-prefix matching does not interpret `{petId}`. |
+| Rewrite does not match | Distinguish literal prefix, endpoint placeholder, and whole-path regex syntax; check casing and escape characters. |
+| Query/header disappears in Java | Check nonmatching query-map behavior and `copyHeaders` with nonempty header rules, as described above. |
+| Pool or retry setting has no effect in Rust | Those fields are currently parsed compatibility settings, not wired Pingora controls. |
+| Metrics do not follow the flag/name | Confirm Java metrics-handler presence or Rust's separate metrics implementation. |
+
+## Sources and Portal catalog evidence
+
+This reference reconciles the templates, implementation, tests, and the read-only local `configserver` catalog. The catalog contains one Router description and 19 Router property descriptions; it does not yet contain the six streaming properties present in current Java/Rust source. Its `maxRequestTime` default is `1000`. Descriptions are treated as authoring guidance; executable source takes precedence where an old description is inaccurate.
+
+Java sources reviewed at `light-4j` revision `ce59ecae5`:
+
+- [router.yml template](https://github.com/networknt/light-4j/blob/ce59ecae5/router-config/src/main/resources/config/router.yml), including JSON/YAML examples and all six streaming fields.
+- [RouterConfig](https://github.com/networknt/light-4j/blob/ce59ecae5/router-config/src/main/java/com/networknt/router/RouterConfig.java), property metadata and defaults.
+- [RouterHandler](https://github.com/networknt/light-4j/blob/ce59ecae5/egress-router/src/main/java/com/networknt/router/RouterHandler.java), outbound options, configuration reload, and metrics attachments.
+- [LoadBalancingRouterProxyClient](https://github.com/networknt/light-4j/blob/ce59ecae5/egress-router/src/main/java/io/undertow/server/handlers/proxy/LoadBalancingRouterProxyClient.java), discovery, explicit-URL restrictions, pool settings, and query service-ID override.
+- [ProxyHandler](https://github.com/networknt/light-4j/blob/ce59ecae5/proxy-handler/src/main/java/com/networknt/handler/ProxyHandler.java), rewrite order, header copying, exchange deadlines, and streaming transfer.
+- [HostWhitelist](https://github.com/networknt/light-4j/blob/ce59ecae5/router-config/src/main/java/com/networknt/router/HostWhitelist.java), full-host regex matching and empty-list rejection.
+- [Java values.yml examples](https://github.com/networknt/light-4j/blob/ce59ecae5/router-config/src/test/resources/config/values.yml) and [RouterConfigTest](https://github.com/networknt/light-4j/blob/ce59ecae5/router-config/src/test/java/com/networknt/router/RouterConfigTest.java).
+- [CollectionUtils](https://github.com/networknt/light-4j/blob/ce59ecae5/utility/src/main/java/com/networknt/utility/CollectionUtils.java) and [StringUtils](https://github.com/networknt/light-4j/blob/ce59ecae5/utility/src/main/java/com/networknt/utility/StringUtils.java), endpoint-map selection and path matching.
+
+Rust sources reviewed at `light-fabric` revision `a6b39d4`:
+
+- [gateway router.yml](https://github.com/networknt/light-fabric/blob/a6b39d4/apps/light-gateway/config/router.yml), externalized values and defaults.
+- [light-pingora router.rs](https://github.com/networknt/light-fabric/blob/a6b39d4/frameworks/light-pingora/src/router.rs), configuration model, target selection, rewrite logic, and tests.
+- [streaming.rs](https://github.com/networknt/light-fabric/blob/a6b39d4/frameworks/light-pingora/src/streaming.rs), media-type/prefix matching and streaming defaults.
+- [gateway main.rs](https://github.com/networknt/light-fabric/blob/a6b39d4/apps/light-gateway/src/main.rs), runtime application of router options, forwarding headers, deadlines, and stream confirmation.
+
+These are source and catalog findings, not a claim that the examples have all been exercised against a deployed Java and Rust gateway. Recheck implementation qualifications when upgrading either runtime.

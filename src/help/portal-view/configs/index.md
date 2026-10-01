@@ -2,6 +2,9 @@
 
 Use config help pages to understand runtime configuration properties managed through portal-view and the config server.
 
+See [Router Configuration](./router/index.md) for all `router.yml` properties,
+Java/Rust behavior, streaming policies, and explained rewrite examples.
+
 Common config areas:
 
 - access control
