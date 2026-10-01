@@ -50,31 +50,31 @@ The defaults below come from current source templates/models and the local Porta
 
 | Property | Type | Default | Purpose |
 | --- | --- | --- | --- |
-| [http2Enabled](./http2Enabled.md) | Boolean | `true` | Enable outbound HTTP/2 negotiation. |
-| [httpsEnabled](./httpsEnabled.md) | Boolean | `true` | Control TLS for Java discovery and HTTPS discovery filtering in Rust. |
-| [maxRequestTime](./maxRequestTime.md) | Integer (ms) | `Java: 1000; Rust: 0` | Ordinary request deadline; 0 disables this deadline. |
-| [pathPrefixMaxRequestTime](./pathPrefixMaxRequestTime.md) | Map of integer (ms) | `{}` | Override the ordinary deadline by literal request-path prefix. |
-| [streamResponseContentTypes](./streamResponseContentTypes.md) | List of string | `[text/event-stream]` | Recognize streaming responses by Content-Type. |
-| [streamRequestAcceptTypes](./streamRequestAcceptTypes.md) | List of string | `[text/event-stream]` | Recognize expected streams by Accept. |
-| [streamPathPrefixes](./streamPathPrefixes.md) | List of string | `[]` | Declare streaming request paths before response headers arrive. |
-| [streamMaxRequestTime](./streamMaxRequestTime.md) | Integer (ms) | `0` | Streaming exchange deadline; 0 disables it. |
-| [streamIdleTimeout](./streamIdleTimeout.md) | Integer (ms) | `0` | Maximum silence between downstream streaming bytes; 0 disables it. |
-| [streamResponseHeaderOverwrite](./streamResponseHeaderOverwrite.md) | List of string | `Six headers; see property page` | Give downstream streaming headers precedence over existing response headers. |
-| [connectionsPerThread](./connectionsPerThread.md) | Integer | `10` | Java per-target, per-I/O-thread pool connection limit. |
-| [maxQueueSize](./maxQueueSize.md) | Integer | `0` | Java pending connection-request queue limit. |
-| [softMaxConnectionsPerThread](./softMaxConnectionsPerThread.md) | Integer | `5` | Java soft connection-pool limit. |
-| [rewriteHostHeader](./rewriteHostHeader.md) | Boolean | `true` | Set Host for the selected target and retain the original in X-Forwarded-Host. |
-| [reuseXForwarded](./reuseXForwarded.md) | Boolean | `false` | Reuse forwarding metadata from a trusted preceding proxy. |
-| [maxConnectionRetries](./maxConnectionRetries.md) | Integer | `3` | Java proxy connection retry limit. |
-| [preResolveFQDN2IP](./preResolveFQDN2IP.md) | Boolean | `false` | Java discovery-time hostname-to-IP conversion. |
-| [hostWhitelist](./hostWhitelist.md) | List of regex string | `[]` | Allow explicit service_url hosts; an empty list denies them. |
-| [serviceIdQueryParameter](./serviceIdQueryParameter.md) | Boolean | `false` | Allow query service_id to override header service_id. |
-| [urlRewriteRules](./urlRewriteRules.md) | List of string | `[]` | Rewrite the path with the first matching regex. |
-| [methodRewriteRules](./methodRewriteRules.md) | List of string | `[]` | Rewrite the method for an endpoint pattern. |
-| [queryParamRewriteRules](./queryParamRewriteRules.md) | Map of rule lists | `{}` | Rename existing query keys and conditionally replace values. |
-| [headerRewriteRules](./headerRewriteRules.md) | Map of rule lists | `{}` | Rename existing headers and conditionally replace values. |
-| [metricsInjection](./metricsInjection.md) | Boolean | `false` | Request Java downstream-latency injection into the metrics handler. |
-| [metricsName](./metricsName.md) | String | `router-response` | Name for injected Java downstream timing metrics. |
+| [http2Enabled](./http2-enabled.md) | Boolean | `true` | Enable outbound HTTP/2 negotiation. |
+| [httpsEnabled](./https-enabled.md) | Boolean | `true` | Control TLS for Java discovery and HTTPS discovery filtering in Rust. |
+| [maxRequestTime](./max-request-time.md) | Integer (ms) | `Java: 1000; Rust: 0` | Ordinary request deadline; 0 disables this deadline. |
+| [pathPrefixMaxRequestTime](./path-prefix-max-request-time.md) | Map of integer (ms) | `{}` | Override the ordinary deadline by literal request-path prefix. |
+| [streamResponseContentTypes](./stream-response-content-types.md) | List of string | `[text/event-stream]` | Recognize streaming responses by Content-Type. |
+| [streamRequestAcceptTypes](./stream-request-accept-types.md) | List of string | `[text/event-stream]` | Recognize expected streams by Accept. |
+| [streamPathPrefixes](./stream-path-prefixes.md) | List of string | `[]` | Declare streaming request paths before response headers arrive. |
+| [streamMaxRequestTime](./stream-max-request-time.md) | Integer (ms) | `0` | Streaming exchange deadline; 0 disables it. |
+| [streamIdleTimeout](./stream-idle-timeout.md) | Integer (ms) | `0` | Maximum silence between downstream streaming bytes; 0 disables it. |
+| [streamResponseHeaderOverwrite](./stream-response-header-overwrite.md) | List of string | `Six headers; see property page` | Give downstream streaming headers precedence over existing response headers. |
+| [connectionsPerThread](./connections-per-thread.md) | Integer | `10` | Java per-target, per-I/O-thread pool connection limit. |
+| [maxQueueSize](./max-queue-size.md) | Integer | `0` | Java pending connection-request queue limit. |
+| [softMaxConnectionsPerThread](./soft-max-connections-per-thread.md) | Integer | `5` | Java soft connection-pool limit. |
+| [rewriteHostHeader](./rewrite-host-header.md) | Boolean | `true` | Set Host for the selected target and retain the original in X-Forwarded-Host. |
+| [reuseXForwarded](./reuse-xforwarded.md) | Boolean | `false` | Reuse forwarding metadata from a trusted preceding proxy. |
+| [maxConnectionRetries](./max-connection-retries.md) | Integer | `3` | Java proxy connection retry limit. |
+| [preResolveFQDN2IP](./pre-resolve-fqdn2-ip.md) | Boolean | `false` | Java discovery-time hostname-to-IP conversion. |
+| [hostWhitelist](./host-whitelist.md) | List of regex string | `[]` | Allow explicit service_url hosts; an empty list denies them. |
+| [serviceIdQueryParameter](./service-id-query-parameter.md) | Boolean | `false` | Allow query service_id to override header service_id. |
+| [urlRewriteRules](./url-rewrite-rules.md) | List of string | `[]` | Rewrite the path with the first matching regex. |
+| [methodRewriteRules](./method-rewrite-rules.md) | List of string | `[]` | Rewrite the method for an endpoint pattern. |
+| [queryParamRewriteRules](./query-param-rewrite-rules.md) | Map of rule lists | `{}` | Rename existing query keys and conditionally replace values. |
+| [headerRewriteRules](./header-rewrite-rules.md) | Map of rule lists | `{}` | Rename existing headers and conditionally replace values. |
+| [metricsInjection](./metrics-injection.md) | Boolean | `false` | Request Java downstream-latency injection into the metrics handler. |
+| [metricsName](./metrics-name.md) | String | `router-response` | Name for injected Java downstream timing metrics. |
 
 
 Every property link above has an explanation, examples, and runtime qualifications. The following examples show how the settings fit together.
@@ -206,12 +206,12 @@ Streaming passthrough does not convert a JSON API into SSE. Confirm that the bac
 
 The individual pages preserve the source template, Java test-fixture, Rust combined-test, and existing-help examples, with explanations of their inputs and results:
 
-- [URL rules](./urlRewriteRules.md): listings to a query-based HTML endpoint, deployment-prefix removal, WordPress-to-CMS file mapping, API-prefix changes, and a Rust combined rewrite under a target base path.
-- [Method rules](./methodRewriteRules.md): POST-to-PUT/PATCH and GET-to-DELETE at address/pet endpoints, including the nested pet-address example and the limitations of the old POST-to-GET example.
-- [Query rules](./queryParamRewriteRules.md): rename only, replace value only, both together, multiple rules per endpoint, endpoint placeholders, and YAML/JSON forms.
-- [Header rules](./headerRewriteRules.md): the same field transformations, the legacy-token-to-Authorization example, and Java's request/response copy behavior.
-- [Timeout overrides](./pathPrefixMaxRequestTime.md): every address-version timeout, pet identifier correction, long-poll/upload examples, and native/JSON-text map forms.
-- [Host allowlist](./hostWhitelist.md): source subnet-like regex examples, their actual regex meaning, corrected escaped patterns, and allowed/denied hostname examples.
+- [URL rules](./url-rewrite-rules.md): listings to a query-based HTML endpoint, deployment-prefix removal, WordPress-to-CMS file mapping, API-prefix changes, and a Rust combined rewrite under a target base path.
+- [Method rules](./method-rewrite-rules.md): POST-to-PUT/PATCH and GET-to-DELETE at address/pet endpoints, including the nested pet-address example and the limitations of the old POST-to-GET example.
+- [Query rules](./query-param-rewrite-rules.md): rename only, replace value only, both together, multiple rules per endpoint, endpoint placeholders, and YAML/JSON forms.
+- [Header rules](./header-rewrite-rules.md): the same field transformations, the legacy-token-to-Authorization example, and Java's request/response copy behavior.
+- [Timeout overrides](./path-prefix-max-request-time.md): every address-version timeout, pet identifier correction, long-poll/upload examples, and native/JSON-text map forms.
+- [Host allowlist](./host-whitelist.md): source subnet-like regex examples, their actual regex meaning, corrected escaped patterns, and allowed/denied hostname examples.
 
 ## Java and Rust compatibility notes
 

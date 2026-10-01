@@ -13,3 +13,31 @@ command = "mdbook-mermaid"
 
 [output.html]
 additional-js = ["mermaid.min.js", "mermaid-init.js"]
+
+# Preserve previously published Router property URLs.
+[output.html.redirect]
+"help/portal-view/configs/router/connectionsPerThread.html" = "connections-per-thread.html"
+"help/portal-view/configs/router/headerRewriteRules.html" = "header-rewrite-rules.html"
+"help/portal-view/configs/router/hostWhitelist.html" = "host-whitelist.html"
+"help/portal-view/configs/router/http2Enabled.html" = "http2-enabled.html"
+"help/portal-view/configs/router/httpsEnabled.html" = "https-enabled.html"
+"help/portal-view/configs/router/maxConnectionRetries.html" = "max-connection-retries.html"
+"help/portal-view/configs/router/maxQueueSize.html" = "max-queue-size.html"
+"help/portal-view/configs/router/maxRequestTime.html" = "max-request-time.html"
+"help/portal-view/configs/router/methodRewriteRules.html" = "method-rewrite-rules.html"
+"help/portal-view/configs/router/metricsInjection.html" = "metrics-injection.html"
+"help/portal-view/configs/router/metricsName.html" = "metrics-name.html"
+"help/portal-view/configs/router/pathPrefixMaxRequestTime.html" = "path-prefix-max-request-time.html"
+"help/portal-view/configs/router/preResolveFQDN2IP.html" = "pre-resolve-fqdn2-ip.html"
+"help/portal-view/configs/router/queryParamRewriteRules.html" = "query-param-rewrite-rules.html"
+"help/portal-view/configs/router/reuseXForwarded.html" = "reuse-xforwarded.html"
+"help/portal-view/configs/router/rewriteHostHeader.html" = "rewrite-host-header.html"
+"help/portal-view/configs/router/serviceIdQueryParameter.html" = "service-id-query-parameter.html"
+"help/portal-view/configs/router/softMaxConnectionsPerThread.html" = "soft-max-connections-per-thread.html"
+"help/portal-view/configs/router/streamIdleTimeout.html" = "stream-idle-timeout.html"
+"help/portal-view/configs/router/streamMaxRequestTime.html" = "stream-max-request-time.html"
+"help/portal-view/configs/router/streamPathPrefixes.html" = "stream-path-prefixes.html"
+"help/portal-view/configs/router/streamRequestAcceptTypes.html" = "stream-request-accept-types.html"
+"help/portal-view/configs/router/streamResponseContentTypes.html" = "stream-response-content-types.html"
+"help/portal-view/configs/router/streamResponseHeaderOverwrite.html" = "stream-response-header-overwrite.html"
+"help/portal-view/configs/router/urlRewriteRules.html" = "url-rewrite-rules.html"
