@@ -12,7 +12,7 @@ command = "mdbook-mermaid"
 [output]
 
 [output.html]
-additional-js = ["mermaid.min.js", "mermaid-init.js"]
+additional-js = ["mermaid.min.js", "mermaid-init.js", "diagram-viewer.js"]
 
 # Preserve previously published Router property URLs.
 [output.html.redirect]
