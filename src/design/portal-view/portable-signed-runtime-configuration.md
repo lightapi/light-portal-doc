@@ -6,12 +6,14 @@ Proposed design. The current `portal-view` build still compiles deployment
 values from `VITE_*` variables, and the gateway does not yet render a runtime
 base URL into the SPA entry page. The Rust `light-gateway` already supports
 virtual-host static files and fallback to `index.html` for extensionless SPA
-routes. The Java `VirtualHostHandler` serves static resources but does not yet
-provide equivalent deep-route fallback.
+routes. This design targets only Rust `light-gateway`; Java gateway parity is
+out of scope for the migration away from Java.
 
 This document defines the target contract. It does not claim that the runtime
 configuration loader, gateway HTML rendering, release archive, or all
-qualification gates have been implemented.
+qualification gates have been implemented. It supersedes the target architecture
+in [Multiple Environment](multiple-environment.md); that build-time model remains
+supported until the migration gates below pass.
 
 ## Problem
 
@@ -59,8 +61,10 @@ Using one `basePath` for both namespaces hides an important routing boundary.
 6. Build static asset references relative to a `<base>` element.
 7. Let `light-gateway` render the effective `<base href>` into the SPA entry
    response without modifying the signed template on disk.
-8. Select authentication through an explicit `oauth2` or `entra-sso` profile;
-   never place a client secret in browser configuration.
+8. Use OAuth 2.0 authorization-code grant flow (`oauth2`) for `portal-config-loc`,
+   `portal-config-dev`, and `light-portal-install`. `portal-config-bootstrap` may
+   select SSO; the defined SSO adapter is `entra-sso`. Never place a client
+   secret in browser configuration.
 9. Preserve known API routes ahead of the virtual-host fallback so a missing
    API never becomes an HTML response.
 10. Verify the vendor archive before extraction and validate customer runtime
@@ -84,6 +88,9 @@ Using one `basePath` for both namespaces hides an important routing boundary.
 ## Non-Goals
 
 - The runtime JSON is not a secret store.
+- The first release does not support cross-origin BFF sessions; deployments
+  expose the BFF through the Portal origin. Cross-origin feature services retain
+  their separately defined authentication contracts.
 - The vendor signature does not certify customer-authored configuration.
 - This design does not make Kubernetes Ingress and standalone routing
   identical; it gives both topologies one explicit contract.
@@ -150,32 +157,49 @@ The release and deployment trust boundaries are deliberately separate:
 
 ## Release Artifact
 
-A release archive should contain:
+Publish these three sibling files under one immutable versioned release directory:
+
+```text
+portal-view-<version>.zip
+release-manifest.json
+release-manifest.sig
+```
+
+The archive contains:
 
 ```text
 portal-view-<version>.zip
 ├── index.html
 ├── assets/
-│   ├── bootstrap.<hash>.js
-│   ├── portal.<hash>.js
-│   ├── oauth2.<hash>.js
-│   ├── entra-sso.<hash>.js
-│   └── portal.<hash>.css
+│   ├── bootstrap-<hash>.js
+│   ├── portal-<hash>.js
+│   ├── oauth2-<hash>.js
+│   ├── entra-sso-<hash>.js
+│   └── portal-<hash>.css
 ├── portal-config.schema.json
-├── release-manifest.json
 └── VERSION
 ```
 
-The detached signature is published beside the archive. The release manifest
-records at least:
+Chunk names above are illustrative Vite `name-hash` names, not fixed entry names.
+Production release builds disable source maps and exclude `.map` files and
+source-map references from the public archive. The current `sourcemap: true`
+build setting must change; development builds may retain maps.
+
+`release-manifest.sig` is an Ed25519 signature over the exact published UTF-8
+bytes of `release-manifest.json`. The manifest and signature are outside the
+archive, so the archive digest has no self-reference. The manifest records:
 
 - artifact name and version;
 - archive SHA-256;
-- each member path and SHA-256;
+- every archive member path, SHA-256, and cache class (`immutable` or
+  `revalidate`); only content-addressed assets use `immutable`;
+- `spaRoutes`, mount-relative route reservations with explicit `exact` or
+  `prefix` matching, generated and checked against the release router;
 - build commit;
-- build timestamp;
+- build timestamp derived from the fixed `SOURCE_DATE_EPOCH`, never wall time;
 - supported runtime configuration schema versions;
-- signing algorithm and key ID; and
+- `signature.algorithm` (`Ed25519`) and `signature.keyId`, included in the
+  signed manifest even though the signature bytes are detached; and
 - minimum compatible gateway capability version.
 
 Every release supports its current runtime configuration schema version `N`
@@ -185,24 +209,101 @@ Removing `N-1` support requires a later release after the normal customer
 configuration migration window.
 
 The public verification key must arrive through a trust channel independent of
-the downloaded artifact, following the platform release-signing-key design.
-Verification completes before extraction or replacement of the active Portal
-files.
+the downloaded artifact, following
+[Release Signing Key Management and Rotation](../release-signing-key-management.md).
+The dedicated trust domain is `portal-view-archive`, with keys such as
+`portal-view-release-2026-01` in `portal-view-release-keys/<keyId>.pem`. An
+untrusted manifest may select only an already enrolled key in this domain; it
+cannot enroll keys or select an arbitrary algorithm or filesystem path.
 
-The verified SPA directory should be mounted read-only. Customer configuration
-should be mounted separately, for example:
+Verify the manifest signature first, then the archive SHA-256 and exact member
+set/digests by inspecting the archive before extraction. Reject duplicate or
+unsafe paths, symlinks, unlisted members, and missing members. Extract into a
+staging directory and verify the resulting files before atomic activation.
+Keep the verified manifest and signature inside the same version directory as
+the extracted SPA files. Activate that directory as one unit using the contract
+below; never replace the static root and manifest independently.
+
+Pin build tools, dependency inputs, member ordering, permissions, compression
+settings, and archive timestamps. Identical inputs, including `SOURCE_DATE_EPOCH`,
+must reproduce both archive bytes and manifest bytes; signature generation
+follows that reproducible build.
+
+### Atomic release activation and verification ownership
+
+Stage each release in its own directory, then make it immutable. The gateway
+sees the release tree read-only; the deployment process manages a single
+`current` pointer on the same filesystem:
 
 ```text
-/lightapi/dist/                 signed, read-only release files
-/config/portal-config.json      customer-owned runtime configuration
+/lightapi/releases/<version>/
+├── dist/                       verified archive members
+├── release-manifest.json       verified external manifest
+└── release-manifest.sig        detached signature
+/lightapi/current -> releases/<version>
+/config/portal-config.json      separately mounted customer configuration
+/config/portal-view-release-keys/  independently provisioned, read-only public keys
 ```
 
-The gateway reads the configuration from the second path. It does not require
-the operator to modify the extracted release.
+The installer verifies the signature, archive digest, and member digests before
+extraction, then verifies the extracted exact file set and hashes. Once the
+candidate and existing runtime configuration pass compatibility checks, it
+atomically renames a prepared symlink over `current`. Never overwrite a version
+directory or update two bind mounts separately. Mount the parent release tree
+so the gateway can observe the pointer change. After each swap, including
+rollback or failure recovery, the installer must invoke the existing gateway
+on-demand reload for the `virtual-host` module and read back the expected active
+manifest digest. There is no filesystem watcher; swapping `current` alone does
+not activate the release in a running gateway.
+
+Extend `load_static_resources` to resolve `current` **once** to a concrete
+version directory and load its static sites, manifest/cache classes, route
+reservations, rendered root index, and validated runtime configuration into one
+candidate `StaticResourceSet`. Both `base` and `spa.releaseManifest` must resolve
+under that same pinned directory; do not resolve `current` independently for
+each file or on each request. The current `StaticResourceReloader` already builds
+with `load_static_resources` and then publishes through one `ConfigManager.store`;
+the new release data must join that snapshot rather than a separate reload.
+This guarantees consistency within the static snapshot, not an atomic reload of
+unrelated gateway modules.
+
+At every startup and static-resource reload, the gateway verifies the manifest
+signature with enrolled Portal View keys mounted read-only at
+`/config/portal-view-release-keys/<keyId>.pem`, checks the exact extracted file set,
+and re-hashes every signed file against the manifest. A filename-only check is
+insufficient. Archive-byte verification belongs to the installer; the gateway
+does not require the ZIP at runtime. Reject unsafe paths and symlinks inside
+`dist`; the deployment-owned `current` pointer is resolved only at the release
+boundary. These checks precede publication, not each HTTP request. Immutable
+version directories must remain unmodified after verification. Provision the
+gateway keys through the same independent trust channel and rotation/revocation
+policy as the installer, outside the release directory; never enroll keys from
+the downloaded archive or manifest.
+
+The filesystem pointer swap selects the candidate; the single successful
+snapshot publication is the serving activation point. Requests retain their
+snapshot's concrete paths and cache metadata, so an in-flight old request cannot
+read new files with old metadata. A failed reload retains the previous snapshot;
+the deployment restores `current` to the previous directory and reports failure.
+A cold-start verification failure fails readiness. Rollback swaps `current` back
+and reloads the same way. Keep at least the active and previous version
+directories. Prune older versions only after successful readback of the active
+manifest digest and during maintenance with all gateway processes serving that
+release tree drained and stopped. Digest readback alone does not prove that
+older requests have finished, especially across rapid successive activations;
+ordinary online activation performs no pruning. This rule requires no external
+snapshot-reference inspection. The pointer and snapshot are two ordered steps,
+not a claimed cross-process transaction.
+
+The gateway reads customer configuration from `/config/portal-config.json`.
+It does not require the operator to modify the extracted release.
 
 ### Reserved runtime configuration endpoint
 
-The gateway owns one reserved endpoint within each SPA mount:
+Virtual hosts are keyed by domain and duplicate domains are rejected. This
+contract supports one SPA mount per selected virtual host per gateway; multiple
+SPA mounts on the same host are out of scope. The gateway owns one reserved
+endpoint within that mount:
 
 ```text
 <gatewayBasePath>/portal-config.json
@@ -212,7 +313,7 @@ For example, the browser requests
 `/namespace-dev/service/ai/portal/portal-config.json`, and Ingress forwards
 `/ai/portal/portal-config.json`.
 
-That exact gateway route does not resolve a file below `/lightapi/dist`. The
+That exact gateway route does not resolve a file below the pinned static root. The
 virtual-host SPA handler serves a canonical JSON representation from the
 validated in-memory model loaded from `spa.runtimeConfig`, such as
 `/config/portal-config.json`. This is an intentional exception to static-root
@@ -281,8 +382,11 @@ enforces:
 - normalized paths without `..`, backslashes, query strings, fragments,
   control characters, encoded separators, schemes, or authority components;
 - HTTPS for absolute production URLs;
+- BFF routing is same-origin in the initial schema; `routing.apiOrigin` is
+  not accepted, and BFF endpoint builders reject absolute origin overrides;
 - required `tenantId` and `clientId` for `entra-sso`;
-- required `signInUrl` for `oauth2`;
+- required `signInUrl` for `oauth2`, validated as a URL using the contract below
+  rather than as a query-free routing path;
 - an allowlisted authentication mode;
 - allowed redirect origins and paths;
 - bounded string, array, object, and document sizes;
@@ -399,23 +503,35 @@ The gateway has two independent inputs:
 virtual-host.hosts:
   - domain: dev.ingress
     path: /ai/portal
-    base: /lightapi/dist
+    base: /lightapi/current/dist
     transferMinSize: 10245760
     directoryListingEnabled: false
     spa:
       enabled: true
       index: index.html
       runtimeConfig: /config/portal-config.json
+      releaseManifest: /lightapi/current/release-manifest.json
       basePlaceholder: __PORTAL_BASE_HREF__
 ```
 
 - `path` is the gateway-visible static mount after proxy rewriting.
 - `runtimeConfig.routing.publicBasePath` is the browser-visible mount.
 
-The proposed `spa` object is additive. Existing static virtual hosts without it
-retain their current behavior.
+The proposed `spa` object enables runtime validation, root-index rendering,
+the reserved config endpoint, and manifest-based cache policy. It does not
+introduce extensionless fallback: existing virtual hosts, including sign-in
+hosts, already have it. Hosts without the block (or with `spa.enabled: false`)
+retain their current unrendered fallback and legacy cache behavior.
 
-For a matching virtual host, the gateway:
+`gatewayBasePath` names the virtual-host `path`, matched against the path received
+from the proxy. `handler.basePath` is a separate handler-matching convenience:
+today exact/wildcard handlers try the received path and then a segment-aware
+base-stripped path. It does not define the browser prefix or the static mount.
+The terminal namespace rules must use the same matching behavior as exact
+handlers. Do not strip this prefix a second time from static resolution; test
+non-root `handler.basePath` together with a rewritten Ingress mount.
+
+For a matching SPA-enabled virtual host, the target request pipeline:
 
 1. serves the exact reserved runtime-configuration route from the validated
    in-memory model;
@@ -428,13 +544,27 @@ For a matching virtual host, the gateway:
 6. returns `404` for a missing asset-looking path; and
 7. rejects traversal, dotfiles, and files outside the static root.
 
-The Rust gateway already implements the underlying static resolution, including
-SPA fallback. It needs the reserved configuration endpoint, prefix-terminal
-routing, optional runtime-config load, validation, and index rendering. The
-Java resource handler needs both explicit SPA fallback and index rendering if
-the Java gateway remains a supported Portal BFF.
+Only the configured root `index.html` is rendered, including when selected by
+SPA fallback. A real subdirectory takes precedence over fallback: its own
+`index.html` is served unchanged, or it returns `404` if there is no index.
+Consequently `/assets` must not be used as a React route. Missing paths whose
+last segment contains a dot are treated as assets; React routes ending in a
+version or hostname cannot rely on refresh fallback under this contract.
+
+The Rust gateway needs the reserved configuration endpoint, terminal namespace
+guards, optional runtime-config load, validation, root-index rendering, and
+manifest cache classification. These are proposed capabilities, not current
+behavior.
 
 ### Handler precedence
+
+The existing `path_template_match` already supports segment-aware `/portal/*`
+matching (including `/portal` itself), and `find_map` selects the first match.
+Extend that machinery with explicit any-method matching and a generic terminal
+404 handler; the existing `sidecar-deny` is sidecar-specific. Register exact
+working routes first, then namespace guards, then static fallback. Preserve
+explicit CORS/preflight handling before terminal guards. Wrong-method requests
+such as `GET /portal/command` must terminate with an API error, never HTML.
 
 Known BFF namespaces must be selected by segment-aware prefix before the static
 fallback. The registration is intentionally broader than the exact successful
@@ -452,9 +582,50 @@ is profile-owned, but commonly includes:
 /schedulers
 /chat
 /ctrl/mcp
+/mcp
+/api
+/authorization
+/ws
+/github
+/google
+/facebook
 /health
 /adm
 ```
+
+Also retain exact handler-owned resources `/spec.yaml`, `/specui.html`, and
+`/favicon.ico` before fallback; these are exact resources, not broad namespaces.
+Inventory each deployment profile against `handler.yml` and frontend traffic.
+Correct the development proxy `/schedules` spelling to server `/schedulers`
+during migration rather than introducing a new server namespace. Reject a
+configuration only when a guard intersects a declared SPA route reservation or
+the exact reserved configuration endpoint, not merely because the guard is
+beneath the static mount. A root mount must accept `/portal/*` and `/chat/*`.
+
+The signed manifest declares these current mount-relative reservations:
+
+```json
+{
+  "spaRoutes": [
+    { "path": "/", "match": "exact" },
+    { "path": "/app", "match": "prefix" },
+    { "path": "/redirect", "match": "exact" },
+    { "path": "/device", "match": "exact" }
+  ]
+}
+```
+
+`prefix` means the path itself and segment-bounded descendants; exact `/` does
+not reserve every descendant. The router's catch-all error page is not a route
+reservation. Expand reservations under `gatewayBasePath` and compare request
+sets using the same received-path and `handler.basePath` alias rules as handler
+selection. Reject either ancestor or descendant overlap with a prefix reservation,
+or a guard that covers an exact reservation. Include the mount's slash/no-slash
+root aliases and the exact `<gatewayBasePath>/portal-config.json` endpoint.
+For example, root-mounted `/app/*`, `/redirect/*`, and `/*` guards conflict;
+`/portal/*`, `/chat/*`, and `/application/*` do not. A prefixed mount compares
+against its prefixed routes, not origin-root `/app`. Build gates must detect
+router/manifest reservation drift.
 
 Returning `index.html` for a misspelled or unavailable API creates misleading
 JSON parsing and authentication errors. API selection therefore cannot depend
@@ -478,8 +649,8 @@ sequenceDiagram
     G->>F: Resolve app/dashboard
     F-->>G: Not found, extensionless route
     G-->>B: Rendered index.html with external base href
-    B->>I: GET /namespace-dev/service/ai/portal/assets/portal.hash.js
-    I->>G: GET /ai/portal/assets/portal.hash.js
+    B->>I: GET /namespace-dev/service/ai/portal/assets/portal-m7DsXjYC.js
+    I->>G: GET /ai/portal/assets/portal-m7DsXjYC.js
     G-->>B: Immutable signed asset
     B->>I: POST /namespace-dev/service/portal/query
     I->>G: POST /portal/query
@@ -501,7 +672,7 @@ Example gateway static mount:
 
 ```yaml
 path: /ai/portal
-base: /lightapi/dist
+base: /lightapi/current/dist
 ```
 
 The Ingress must forward the original host expected by virtual-host matching,
@@ -537,11 +708,12 @@ The same archive uses root paths when the BFF is directly exposed:
 virtual-host.hosts:
   - domain: portal.example.com
     path: /
-    base: /lightapi/dist
+    base: /lightapi/current/dist
     spa:
       enabled: true
       index: index.html
       runtimeConfig: /config/portal-config.json
+      releaseManifest: /lightapi/current/release-manifest.json
 ```
 
 A standalone reverse proxy may still add a prefix. In that case it uses the
@@ -551,7 +723,17 @@ changes.
 ## Authentication Profiles
 
 Authentication is a discriminated runtime choice rather than a collection of
-loosely related booleans.
+loosely related booleans. Deployment defaults are explicit:
+
+| Deployment repository | Authentication contract |
+| --- | --- |
+| `portal-config-loc` | OAuth 2.0 authorization-code grant (`oauth2`) |
+| `portal-config-dev` | OAuth 2.0 authorization-code grant (`oauth2`) |
+| `light-portal-install` | OAuth 2.0 authorization-code grant (`oauth2`) |
+| `portal-config-bootstrap` | Operator-selected; may use SSO (`entra-sso` when Entra is selected) |
+
+Bootstrap SSO is a supported option, not a decision that every bootstrap
+installation must use Entra. A different SSO provider needs its own contract.
 
 ### Light OAuth profile
 
@@ -564,8 +746,18 @@ loosely related booleans.
 }
 ```
 
-The Portal sends the browser through the configured authorization flow. The BFF
-and Light OAuth own authorization requests, callbacks, cookies, refresh, CSRF,
+The Portal sends the browser through the configured OAuth 2.0 authorization-code
+grant flow. `signInUrl` is either a browser-origin absolute path beginning with
+one `/`, or an absolute HTTPS URL. Queries are allowed, including the public
+`client_id`; fragments, userinfo, protocol-relative URLs, control characters,
+and unsafe path encodings are rejected. Resolve against `window.location.origin`,
+not the document base. The current Light sign-in contract requires one nonempty
+`client_id`. Use `URL.searchParams.set` for `user_type=E` and the per-login
+`state`, preserving other validated query fields without string concatenation.
+Those two generated fields must not be configured. The hard-coded
+`https://signin.localhost?...` fallback in `src/utils/signIn.ts` is removed.
+
+The BFF and Light OAuth own authorization requests, callbacks, cookies, refresh, CSRF,
 and logout. The client identifier is public; any confidential-client secret is
 server-side only.
 
@@ -593,8 +785,10 @@ new URL(joinBrowserPath(publicBasePath, "/redirect"), window.location.origin)
 concatenation. It produces `/redirect` for a root `publicBasePath` and
 `/namespace-dev/service/ai/portal/redirect` for the prefixed example; it never
 produces `//redirect`. The same rule applies to the post-logout redirect. This
-also repairs the current origin-root `postLogoutRedirectUri: "/redirect"`
-behavior for every prefixed deployment.
+consolidates the already base-aware hand-rolled derivations in `signIn.ts` and
+`UserContext.tsx`, and fixes the origin-root default in `authConfig.js`, through
+`joinBrowserPath`. It does not imply that existing explicit login/logout calls
+always lose the prefix.
 
 The exact URI must be registered with Entra. The SPA authenticates with MSAL,
 then the BFF validates the Microsoft token and performs the approved Light OAuth
@@ -635,15 +829,47 @@ joinApiPath("", "/portal/query")
   -> /portal/query
 ```
 
-Absolute endpoint overrides are permitted only for fields whose schema
-explicitly allows them. They trigger the normal CORS and credential rules and
-must not silently inherit cookies across origins.
+The current `apiBaseUrl` accepts a full origin (including the development
+`https://dev.lightapi.net` configuration), but that does not establish working
+cross-origin cookie authentication. The first runtime schema supports only a
+same-origin BFF: resolve API paths against `window.location.origin` and convert
+`https` to `wss` for WebSockets. It does not expose `routing.apiOrigin`. Existing
+cross-origin deployments must provide a same-origin reverse-proxy or development
+proxy route before migration; they cannot silently copy an absolute API URL into
+`apiBasePath`. Cross-origin BFF support is deferred to a future schema and an
+explicit CSRF/identity delivery design.
+
+`features.preRegistrationUrl` and `features.toolsSyncUrl` explicitly permit
+absolute HTTPS service URLs or root-absolute endpoint paths. Endpoint paths
+use the API builder; absolute service URLs retain their configured authority.
+Do not blindly rewrite the two raw wizard fetches as BFF calls. Validate
+external destinations and their token audience/credential policy separately;
+BFF cookies and identity tokens must not be forwarded to arbitrary origins.
+These external feature service contracts do not enable cross-origin BFF sessions.
 
 HTTP, WebSocket, and EventSource URL builders must consume the same routing
 authority. `/ctrl/mcp` and `/chat` cannot bypass `apiBasePath` merely because
 they change scheme from HTTP to WebSocket.
 
 ## Cookies, Redirects, and Origin Policy
+
+The current Portal depends on page-readable cookies: `fetchClient.ts` reads
+`csrf` for `X-CSRF-TOKEN`; `chatAuthentication.ts` reads `userId`, `host`, and
+`csrf` for renewal and identity checks; `Chat.tsx` reads `csrf` for its WebSocket
+subprotocol. Cookie Domain and Path must make those non-HttpOnly cookies visible
+at the Portal page as well as usable by the same-origin BFF. Token-bearing
+cookies remain HttpOnly. Cookie-path validation must prove that the configured
+API cookie path covers the Portal page and the BFF endpoints; unrelated public
+and API paths cannot satisfy that rule without an explicitly qualified scope.
+
+A different API host's host-only cookies are invisible to the Portal page.
+SameSite=Lax also excludes cross-site fetch/WebSocket sessions, and third-party
+cookie blocking cannot be solved by CORS or `credentials: include`. Sharing a
+parent-domain cookie between same-site subdomains could address visibility, but
+broadens cookie authority and still requires path, credential, CSRF, and identity
+qualification. This design does not enable that policy implicitly. A future
+cross-origin design must specify secure token/identity delivery and browser
+cookie constraints before adding a supported topology or required gate.
 
 Ingress does not generally rewrite `Set-Cookie Path`. A cookie scoped to the
 gateway-visible `/ai/portal` does not match the browser-visible
@@ -675,8 +901,16 @@ with the public URL.
 | --- | --- | --- |
 | Rendered `index.html` | `no-cache` | Revalidate configuration and release activation |
 | Reserved `portal-config.json` response | `no-store` | Served from the validated gateway model, not the static root |
-| Hashed JS, CSS, fonts, images | `public, max-age=31536000, immutable` | Byte-identical signed release members |
+| Manifest-classified immutable JS, CSS, fonts, images | `public, max-age=31536000, immutable` | Verified content-addressed release members |
 | Unhashed release metadata | `no-cache` | Used for diagnostics and compatibility checks |
+
+For SPA-enabled hosts, derive immutable membership from the verified manifest
+loaded through `spa.releaseManifest`, not from a filename heuristic. The current
+`is_hashed_asset` recognizes eight or more hex characters, which misses Vite
+base64url hashes such as `app-m7DsXjYC.js`. A signed member digest alone does not
+make a stable URL immutable: root HTML, schema, and `VERSION` use `revalidate`.
+Reject release/manifest mismatch at activation; an absent or invalid manifest
+cannot enable immutable caching.
 
 The HTML renderer must apply a content security policy compatible with the
 generated `<base>`, normally including `base-uri 'self'`.
@@ -743,6 +977,10 @@ observable while keeping authentication and routing transitions explicit.
   arrays, with selectors evaluated from the loaded runtime object. Migrate all
   importing modules; this is the main body of Phase 1 rather than incidental
   cleanup.
+- Audit `fetchClient.ts`, `ControllerContext.tsx`, `pages/genai/Chat.tsx`,
+  `pages/genai/chatAuthentication.ts`, and both raw fetch calls in
+  `wizards/mcp/hooks/useMcpWizardHandlers.ts`; distinguish BFF endpoints from
+  intentionally external feature service URLs.
 - Ensure authentication modules initialize after bootstrap.
 - Replace the hard-coded origin-root MSAL `postLogoutRedirectUri` with the
   normalized runtime redirect contract.
@@ -752,39 +990,69 @@ observable while keeping authentication and routing transitions explicit.
 
 ### Phase 2: Portable assets and routing
 
-- Build production assets with a relative Vite base.
+- Build production assets with a relative Vite base and source maps disabled.
+- Replace the root-absolute `/vite.svg` favicon with a signed relative asset.
 - Add the single base placeholder before resource references.
 - Route React with runtime `publicBasePath`.
-- Route HTTP and WebSocket BFF calls with runtime `apiBasePath`.
-- Remove implicit localhost production fallbacks.
+- Route HTTP, EventSource, and WebSocket BFF calls through same-origin
+  `apiBasePath`, including raw `/chat` and `/portal/query` calls identified
+  in Phase 1. Preserve explicit external feature service URLs.
+- Correct the Vite proxy `/schedules` entry to `/schedulers`.
+- Use `URL.searchParams` in sign-in and remove both API and sign-in localhost
+  production fallbacks.
 
 ### Phase 3: Rust gateway rendering
 
 - Extend virtual-host configuration with the optional `spa` object.
 - Validate runtime configuration at startup and reload.
+- Mount independently enrolled Portal View public keys read-only at
+  `/config/portal-view-release-keys/` for startup and reload verification.
 - Serve the exact reserved `portal-config.json` route from the validated
   in-memory configuration with `no-store`.
 - Render only the SPA index; serve hashed assets unchanged.
-- Make registered API namespaces prefix-terminal before static resolution.
+- Extend existing `/*` matching with any-method guards and a generic terminal
+  404; order exact routes before guards and guards before static resolution.
+- Verify `handler.basePath` matching and guard/reserved-route collision checks
+  against signed `spaRoutes`, including valid root mounts.
+- Extend `load_static_resources` with pinned version paths, manifest signature
+  verification, full member hashing, route reservations, and runtime/index data
+  in one `ConfigManager` snapshot; retain the old snapshot on reload failure.
+- Derive immutable asset membership from manifest cache classes, including
+  Vite base64url-hashed names.
 - Publish capability and safe configuration evidence.
 
-### Phase 4: Java compatibility if retained
+### Phase 4: Deployment authentication profiles
 
-- Add explicit SPA fallback to the Java resource handler.
-- Add the same index-template and validation contract.
-- Run a shared fixture suite against Java and Rust implementations.
+- Configure `oauth2` authorization-code flow in `portal-config-loc`,
+  `portal-config-dev`, and `light-portal-install`.
+- Supply an optional Entra SSO fixture for `portal-config-bootstrap`; record
+  the actual operator-selected profile and matching BFF configuration.
+- Qualify both adapters on Rust `light-gateway`. Java parity is not a gate.
 
 ### Phase 5: Release and installers
 
 - Produce deterministic archives and manifests.
-- Sign the archive with the approved release key.
-- Publish archive, detached signature, and release metadata to the CDN.
-- Update each installer to verify before extraction.
+- Sign the external manifest with the approved Portal View archive key.
+- Publish the versioned archive, `release-manifest.json`, and
+  `release-manifest.sig` together under the versioned CDN directory.
+- Update each installer to verify signature, archive, and members before
+  extraction, and retain the verified manifest for gateway startup.
+- Replace `light-portal-install` downloading `lightapi.zip` into
+  `light-gateway-rust/lightapi` with the versioned archive flow. Define the
+  extraction layout explicitly: the archive root is the SPA root, so activate
+  it under `releases/<version>/dist`, without an extra nested `dist/`. Keep
+  the manifest and signature in that same version directory.
+- Remove `normalize_portal_assets` and its invocation. Its current rewriting
+  of `user_type=C` to `user_type=E` in JS/HTML is forbidden for signed members;
+  the OAuth adapter owns `user_type=E` before signing. Do not patch old bundles
+  to simulate a new release.
 - Before activation, validate the existing customer configuration against the
   incoming release's supported `N` and `N-1` schemas and semantic rules, and
   verify the incoming gateway capability requirement. An incompatible release
   is rejected while the current release remains ready.
-- Activate the already-qualified release atomically.
+- Activate through the single `current` pointer, invoke the `virtual-host`
+  reload for verified snapshot publication, and confirm the active digest.
+  On failure, restore the pointer and invoke the reload again as described above.
 - Mount the verified release read-only and customer configuration separately.
 
 ### Phase 6: Retire environment builds
@@ -813,7 +1081,11 @@ observable while keeping authentication and routing transitions explicit.
 - OAuth and Entra adapters are selected exclusively.
 - Production output contains no deployment hostname, namespace, tenant, client
   ID, redirect URI, or localhost API fallback.
-- Two builds from the same source inputs are byte-for-byte reproducible.
+- Two builds with the same pinned inputs and `SOURCE_DATE_EPOCH` produce
+  byte-identical archives and external manifests.
+- No source maps or source-map references are shipped in the public release.
+- Sign-in query handling preserves `client_id` and produces one generated
+  `user_type` and `state`, with no localhost fallback.
 
 ### Gateway gates
 
@@ -823,11 +1095,21 @@ observable while keeping authentication and routing transitions explicit.
 - Existing and missing assets return the correct file or `404`.
 - Any request below a registered API namespace, including an unknown endpoint,
   is terminal and never returns the SPA entry page.
+- Wrong-method requests and namespace roots are terminal; `/portalx` is not
+  captured by `/portal/*`. Exact working routes and CORS preflight still work.
+- Non-root `handler.basePath`, static mount, and Ingress rewriting compose
+  without double stripping. Root-mounted `/portal/*` and `/chat/*` guards pass;
+  guards covering signed route reservations or runtime configuration fail.
+- Manifest `spaRoutes` matches the release router, with `/` exact rather than
+  a prefix, including equivalent checks on prefixed mounts.
+- Hosts without `spa` retain unrendered fallback. Real subdirectories and
+  final-segment dots obey the documented resolution constraints.
 - Traversal and dotfile requests are rejected.
 - Base placeholder replacement is exact and injection-safe.
 - Runtime configuration reload is atomic; a failed candidate retains the last
   valid configuration and reports failure.
-- Index, runtime JSON, and hashed assets receive the specified cache headers.
+- Index, runtime JSON, and manifest-classified assets receive the specified
+  cache headers, including non-hex Vite hashes and stable-name metadata.
 - Runtime configuration digest changes are observable without mutating a
   running tab's configuration.
 
@@ -845,7 +1127,10 @@ Run the same signed archive through:
 
 Each case verifies direct navigation to a route at least three levels deep,
 page refresh, back/forward navigation, an absent asset, an absent API endpoint,
-WebSocket connection, and logout redirect.
+WebSocket connection, and logout redirect. Each same-origin case also proves
+page visibility of `csrf`, `userId`, and `host`, HTTP CSRF header delivery, and
+WebSocket CSRF subprotocol delivery. Separate API origins are deferred and are
+not part of this release's required matrix.
 
 ### Release and operational gates
 
@@ -857,7 +1142,13 @@ WebSocket connection, and logout redirect.
   incompatible candidate release never replaces a ready active release.
 - Releases accept schema versions `N` and `N-1` through the documented
   migration window.
-- Activation is atomic and retains the previous verified release for rollback.
+- Pointer swap and snapshot publication retain the previous verified release
+  for rollback. Concurrent requests across activation use consistent files,
+  manifest cache classes, rendered index, and runtime configuration per snapshot.
+- Startup/reload rejects changed file bytes even when filenames still match,
+  as well as missing, extra, or unsafe members and invalid manifest signatures.
+- A pointer change during loading cannot mix version directories. Failed reload
+  keeps the prior active digest; restoring the pointer and rollback are tested.
 - Runtime evidence reports the expected artifact and configuration digests.
 - No private key, OAuth secret, token, or cookie value appears in the archive,
   runtime JSON, logs, or service-info output.
@@ -903,10 +1194,6 @@ handling.
 
 ## Open Questions
 
-- Is Java `light-gateway` still a required Portal BFF target after the Rust
-  rollout, or is Java support limited to migration?
-- Which release-signing trust domain and key ID namespace owns Portal View
-  archives?
 - Should an operator optionally sign its runtime configuration with a local key
   for high-assurance installations?
 - What is the minimum gateway capability/version handshake exposed to the

@@ -66,7 +66,16 @@ Each signed-artifact family has its own key namespace and lifecycle.
 |---|---|---|---|---|
 | Environment event bundle | `events.zip` and `bundle-manifest.sig` | Ed25519 | `release-keys/<keyId>.pem` | Daily-release signing runner |
 | Database bootstrap archive | Release `manifest.json`, `manifest.sig`, and `portal-bootstrap.dump` | Algorithm declared by the bootstrap release contract | `bootstrap/release-public.pem` or a future key-ID directory | Bootstrap-archive release runner |
+| Portal View archive | `portal-view-<version>.zip`, external `release-manifest.json` and `release-manifest.sig` | Ed25519 | `portal-view-release-keys/<keyId>.pem` | Portal View release-signing runner |
 | Future top-level release manifest | CDN archive digests and OCI image digests | To be selected by the release-manifest design | Dedicated release-manifest trust directory | Release orchestration service |
+
+The `portal-view-archive` trust domain uses key IDs such as
+`portal-view-release-2026-01`. Its detached signature covers the external
+manifest, which binds the archive digest and complete member digests/cache
+classes. See [Portable Signed Portal View Artifact and Runtime Configuration](portal-view/portable-signed-runtime-configuration.md).
+This is a target contract; Portal View verification is not yet implemented by
+all four deployment consumers. Each must enroll these keys independently of
+event-bundle and database-bootstrap keys through the approved delivery channel.
 
 Keys from different trust domains must not be reused merely for convenience.
 If a deliberate migration uses one cryptographic key in two domains, both
