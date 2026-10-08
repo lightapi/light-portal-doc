@@ -73,9 +73,10 @@ The `portal-view-archive` trust domain uses key IDs such as
 `portal-view-release-2026-01`. Its detached signature covers the external
 manifest, which binds the archive digest and complete member digests/cache
 classes. See [Portable Signed Portal View Artifact and Runtime Configuration](portal-view/portable-signed-runtime-configuration.md).
-This is a target contract; Portal View verification is not yet implemented by
-all four deployment consumers. Each must enroll these keys independently of
-event-bundle and database-bootstrap keys through the approved delivery channel.
+All four deployment consumers verify Portal View releases on their feature
+branches; production keys are not yet provisioned and no deployment is
+qualified. Each must enroll these keys independently of event-bundle and
+database-bootstrap keys through the approved delivery channel.
 
 Keys from different trust domains must not be reused merely for convenience.
 If a deliberate migration uses one cryptographic key in two domains, both

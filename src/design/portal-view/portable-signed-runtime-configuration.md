@@ -2,18 +2,32 @@
 
 ## Status
 
-Proposed design. The current `portal-view` build still compiles deployment
-values from `VITE_*` variables, and the gateway does not yet render a runtime
-base URL into the SPA entry page. The Rust `light-gateway` already supports
-virtual-host static files and fallback to `index.html` for extensionless SPA
-routes. This design targets only Rust `light-gateway`; Java gateway parity is
-out of scope for the migration away from Java.
+Accepted design, implemented on feature branches and pending operational
+qualification. This design targets only Rust `light-gateway`; Java gateway parity
+is out of scope for the migration away from Java.
 
-This document defines the target contract. It does not claim that the runtime
-configuration loader, gateway HTML rendering, release archive, or all
-qualification gates have been implemented. It supersedes the target architecture
-in [Multiple Environment](multiple-environment.md); that build-time model remains
-supported until the migration gates below pass.
+- **Implemented on the `feat/portable-portal-view-runtime-config` branches:**
+  the runtime configuration contract, browser validator and bootstrap loader;
+  `vite build --mode release` portable output with the base placeholder; the
+  deterministic signed release archive and external manifest; gateway `spa`
+  virtual-host support (manifest signature and member verification, rendered
+  `<base href>`, the reserved `portal-config.json` endpoint, manifest cache
+  classes, `X-Portal-Release-Digest`, terminal namespace guards and the
+  `validate-portal-release` command); signed publication in the release tooling;
+  and verified staging with explicit owner activation in all four deployment
+  repositories.
+- **Intentional legacy behavior:** the default `vite build` still compiles
+  deployment values from `VITE_*` variables, emits `portal-config.json` and
+  renders a concrete `<base href>`; the legacy `lightapi.zip` is still published
+  and served; hosts without `spa.enabled` keep unrendered fallback. The
+  build-time model in [Multiple Environment](multiple-environment.md) remains
+  supported until the migration gates below pass and Phase 6 is approved.
+- **Pending operational qualification:** production key provisioning and
+  signed publication, real Docker Compose activation, rollback and recovery,
+  Kubernetes deployment, and the browser matrix under
+  [Qualification Gates](#qualification-gates). No supported topology is yet
+  qualified, and the bootstrap Entra BFF (`portal-bff-sso`) does not yet consume
+  signed releases.
 
 ## Problem
 
@@ -854,7 +868,9 @@ proxy route before migration; they cannot silently copy an absolute API URL into
 explicit CSRF/identity delivery design.
 
 `features.preRegistrationUrl` and `features.toolsSyncUrl` explicitly permit
-absolute HTTPS service URLs or root-absolute endpoint paths. Endpoint paths
+absolute HTTPS service URLs or root-absolute endpoint paths. A root-absolute
+path keeps canonical segments but may include `{apiId}`/`{version}` templates
+and a query string. Endpoint paths
 use the API builder; absolute service URLs retain their configured authority.
 Do not blindly rewrite the two raw wizard fetches as BFF calls. Validate
 external destinations and their token audience/credential policy separately;
