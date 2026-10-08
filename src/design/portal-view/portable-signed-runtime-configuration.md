@@ -250,11 +250,21 @@ extraction, then verifies the extracted exact file set and hashes. Once the
 candidate and existing runtime configuration pass compatibility checks, it
 atomically renames a prepared symlink over `current`. Never overwrite a version
 directory or update two bind mounts separately. Mount the parent release tree
-so the gateway can observe the pointer change. After each swap, including
-rollback or failure recovery, the installer must invoke the existing gateway
-on-demand reload for the `virtual-host` module and read back the expected active
-manifest digest. There is no filesystem watcher; swapping `current` alone does
-not activate the release in a running gateway.
+so the gateway can observe the pointer change. Docker Compose activation is an
+explicit owner command: first validate the staged release and runtime configuration
+offline with the target gateway image's `light-gateway validate-portal-release`,
+then swap `current`, force-recreate the gateway service with
+`docker compose up -d --no-deps --force-recreate`, and read back the expected
+`X-Portal-Release-Digest`. Failed activation restores the previous release,
+recreates it and verifies its digest; interrupted recovery retains its journal
+until the complete prior state is restored. First pointer-only preparation changes
+no serving process; first serving cutover and rollback require the separate
+Portal UI configuration change, snapshot publication and explicit recreation.
+Online activation uses the controller `reload_modules` tool with
+`{"modules":["light-pingora/virtual-host"]}` after the validated pointer swap,
+and reads back the digest; failure restores the pointer and reloads again.
+There is no filesystem watcher; swapping `current` alone does not activate the
+release in a running gateway.
 
 Extend `load_static_resources` to resolve `current` **once** to a concrete
 version directory and load its static sites, manifest/cache classes, route
@@ -322,7 +332,9 @@ file resolution; it does not allow an arbitrary filesystem path in a request.
 Only `GET` and `HEAD` are supported. The response uses
 `Content-Type: application/json`, `X-Content-Type-Options: nosniff`, and
 `Cache-Control: no-store`, and includes the validated configuration digest in
-an `ETag` and `X-Portal-Config-Digest` response header. The reserved endpoint
+an `ETag` and `X-Portal-Config-Digest` response header. Both this endpoint and
+the rendered index include `X-Portal-Release-Digest`, the SHA-256 hex digest of
+the exact verified `release-manifest.json` bytes, for release readback. The reserved endpoint
 is terminal: it is never eligible for static resolution or SPA fallback,
 including when configuration loading has failed.
 
@@ -511,6 +523,7 @@ virtual-host.hosts:
       index: index.html
       runtimeConfig: /config/portal-config.json
       releaseManifest: /lightapi/current/release-manifest.json
+      releaseKeyDir: /config/portal-view-release-keys
       basePlaceholder: __PORTAL_BASE_HREF__
 ```
 
@@ -714,6 +727,7 @@ virtual-host.hosts:
       index: index.html
       runtimeConfig: /config/portal-config.json
       releaseManifest: /lightapi/current/release-manifest.json
+      releaseKeyDir: /config/portal-view-release-keys
 ```
 
 A standalone reverse proxy may still add a prefix. In that case it uses the
@@ -904,6 +918,10 @@ with the public URL.
 | Manifest-classified immutable JS, CSS, fonts, images | `public, max-age=31536000, immutable` | Verified content-addressed release members |
 | Unhashed release metadata | `no-cache` | Used for diagnostics and compatibility checks |
 
+Rendered index and runtime-configuration responses carry
+`X-Portal-Release-Digest: <sha256 hex of release-manifest.json bytes>` so an
+owner can verify the release served after activation or restoration.
+
 For SPA-enabled hosts, derive immutable membership from the verified manifest
 loaded through `spa.releaseManifest`, not from a filename heuristic. The current
 `is_hashed_asset` recognizes eight or more hex characters, which misses Vite
@@ -958,6 +976,11 @@ not mutate the active configuration in place. This makes revision drift
 observable while keeping authentication and routing transitions explicit.
 
 ## Compatibility and Migration
+
+During migration, default `vite build` remains legacy-compatible with an embedded
+`portal-config.json` and concrete `<base href>`; only `vite build --mode release`
+output is signed by the release tooling, alongside retained legacy `lightapi.zip`
+and environment build scripts until their separately qualified Phase 6 retirement.
 
 ### Phase 0: Contract and fixtures
 
