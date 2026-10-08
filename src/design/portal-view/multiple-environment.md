@@ -1,5 +1,11 @@
-# Mutliple Environment
+# Multiple Environment
 
+
+> Superseded target design: [Portable Signed Portal View Artifact and Runtime
+> Configuration](portable-signed-runtime-configuration.md). The `VITE_BASE_PATH`
+> and environment-specific build model below remains migration guidance until
+> the runtime-configuration qualification gates pass; it is not the target
+> release architecture.
 
 This document outlines the necessary changes to configure portal view to work dynamically across different environments (sdx, dev, non-prod, prod) using environment-specific configuration.
 
