@@ -89,6 +89,7 @@
   - [Database Concurrency](./design/database-concurrency.md)
   - [MSAL Light OAuth Integration](./design/msal-light-oauth.md)
   - [User Registration and Onboarding](./design/registration-onboarding.md)
+  - [Google Identity Services Sign-In and Account Linking](./design/google-identity-services-sign-in.md)
   - [Optimistic vs Pessimistic UI](./design/optimistic-pessimistic-ui.md)
   - [Soft Delete vs Hard Delete](./design/soft-hard-delete.md)
   - [Tenant Migration](./design/tenant-migration.md)
