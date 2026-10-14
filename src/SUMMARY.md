@@ -313,6 +313,7 @@
     - [portal-config-loc](./operations/docker-compose/portal-config-loc.md)
     - [portal-config-dev](./operations/docker-compose/portal-config-dev.md)
     - [portal-config-bootstrap](./operations/docker-compose/portal-config-bootstrap.md)
+    - [portal-config-bootstrap on Podman](./operations/docker-compose/portal-config-bootstrap-podman.md)
     - [light-portal-install](./operations/docker-compose/light-portal-install.md)
     - [Compose Service Catalog](./operations/docker-compose/services.md)
       - [PostgreSQL And Bootstrap Jobs](./operations/docker-compose/services/postgres.md)
