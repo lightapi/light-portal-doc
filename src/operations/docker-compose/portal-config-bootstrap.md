@@ -3,6 +3,9 @@
 `portal-config-bootstrap` extends the public dev topology for an enterprise VM
 bootstrap and Microsoft Entra sign-in evaluation.
 
+For Red Hat EC2 deployments where Docker Compose is unavailable, see
+[Running bootstrap with Podman and podman-compose](./portal-config-bootstrap-podman.md).
+
 ## Compose inputs
 
 The base platform is defined by `docker-compose.yml`. The enterprise BFF is an
